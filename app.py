@@ -104,6 +104,40 @@ def serve_memory(filename):
 
 # ────────────────────────────────────────────────────
 
+@app.route('/api/chat-v2', methods=['POST'])
+def chat_v2():
+    data = request.json
+    payload = {
+        'model': 'anthropic/claude-sonnet-4-6',
+        'messages': data.get('messages', []),
+        'stream': True,
+        'max_tokens': 8000,
+        'thinking': {'type': 'enabled', 'budget_tokens': 8000},
+    }
+    if data.get('system'):
+        payload['system'] = data['system']
+    if data.get('tools'):
+        payload['tools'] = data['tools']
+
+    hdrs = {
+        'Authorization': f'Bearer {OR_KEY}',
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'interleaved-thinking-2025-05-14',
+    }
+
+    def gen():
+        with requests.post(
+            'https://openrouter.ai/api/v1/messages',
+            headers=hdrs, json=payload, stream=True, timeout=180
+        ) as r:
+            for line in r.iter_lines():
+                if line:
+                    yield line.decode() + '\n\n'
+
+    return Response(gen(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
     try:
