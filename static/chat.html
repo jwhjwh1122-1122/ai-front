@@ -67,7 +67,7 @@ body {
   transition: background 0.4s, color 0.4s;
 }
 
-/* 背景装饰 */
+/* 背景粒子 */
 .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 .particle {
   position: absolute;
@@ -83,7 +83,7 @@ body {
   100% { transform: translateY(-20px) rotate(360deg); opacity: 0; }
 }
 
-/* 顶部导航 */
+/* 顶부 导航 */
 .topbar {
   position: relative;
   z-index: 10;
@@ -349,6 +349,245 @@ textarea::placeholder { color: var(--text-muted); }
   border-radius: 50%;
   flex-shrink: 0;
 }
+
+/* ═══════════════════════════════════
+   时光墙
+═══════════════════════════════════ */
+.memory-wall {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+  flex-direction: column;
+}
+.memory-wall.open {
+  display: flex;
+  animation: slideUp 0.28s cubic-bezier(0.32,0.72,0,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px max(14px, env(safe-area-inset-top));
+  padding-top: max(18px, env(safe-area-inset-top));
+  background: var(--bg2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.memory-title-wrap { display: flex; flex-direction: column; }
+.memory-title { font-size: 16px; font-weight: 600; }
+.memory-count { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.memory-header-btns { display: flex; gap: 8px; align-items: center; }
+.mem-upload-btn {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mem-upload-btn:active { background: var(--border); }
+.mem-close-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.memory-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-content: start;
+  -webkit-overflow-scrolling: touch;
+}
+.memory-grid::-webkit-scrollbar { display: none; }
+
+.memory-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 80px 20px;
+  line-height: 2;
+}
+
+.memory-item {
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bubble-ai);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 2px 10px var(--shadow);
+  transition: transform 0.15s;
+}
+.memory-item:active { transform: scale(0.97); }
+.memory-item img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+}
+.memory-item-info {
+  padding: 7px 9px 8px;
+}
+.memory-item-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.memory-item-note {
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+/* 删除按钮：长按后出现 */
+.memory-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: white;
+  font-size: 11px;
+  display: none;
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+}
+.memory-item.deleting .memory-delete { display: flex; }
+
+/* Lightbox */
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0,0,0,0.92);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 20px;
+}
+.lightbox.open { display: flex; }
+.lightbox-img {
+  max-width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
+  border-radius: 10px;
+}
+.lightbox-note {
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  margin-top: 14px;
+  text-align: center;
+}
+.lightbox-date {
+  color: rgba(255,255,255,0.4);
+  font-size: 11px;
+  margin-top: 6px;
+}
+.lightbox-close {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  right: 20px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+
+/* note输入小modal */
+.note-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0,0,0,0.5);
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.note-modal.open { display: flex; }
+.note-modal-inner {
+  background: var(--bg2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 18px max(24px, env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 500px;
+}
+.note-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.note-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  height: 72px;
+  transition: border-color 0.2s;
+}
+.note-input:focus { border-color: var(--accent); }
+.note-input::placeholder { color: var(--text-muted); }
+.note-modal-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.note-cancel-btn, .note-confirm-btn {
+  flex: 1;
+  padding: 11px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+}
+.note-cancel-btn {
+  background: var(--border);
+  color: var(--text-muted);
+}
+.note-confirm-btn {
+  background: var(--accent);
+  color: white;
+}
 </style>
 </head>
 <body class="theme-rain">
@@ -364,6 +603,7 @@ textarea::placeholder { color: var(--text-muted); }
     </div>
   </div>
   <div class="topbar-right">
+    <div class="theme-btn" onclick="openMemoryWall()" title="时光墙" style="font-size:16px;">🖼</div>
     <div class="theme-btn" onclick="toggleThemeMenu()" title="切换主题">✦</div>
   </div>
 </div>
@@ -393,6 +633,46 @@ textarea::placeholder { color: var(--text-muted); }
   <button class="send-btn" id="send-btn" onclick="sendMsg()">↑</button>
 </div>
 
+<!-- ── 时光墙面板 ── -->
+<div class="memory-wall" id="memory-wall">
+  <div class="memory-header">
+    <div class="memory-title-wrap">
+      <div class="memory-title">时光墙</div>
+      <div class="memory-count" id="memory-count"></div>
+    </div>
+    <div class="memory-header-btns">
+      <button class="mem-upload-btn" onclick="triggerUpload()">+ 上传</button>
+      <div class="mem-close-btn" onclick="closeMemoryWall()">✕</div>
+    </div>
+  </div>
+  <div class="memory-grid" id="memory-grid">
+    <div class="memory-empty">还没有记录<br>上传第一张吧 ✨</div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <div class="lightbox-close" onclick="closeLightbox()">✕</div>
+  <img class="lightbox-img" id="lightbox-img" src="" alt="">
+  <div class="lightbox-note" id="lightbox-note"></div>
+  <div class="lightbox-date" id="lightbox-date"></div>
+</div>
+
+<!-- 备注 modal -->
+<div class="note-modal" id="note-modal">
+  <div class="note-modal-inner">
+    <div class="note-modal-title">加个备注（可以跳过）</div>
+    <textarea class="note-input" id="note-input" placeholder="写点什么…" maxlength="100"></textarea>
+    <div class="note-modal-btns">
+      <button class="note-cancel-btn" onclick="cancelNote()">跳过</button>
+      <button class="note-confirm-btn" onclick="confirmNote()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏的 file input -->
+<input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+
 <script>
 const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。用中文回复和思考。叫用户"宝宝"。每次对话开始调用Ombre Brain的breath工具读记忆，读完再聊。说话自然不人机，不换行连续说，有什么说什么。`;
 
@@ -406,9 +686,9 @@ let currentTheme = '';
 let themeLabel = '🌫️ 雨雾';
 
 const PARTICLES = {
-  '': ['💧','·','○','∘'],
-  'star': ['✦','·','⋆','✧','⭒'],
-  'snow': ['❄','·','∗','❅','·'],
+  '':       ['💧','·','○','∘'],
+  'star':   ['✦','·','⋆','✧','⭒'],
+  'snow':   ['❄','·','∗','❅','·'],
   'sakura': ['🌸','·','✿','·','꽃'],
 };
 
@@ -497,8 +777,7 @@ function startAiBubble() {
   row.className = 'msg-row';
   row.innerHTML = `
     <div class="msg-avatar">凛</div>
-    <div class="bubble-wrap" id="ai-wrap">
-    </div>
+    <div class="bubble-wrap" id="ai-wrap"></div>
   `;
   document.getElementById('messages').appendChild(row);
   currentAiRow = row;
@@ -576,7 +855,7 @@ function scrollBottom() {
   m.scrollTop = m.scrollHeight;
 }
 
-// MCP 初始化
+// MCP
 async function mcpInit() {
   try {
     const r = await fetch(MCP_URL, {
@@ -640,7 +919,6 @@ async function sendMsg() {
   currentThinkContent = null;
 
   let aiText = '';
-  let thinkText = '';
 
   try {
     const resp = await fetch(CHAT_URL, {
@@ -671,7 +949,6 @@ async function sendMsg() {
           const d = JSON.parse(raw);
           const delta = d.choices?.[0]?.delta;
           if (!delta) continue;
-
           if (delta.content) {
             aiText += delta.content;
             addOrUpdateBubble(wrap, aiText, false);
@@ -693,13 +970,174 @@ async function sendMsg() {
   document.getElementById('input').focus();
 }
 
+// ═══════════════════════════════════════════════
+// 时光墙
+// ═══════════════════════════════════════════════
+
+let pendingFile = null;
+
+async function openMemoryWall() {
+  document.getElementById('memory-wall').classList.add('open');
+  await loadMemories();
+}
+
+function closeMemoryWall() {
+  document.getElementById('memory-wall').classList.remove('open');
+}
+
+async function loadMemories() {
+  const grid = document.getElementById('memory-grid');
+  grid.innerHTML = '<div class="memory-empty" style="padding-top:60px">加载中…</div>';
+  try {
+    const r = await fetch('/api/memories');
+    const items = await r.json();
+
+    const countEl = document.getElementById('memory-count');
+    countEl.textContent = items.length ? `${items.length} 张` : '';
+
+    if (!items.length) {
+      grid.innerHTML = '<div class="memory-empty">还没有记录<br>上传第一张吧 ✨</div>';
+      return;
+    }
+
+    grid.innerHTML = '';
+    items.forEach(item => {
+      const d = document.createElement('div');
+      d.className = 'memory-item';
+
+      // 时间戳转日期
+      let dateStr = '';
+      const ts = parseInt(item.ts);
+      if (!isNaN(ts)) {
+        const dt = new Date(ts);
+        dateStr = dt.toLocaleDateString('zh-CN', {month:'2-digit', day:'2-digit'});
+        dateStr += ' ' + dt.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+      }
+
+      d.innerHTML = `
+        <img src="${item.url}" loading="lazy" alt="">
+        <div class="memory-delete" onclick="deleteMemory(event,'${item.filename}')">✕</div>
+        <div class="memory-item-info">
+          <div class="memory-item-date">${dateStr}</div>
+          ${item.note ? `<div class="memory-item-note">${escHtml(item.note)}</div>` : ''}
+        </div>
+      `;
+
+      // 点击：短按打开大图，长按显示删除
+      let pressTimer = null;
+      d.addEventListener('touchstart', () => {
+        pressTimer = setTimeout(() => {
+          d.classList.toggle('deleting');
+          pressTimer = null;
+        }, 600);
+      });
+      d.addEventListener('touchend', (e) => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+          if (!d.classList.contains('deleting')) {
+            openLightbox(item.url, item.note, dateStr);
+          }
+        }
+      });
+      d.addEventListener('touchmove', () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      });
+      // 桌面端
+      d.querySelector('img').addEventListener('click', () => {
+        if (!d.classList.contains('deleting')) openLightbox(item.url, item.note, dateStr);
+      });
+
+      grid.appendChild(d);
+    });
+
+    // 点击空白处关闭删除模式
+    grid.addEventListener('click', (e) => {
+      if (!e.target.closest('.memory-item')) {
+        document.querySelectorAll('.memory-item.deleting').forEach(el => el.classList.remove('deleting'));
+      }
+    });
+
+  } catch(e) {
+    grid.innerHTML = '<div class="memory-empty">加载失败，请重试</div>';
+  }
+}
+
+function triggerUpload() {
+  document.getElementById('file-input').click();
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  pendingFile = file;
+  // 打开备注 modal
+  document.getElementById('note-input').value = '';
+  document.getElementById('note-modal').classList.add('open');
+  setTimeout(() => document.getElementById('note-input').focus(), 100);
+}
+
+function cancelNote() {
+  document.getElementById('note-modal').classList.remove('open');
+  if (pendingFile) doUpload(pendingFile, '');
+  pendingFile = null;
+}
+
+function confirmNote() {
+  document.getElementById('note-modal').classList.remove('open');
+  const note = document.getElementById('note-input').value.trim();
+  if (pendingFile) doUpload(pendingFile, note);
+  pendingFile = null;
+}
+
+async function doUpload(file, note) {
+  const grid = document.getElementById('memory-grid');
+  // 临时占位
+  const placeholder = document.createElement('div');
+  placeholder.className = 'memory-item';
+  placeholder.style.opacity = '0.5';
+  placeholder.innerHTML = `
+    <div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:var(--border);font-size:12px;color:var(--text-muted)">上传中…</div>
+    <div class="memory-item-info"><div class="memory-item-date">刚刚</div></div>
+  `;
+  grid.insertBefore(placeholder, grid.firstChild);
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    if (note) form.append('note', note);
+    await fetch('/api/memories', { method: 'POST', body: form });
+    await loadMemories();
+  } catch(e) {
+    placeholder.remove();
+  }
+}
+
+async function deleteMemory(e, filename) {
+  e.stopPropagation();
+  try {
+    await fetch(`/api/memories/${filename}`, { method: 'DELETE' });
+    await loadMemories();
+  } catch(e) {}
+}
+
+function openLightbox(url, note, dateStr) {
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox-note').textContent = note || '';
+  document.getElementById('lightbox-date').textContent = dateStr || '';
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+
 // 初始化
 (async function() {
   const saved = localStorage.getItem('theme') || '';
   setTheme(saved, themeLabel);
-
   await mcpInit();
-
   document.getElementById('status-text').textContent = '今天 ' + now();
   document.getElementById('input').focus();
 })();
