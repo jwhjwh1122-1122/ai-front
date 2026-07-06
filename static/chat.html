@@ -796,11 +796,15 @@ textarea::placeholder { color: var(--text-muted); }
     <!-- 上下文窗口 -->
     <div class="settings-card" style="margin-top:10px;">
       <div class="settings-label">上下文窗口（只发最近N条给凛）</div>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
         <div class="ctx-option" data-val="5" onclick="setCtxWindow(5)">5 条</div>
         <div class="ctx-option" data-val="10" onclick="setCtxWindow(10)">10 条</div>
         <div class="ctx-option" data-val="20" onclick="setCtxWindow(20)">20 条</div>
         <div class="ctx-option" data-val="0" onclick="setCtxWindow(0)">全部</div>
+        <input id="ctx-custom" type="number" min="1" max="999"
+          placeholder="自定义"
+          style="width:70px;padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-align:center;"
+          onkeydown="if(event.key==='Enter'){const v=parseInt(this.value);if(v>0)setCtxWindow(v);}">
       </div>
       <div class="settings-sub" id="ctx-sub" style="margin-top:6px;"></div>
     </div>
