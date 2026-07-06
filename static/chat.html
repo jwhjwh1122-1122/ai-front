@@ -1406,6 +1406,8 @@ function scrollBottom() {
 }
 
 // ── MCP ──
+let mcpTools = [];
+
 async function mcpInit() {
   try {
     const r = await fetch(MCP_URL, {
@@ -1419,12 +1421,130 @@ async function mcpInit() {
   } catch(e) { console.warn('MCP init failed', e); }
 }
 
-function buildOpenAIMessages(msgs) {
+async function initMcpTools() {
+  try {
+    const r = await fetch(MCP_URL, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({jsonrpc:'2.0', method:'tools/list', params:{}, id:3, _sid:mcpSessionId})
+    });
+    const sid = r.headers.get('Mcp-Session-Id');
+    if (sid) mcpSessionId = sid;
+    const data = await r.json();
+    const tools = data.result?.tools || [];
+    mcpTools = tools.map(t => ({
+      name: t.name,
+      description: t.description || '',
+      input_schema: t.inputSchema || {type:'object', properties:{}}
+    }));
+  } catch(e) { console.warn('MCP tools fetch failed', e); mcpTools = []; }
+}
+
+async function executeMcpTool(name, args) {
+  try {
+    const r = await fetch(MCP_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        jsonrpc:'2.0', method:'tools/call',
+        params:{name, arguments: args||{}},
+        id: Date.now(), _sid: mcpSessionId
+      })
+    });
+    const sid = r.headers.get('Mcp-Session-Id');
+    if (sid) mcpSessionId = sid;
+    const data = await r.json();
+    return data.result;
+  } catch(e) { return {error: e.message}; }
+}
+
+function buildMsgs(msgs) {
   const windowed = ctxWindow > 0 ? msgs.slice(-ctxWindow) : msgs;
-  return windowed.map(m => ({
-    role: m.role,
-    content: typeof m.content === 'string' ? m.content : m.content
-  }));
+  return windowed;
+}
+
+// 流式读取Anthropic格式SSE，返回文本、thinking、工具调用、stopReason
+async function streamAnthropic(wrap, msgHistory) {
+  const resp = await fetch('/api/chat-v2', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      messages: buildMsgs(msgHistory),
+      system: getSystemPrompt(),
+      tools: mcpTools.length > 0 ? mcpTools : undefined
+    })
+  });
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  let thinkingText = '', responseText = '';
+  let toolUses = [], currentTool = null, currentJson = '';
+  let currentBlockType = null, stopReason = null;
+
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream:true});
+    const lines = buf.split('\n'); buf = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim();
+      if (!raw || raw === '[DONE]') continue;
+      try {
+        const d = JSON.parse(raw);
+
+        if (d.type === 'content_block_start') {
+          currentBlockType = d.content_block.type;
+          if (currentBlockType === 'thinking') {
+            if (!currentThinkWrap) addThinkingBlock(wrap);
+            thinkingText = '';
+          } else if (currentBlockType === 'tool_use') {
+            currentTool = {id: d.content_block.id, name: d.content_block.name, input: {}};
+            currentJson = '';
+            // 显示工具调用指示器
+            const ind = document.createElement('div');
+            ind.className = 'tool-indicator';
+            ind.id = `tool-${d.content_block.id}`;
+            ind.innerHTML = `<div class="tool-spinner"></div>调用 ${d.content_block.name}…`;
+            wrap.appendChild(ind);
+            scrollBottom();
+          }
+
+        } else if (d.type === 'content_block_delta') {
+          const delta = d.delta;
+          if (delta.type === 'thinking_delta') {
+            thinkingText += delta.thinking;
+            if (currentThinkContent) currentThinkContent.textContent = thinkingText;
+          } else if (delta.type === 'text_delta') {
+            responseText += delta.text;
+            addOrUpdateBubble(wrap, responseText, false);
+          } else if (delta.type === 'input_json_delta') {
+            currentJson += delta.partial_json;
+          }
+
+        } else if (d.type === 'content_block_stop') {
+          if (currentBlockType === 'tool_use' && currentTool) {
+            try { currentTool.input = JSON.parse(currentJson); } catch(e) {}
+            toolUses.push({...currentTool});
+            // 更新指示器为完成
+            const ind = document.getElementById(`tool-${currentTool.id}`);
+            if (ind) { ind.querySelector('.tool-spinner').style.display='none'; ind.innerHTML += ' ✓'; }
+            currentTool = null; currentJson = '';
+          }
+
+        } else if (d.type === 'message_delta') {
+          stopReason = d.delta?.stop_reason;
+          if (d.usage) totalTokens += (d.usage.output_tokens || 0);
+
+        } else if (d.type === 'message_start') {
+          if (d.message?.usage) totalTokens = d.message.usage.input_tokens || 0;
+        }
+      } catch(e) {}
+    }
+  }
+
+  finalizeThinking();
+  if (responseText) addOrUpdateBubble(wrap, responseText, true);
+  return {text: responseText, toolUses, stopReason};
 }
 
 // ── 发送消息 ──
@@ -1438,57 +1558,60 @@ async function sendMsg() {
   document.getElementById('send-btn').disabled = true;
   isTyping = true;
 
-  // 构建消息内容
-  let msgContent;
+  // 构建用户消息（Anthropic格式）
+  let userContent;
   if (hasImg) {
     const parts = [];
-    if (text) parts.push({ type: 'text', text });
-    parts.push({ type: 'image_url', image_url: { url: pendingChatImg.data } });
-    msgContent = parts;
+    if (text) parts.push({type:'text', text});
+    const imgData = pendingChatImg.data.split(',')[1];
+    const mtype = pendingChatImg.type || 'image/jpeg';
+    parts.push({type:'image', source:{type:'base64', media_type:mtype, data:imgData}});
+    userContent = parts;
   } else {
-    msgContent = text;
+    userContent = [{type:'text', text}];
   }
 
-  messages.push({ role: 'user', content: msgContent });
+  messages.push({role:'user', content: userContent});
   appendUserBubble(text, hasImg ? pendingChatImg.data : null);
   if (hasImg) removeImgPreview();
 
   const wrap = startAiBubble();
-  currentBubble = null;
-  currentThinkWrap = null;
-  let aiText = '';
+  currentBubble = null; currentThinkWrap = null;
+
+  // 工作消息历史（可能因工具调用扩展）
+  let workMsgs = [...messages];
+  let finalText = '';
 
   try {
-    const resp = await fetch(CHAT_URL, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ messages: buildOpenAIMessages(messages), system: getSystemPrompt() })
-    });
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
     while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream:true});
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const raw = line.slice(5).trim();
-        if (raw === '[DONE]') continue;
-        try {
-          const d = JSON.parse(raw);
-          const delta = d.choices?.[0]?.delta;
-          if (d.usage) {
-            totalTokens = (d.usage.prompt_tokens || 0) + (d.usage.completion_tokens || 0);
-          }
-          if (!delta) continue;
-          if (delta.content) { aiText += delta.content; addOrUpdateBubble(wrap, aiText, false); }
-        } catch(e) {}
+      const {text: aiText, toolUses, stopReason} = await streamAnthropic(wrap, workMsgs);
+      finalText = aiText;
+
+      if (stopReason !== 'tool_use' || toolUses.length === 0) break;
+
+      // 把助手消息加入历史
+      const assistantContent = [];
+      if (aiText) assistantContent.push({type:'text', text:aiText});
+      for (const tu of toolUses) {
+        assistantContent.push({type:'tool_use', id:tu.id, name:tu.name, input:tu.input});
       }
+      workMsgs.push({role:'assistant', content:assistantContent});
+
+      // 执行工具，收集结果
+      const toolResults = [];
+      for (const tu of toolUses) {
+        const result = await executeMcpTool(tu.name, tu.input);
+        const content = typeof result === 'string' ? result :
+          (result?.content?.[0]?.text || JSON.stringify(result));
+        toolResults.push({type:'tool_result', tool_use_id:tu.id, content});
+      }
+      workMsgs.push({role:'user', content:toolResults});
+
+      // 继续新一轮回复
+      currentBubble = null;
     }
-    finalizeThinking();
-    addOrUpdateBubble(wrap, aiText, true);
-    messages.push({ role: 'assistant', content: aiText });
+
+    messages.push({role:'assistant', content:[{type:'text', text:finalText}]});
   } catch(e) {
     addOrUpdateBubble(wrap, '连接出错，请重试。', true);
   }
@@ -1497,6 +1620,7 @@ async function sendMsg() {
   document.getElementById('send-btn').disabled = false;
   document.getElementById('input').focus();
 }
+
 
 // ── Lightbox直接打开（聊天图片） ──
 function openLightboxDirect(src) {
@@ -1628,6 +1752,7 @@ function closeLightbox() {
   initEmoji();
   updateAnniversary();
   await mcpInit();
+  await initMcpTools();
   document.getElementById('status-text').textContent = '今天 ' + now();
   document.getElementById('input').focus();
 })();
