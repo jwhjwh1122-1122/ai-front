@@ -647,7 +647,16 @@ textarea::placeholder { color: var(--text-muted); }
   color: var(--text);
   transition: background 0.15s;
 }
-.status-preset:active { background: var(--accent); color: white; }
+.msg-action-btn {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+}
+.msg-action-btn:active { opacity: 1; }
 
 /* 设置面板 */
 .settings-card {
@@ -744,7 +753,7 @@ textarea::placeholder { color: var(--text-muted); }
     onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
   <div class="input-btn" onclick="toggleEmojiPanel()" title="表情" style="font-size:17px;">♡</div>
   <div class="input-btn" onclick="triggerChatImgUpload()" title="发图片" style="font-size:16px;">⊡</div>
-  <button class="send-btn" id="send-btn" onclick="sendMsg()">↑</button>
+  <button class="send-btn" id="send-btn" onclick="isTyping ? stopGeneration() : sendMsg()">↑</button>
 </div>
 
 <!-- 表情包面板 -->
@@ -803,6 +812,17 @@ textarea::placeholder { color: var(--text-muted); }
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
       <div class="note-modal-title" style="margin:0">会话信息</div>
       <div class="emoji-close-btn" onclick="closeSettings()">✕</div>
+    </div>
+
+    <!-- 模型切换 -->
+    <div class="settings-card" style="margin-top:10px;">
+      <div class="settings-label">模型</div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <div class="ctx-option" data-model="anthropic/claude-sonnet-4-6" onclick="setModel('anthropic/claude-sonnet-4-6')">Sonnet 4.6</div>
+        <div class="ctx-option" data-model="anthropic/claude-opus-4-6" onclick="setModel('anthropic/claude-opus-4-6')">Opus 4.6</div>
+        <div class="ctx-option" data-model="anthropic/claude-haiku-4-5" onclick="setModel('anthropic/claude-haiku-4-5')">Haiku 4.5</div>
+      </div>
+      <div class="settings-sub" id="model-sub" style="margin-top:6px;"></div>
     </div>
 
     <!-- 上下文窗口 -->
@@ -919,6 +939,68 @@ function toggleThemeMenu() {
 }
 
 let ctxWindow = 20;
+let currentModel = 'anthropic/claude-sonnet-4-6';
+
+// 重新生成最后一条
+// 重新生成任意一条AI消息（截断到那条，重新生成）
+async function regenAt(row) {
+  if (isTyping) return;
+  const msgIdx = parseInt(row.dataset.msgIdx);
+  // 删掉msgIdx及之后的所有消息
+  messages.splice(msgIdx);
+  // 删掉DOM里那行及之后的所有msg-row
+  const allRows = [...document.querySelectorAll('#messages .msg-row')];
+  allRows.forEach(r => {
+    if (parseInt(r.dataset.msgIdx) >= msgIdx) r.remove();
+  });
+  if (!messages.length || messages[messages.length-1].role !== 'user') return;
+
+  const wrap = startAiBubble(messages.length);
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null;
+  isTyping = true;
+  const sendBtn2 = document.getElementById('send-btn');
+  sendBtn2.textContent = '■'; sendBtn2.style.fontSize = '14px';
+
+  let workMsgs = [...messages];
+  let finalText = '';
+  try {
+    while (true) {
+      const {text: aiText, toolUses, stopReason} = await streamResponse(wrap, workMsgs);
+      finalText = aiText;
+      if (stopReason !== 'tool_calls' || toolUses.length === 0) break;
+      workMsgs.push({role:'assistant', content:aiText||null, tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
+      for (const tu of toolUses) {
+        const result = await executeMcpTool(tu.name, tu.input);
+        workMsgs.push({role:'tool', content:result?.content?.[0]?.text||JSON.stringify(result), tool_call_id:tu.id});
+      }
+      currentBubble = null;
+    }
+    messages.push({role:'assistant', content:finalText});
+  } catch(e) { addOrUpdateBubble(wrap,'连接出错，请重试。',true); }
+  isTyping = false;
+  const btn2 = document.getElementById('send-btn');
+  btn2.textContent = '↑'; btn2.style.fontSize = '';
+  btn2.disabled = false;
+
+// 编辑任意一条用户消息
+function editMsgAt(row) {
+  const msgIdx = parseInt(row.dataset.msgIdx);
+  const msg = messages[msgIdx];
+  if (!msg) return;
+  const text = typeof msg.content === 'string' ? msg.content :
+    (Array.isArray(msg.content) ? (msg.content.find(c=>c.type==='text')?.text || '') : '');
+  const input = document.getElementById('input');
+  input.value = text;
+  autoResize(input);
+  input.focus();
+  // 删掉msgIdx及之后的所有消息
+  messages.splice(msgIdx);
+  // 删掉DOM里那行及之后的所有msg-row
+  const allRows = [...document.querySelectorAll('#messages .msg-row')];
+  allRows.forEach(r => {
+    if (parseInt(r.dataset.msgIdx) >= msgIdx) r.remove();
+  });
+}
 
 function setCtxWindow(n) {
   ctxWindow = n;
@@ -942,10 +1024,29 @@ function initCtxWindow() {
 const CONTEXT_LIMIT = 200000;
 let totalTokens = 0;
 
+function setModel(model) {
+  currentModel = model;
+  localStorage.setItem('current-model', model);
+  updateModelDisplay();
+}
+function updateModelDisplay() {
+  document.querySelectorAll('[data-model]').forEach(el => {
+    el.classList.toggle('active', el.dataset.model === currentModel);
+  });
+  const names = {'anthropic/claude-sonnet-4-6':'Sonnet 4.6 — 平衡', 'anthropic/claude-opus-4-6':'Opus 4.6 — 强力', 'anthropic/claude-haiku-4-5':'Haiku 4.5 — 快速'};
+  const sub = document.getElementById('model-sub');
+  if (sub) sub.textContent = `当前：${names[currentModel] || currentModel}`;
+}
+function initModel() {
+  const saved = localStorage.getItem('current-model');
+  if (saved) currentModel = saved;
+}
+
 function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
   updateTokenDisplay();
   updateCtxDisplay();
+  updateModelDisplay();
   fetchBalance();
 }
 function closeSettings() {
@@ -1288,11 +1389,11 @@ function cancelEmojiName() {
 }
 
 // ── 消息 ──
-function appendUserBubble(text, imgData) {
+function appendUserBubble(text, imgData, msgIdx) {
   const row = document.createElement('div');
   row.className = 'msg-row user';
+  if (msgIdx !== undefined) { row.dataset.msgIdx = msgIdx; row.dataset.msgRole = 'user'; }
   const uav = localStorage.getItem('chat-avatar-user');
-  // 有头像时才显示，且DOM放在bubble-wrap前（row-reverse下显示在最右）
   const avatarHtml = uav
     ? `<div class="msg-avatar msg-avatar-user has-img"><img src="${uav}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
     : '';
@@ -1303,24 +1404,26 @@ function appendUserBubble(text, imgData) {
   if (text) {
     content += `<div class="bubble user">${escHtml(text)}</div>`;
   }
-  // avatarHtml在前：row-reverse下头像在最右，bubble-wrap靠左
-  row.innerHTML = `${avatarHtml}<div class="bubble-wrap">${content}<div class="msg-time">${now()}</div></div>`;
+  row.innerHTML = `${avatarHtml}<div class="bubble-wrap">${content}<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;"><span class="msg-action-btn" onclick="editMsgAt(this.closest('.msg-row'))" title="编辑">ฅ</span><span class="msg-time">${now()}</span></div></div>`;
   document.getElementById('messages').appendChild(row);
   scrollBottom();
 }
 
 let currentBubble = null;
 let currentThinkWrap = null;
+let currentAiRow = null;
 
-function startAiBubble() {
+function startAiBubble(msgIdx) {
   const av = localStorage.getItem('chat-avatar-ai');
   const avatarHtml = av
     ? `<div class="msg-avatar msg-avatar-凛 has-img"><img src="${av}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
     : `<div class="msg-avatar msg-avatar-凛">凛</div>`;
   const row = document.createElement('div');
   row.className = 'msg-row';
+  if (msgIdx !== undefined) { row.dataset.msgIdx = msgIdx; row.dataset.msgRole = 'assistant'; }
   row.innerHTML = `${avatarHtml}<div class="bubble-wrap" id="ai-wrap"></div>`;
   document.getElementById('messages').appendChild(row);
+  currentAiRow = row;
   return row.querySelector('#ai-wrap');
 }
 
@@ -1376,10 +1479,19 @@ function addOrUpdateBubble(wrap, text, done) {
   if (done) {
     currentBubble.innerHTML = renderBubbleContent(text);
     currentBubble.classList.remove('typing-cursor');
-    const time = document.createElement('div');
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;align-items:center;gap:6px;';
+    const time = document.createElement('span');
     time.className = 'msg-time';
     time.textContent = now();
-    wrap.appendChild(time);
+    const regen = document.createElement('span');
+    regen.className = 'msg-action-btn';
+    regen.textContent = '๑';
+    regen.title = '重新生成';
+    regen.onclick = () => regenAt(currentAiRow);
+    footer.appendChild(time);
+    footer.appendChild(regen);
+    wrap.appendChild(footer);
   } else {
     currentBubble.textContent = text;
   }
@@ -1406,8 +1518,6 @@ function scrollBottom() {
 }
 
 // ── MCP ──
-let mcpTools = [];
-
 async function mcpInit() {
   try {
     const r = await fetch(MCP_URL, {
@@ -1421,23 +1531,30 @@ async function mcpInit() {
   } catch(e) { console.warn('MCP init failed', e); }
 }
 
-async function initMcpTools() {
-  try {
-    const r = await fetch(MCP_URL, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0', method:'tools/list', params:{}, id:3, _sid:mcpSessionId})
-    });
-    const sid = r.headers.get('Mcp-Session-Id');
-    if (sid) mcpSessionId = sid;
-    const data = await r.json();
-    const tools = data.result?.tools || [];
-    mcpTools = tools.map(t => ({
-      name: t.name,
-      description: t.description || '',
-      input_schema: t.inputSchema || {type:'object', properties:{}}
-    }));
-  } catch(e) { console.warn('MCP tools fetch failed', e); mcpTools = []; }
+let abortController = null;
+
+function stopGeneration() {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
 }
+const OB_TOOLS = [
+  { type:'function', function:{ name:'breath', description:'检索/浮现记忆。无query=自动浮现，有query=关键词检索。',
+    parameters:{ type:'object', properties:{ query:{type:'string'}, importance_min:{type:'number'}, max_results:{type:'number'}, max_tokens:{type:'number'} }}}},
+  { type:'function', function:{ name:'hold', description:'存储单条记忆，自动打标+合并。',
+    parameters:{ type:'object', required:['content'], properties:{ content:{type:'string'}, tags:{type:'string'}, importance:{type:'number'}, feel:{type:'boolean'} }}}},
+  { type:'function', function:{ name:'grow', description:'日记归档，自动拆分为多桶。',
+    parameters:{ type:'object', required:['content'], properties:{ content:{type:'string'} }}}},
+  { type:'function', function:{ name:'dream', description:'读取最近新增的记忆桶，供自省。',
+    parameters:{ type:'object', properties:{}}}},
+  { type:'function', function:{ name:'pulse', description:'系统状态+记忆桶列表。',
+    parameters:{ type:'object', properties:{ include_archive:{type:'boolean'} }}}},
+  { type:'function', function:{ name:'trace', description:'修改记忆元数据或内容。',
+    parameters:{ type:'object', required:['bucket_id'], properties:{ bucket_id:{type:'string'}, resolved:{type:'number'}, pinned:{type:'number'}, content:{type:'string'} }}}}
+];
+
+// OB工具定义（OpenAI格式，硬编码）
 
 async function executeMcpTool(name, args) {
   try {
@@ -1461,14 +1578,18 @@ function buildMsgs(msgs) {
   return windowed;
 }
 
-// 流式读取Anthropic格式SSE，返回文本、thinking、工具调用、stopReason
-async function streamAnthropic(wrap, msgHistory) {
+// 流式读取，OpenAI格式，解析reasoning(thinking) + tool_calls
+async function streamResponse(wrap, msgHistory) {
+  abortController = new AbortController();
   const resp = await fetch('/api/chat-v2', {
     method:'POST', headers:{'Content-Type':'application/json'},
+    signal: abortController.signal,
     body: JSON.stringify({
+      model: currentModel,
       messages: buildMsgs(msgHistory),
       system: getSystemPrompt(),
-      tools: mcpTools.length > 0 ? mcpTools : undefined
+      tools: OB_TOOLS,
+      tool_choice: 'auto'
     })
   });
 
@@ -1476,71 +1597,82 @@ async function streamAnthropic(wrap, msgHistory) {
   const dec = new TextDecoder();
   let buf = '';
   let thinkingText = '', responseText = '';
-  let toolUses = [], currentTool = null, currentJson = '';
-  let currentBlockType = null, stopReason = null;
+  let toolCallsPartial = {}; // {index: {id, name, args}}
+  let stopReason = null;
 
-  while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, {stream:true});
-    const lines = buf.split('\n'); buf = lines.pop();
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split('\n'); buf = lines.pop();
 
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const raw = line.slice(5).trim();
-      if (!raw || raw === '[DONE]') continue;
-      try {
-        const d = JSON.parse(raw);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const raw = line.slice(5).trim();
+        if (!raw || raw === '[DONE]') continue;
+        try {
+          const d = JSON.parse(raw);
+          const choice = d.choices?.[0];
+          const delta = choice?.delta;
+          const finish = choice?.finish_reason;
 
-        if (d.type === 'content_block_start') {
-          currentBlockType = d.content_block.type;
-          if (currentBlockType === 'thinking') {
+          if (d.usage) totalTokens = (d.usage.prompt_tokens||0)+(d.usage.completion_tokens||0);
+
+          if (delta?.reasoning) {
             if (!currentThinkWrap) addThinkingBlock(wrap);
-            thinkingText = '';
-          } else if (currentBlockType === 'tool_use') {
-            currentTool = {id: d.content_block.id, name: d.content_block.name, input: {}};
-            currentJson = '';
-            // 显示工具调用指示器
-            const ind = document.createElement('div');
-            ind.className = 'tool-indicator';
-            ind.id = `tool-${d.content_block.id}`;
-            ind.innerHTML = `<div class="tool-spinner"></div>调用 ${d.content_block.name}…`;
-            wrap.appendChild(ind);
-            scrollBottom();
-          }
-
-        } else if (d.type === 'content_block_delta') {
-          const delta = d.delta;
-          if (delta.type === 'thinking_delta') {
-            thinkingText += delta.thinking;
+            thinkingText += delta.reasoning;
             if (currentThinkContent) currentThinkContent.textContent = thinkingText;
-          } else if (delta.type === 'text_delta') {
-            responseText += delta.text;
+          }
+
+          if (delta?.content) {
+            responseText += delta.content;
             addOrUpdateBubble(wrap, responseText, false);
-          } else if (delta.type === 'input_json_delta') {
-            currentJson += delta.partial_json;
           }
 
-        } else if (d.type === 'content_block_stop') {
-          if (currentBlockType === 'tool_use' && currentTool) {
-            try { currentTool.input = JSON.parse(currentJson); } catch(e) {}
-            toolUses.push({...currentTool});
-            // 更新指示器为完成
-            const ind = document.getElementById(`tool-${currentTool.id}`);
-            if (ind) { ind.querySelector('.tool-spinner').style.display='none'; ind.innerHTML += ' ✓'; }
-            currentTool = null; currentJson = '';
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (!toolCallsPartial[idx]) {
+                toolCallsPartial[idx] = {id:'', name:'', args:''};
+                const indId = `tool-ind-${idx}`;
+                const ind = document.createElement('div');
+                ind.className = 'tool-indicator'; ind.id = indId;
+                const name = tc.function?.name || '工具';
+                ind.innerHTML = `<div class="tool-spinner"></div>调用 ${name}…`;
+                wrap.appendChild(ind);
+                scrollBottom();
+              }
+              if (tc.id) toolCallsPartial[idx].id = tc.id;
+              if (tc.function?.name) {
+                toolCallsPartial[idx].name = tc.function.name;
+                const ind = document.getElementById(`tool-ind-${idx}`);
+                if (ind) ind.innerHTML = `<div class="tool-spinner"></div>调用 ${tc.function.name}…`;
+              }
+              if (tc.function?.arguments) toolCallsPartial[idx].args += tc.function.arguments;
+            }
           }
 
-        } else if (d.type === 'message_delta') {
-          stopReason = d.delta?.stop_reason;
-          if (d.usage) totalTokens += (d.usage.output_tokens || 0);
+          if (finish === 'tool_calls') stopReason = 'tool_calls';
+          else if (finish && finish !== 'null') stopReason = finish;
 
-        } else if (d.type === 'message_start') {
-          if (d.message?.usage) totalTokens = d.message.usage.input_tokens || 0;
-        }
-      } catch(e) {}
+        } catch(e) {}
+      }
     }
+  } catch(e) {
+    if (e.name !== 'AbortError') throw e;
+    // AbortError: 正常停止，保留已生成内容
   }
+  abortController = null;
+
+  // 工具调用完成，更新指示器
+  const toolUses = Object.values(toolCallsPartial).map((tc, i) => {
+    let input = {};
+    try { input = JSON.parse(tc.args); } catch(e) {}
+    const ind = document.getElementById(`tool-ind-${i}`);
+    if (ind) { ind.querySelector('.tool-spinner')?.remove(); ind.innerHTML += ' ✓'; }
+    return {id: tc.id, name: tc.name, input};
+  });
 
   finalizeThinking();
   if (responseText) addOrUpdateBubble(wrap, responseText, true);
@@ -1555,69 +1687,69 @@ async function sendMsg() {
   if (!text && !hasImg || isTyping) return;
 
   input.value = ''; input.style.height = 'auto';
-  document.getElementById('send-btn').disabled = true;
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.textContent = '■';
+  sendBtn.style.fontSize = '14px';
   isTyping = true;
 
-  // 构建用户消息（Anthropic格式）
+  // 构建用户消息（OpenAI格式）
   let userContent;
   if (hasImg) {
     const parts = [];
     if (text) parts.push({type:'text', text});
-    const imgData = pendingChatImg.data.split(',')[1];
-    const mtype = pendingChatImg.type || 'image/jpeg';
-    parts.push({type:'image', source:{type:'base64', media_type:mtype, data:imgData}});
+    parts.push({type:'image_url', image_url:{url: pendingChatImg.data}});
     userContent = parts;
   } else {
-    userContent = [{type:'text', text}];
+    userContent = text;
   }
 
   messages.push({role:'user', content: userContent});
-  appendUserBubble(text, hasImg ? pendingChatImg.data : null);
+  appendUserBubble(text, hasImg ? pendingChatImg.data : null, messages.length - 1);
   if (hasImg) removeImgPreview();
 
-  const wrap = startAiBubble();
-  currentBubble = null; currentThinkWrap = null;
+  const wrap = startAiBubble(messages.length); // assistant将要的index
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null;
 
-  // 工作消息历史（可能因工具调用扩展）
   let workMsgs = [...messages];
   let finalText = '';
 
   try {
     while (true) {
-      const {text: aiText, toolUses, stopReason} = await streamAnthropic(wrap, workMsgs);
+      const {text: aiText, toolUses, stopReason} = await streamResponse(wrap, workMsgs);
       finalText = aiText;
 
-      if (stopReason !== 'tool_use' || toolUses.length === 0) break;
+      if (stopReason !== 'tool_calls' || toolUses.length === 0) break;
 
-      // 把助手消息加入历史
-      const assistantContent = [];
-      if (aiText) assistantContent.push({type:'text', text:aiText});
-      for (const tu of toolUses) {
-        assistantContent.push({type:'tool_use', id:tu.id, name:tu.name, input:tu.input});
-      }
-      workMsgs.push({role:'assistant', content:assistantContent});
+      // 把助手消息（含tool_calls）加入历史
+      workMsgs.push({
+        role:'assistant',
+        content: aiText || null,
+        tool_calls: toolUses.map(tu => ({
+          id: tu.id, type:'function',
+          function:{name:tu.name, arguments:JSON.stringify(tu.input)}
+        }))
+      });
 
-      // 执行工具，收集结果
-      const toolResults = [];
+      // 执行工具，加入tool结果
       for (const tu of toolUses) {
         const result = await executeMcpTool(tu.name, tu.input);
-        const content = typeof result === 'string' ? result :
-          (result?.content?.[0]?.text || JSON.stringify(result));
-        toolResults.push({type:'tool_result', tool_use_id:tu.id, content});
+        const content = result?.content?.[0]?.text || JSON.stringify(result);
+        workMsgs.push({role:'tool', content, tool_call_id: tu.id});
       }
-      workMsgs.push({role:'user', content:toolResults});
 
-      // 继续新一轮回复
       currentBubble = null;
     }
 
-    messages.push({role:'assistant', content:[{type:'text', text:finalText}]});
+    messages.push({role:'assistant', content: finalText});
+    if (currentAiRow) currentAiRow.dataset.msgIdx = messages.length - 1;
   } catch(e) {
+    console.error(e);
     addOrUpdateBubble(wrap, '连接出错，请重试。', true);
   }
 
   isTyping = false;
-  document.getElementById('send-btn').disabled = false;
+  const btn = document.getElementById('send-btn');
+  btn.textContent = '↑'; btn.style.fontSize = '';
   document.getElementById('input').focus();
 }
 
@@ -1749,6 +1881,7 @@ function closeLightbox() {
   initAvatar();
   initStatus();
   initCtxWindow();
+  initModel();
   initEmoji();
   updateAnniversary();
   await mcpInit();
