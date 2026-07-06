@@ -108,28 +108,24 @@ def serve_memory(filename):
 def chat_v2():
     data = request.json
     payload = {
-        'model': 'anthropic/claude-sonnet-4-6',
+        'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
-        'thinking': {'type': 'enabled', 'budget_tokens': 8000},
+        'thinking': {'type': 'enabled', 'budget_tokens': 5000},
     }
     if data.get('system'):
         payload['system'] = data['system']
     if data.get('tools'):
         payload['tools'] = data['tools']
-
-    hdrs = {
-        'Authorization': f'Bearer {OR_KEY}',
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'interleaved-thinking-2025-05-14',
-    }
+    if data.get('tool_choice'):
+        payload['tool_choice'] = data['tool_choice']
 
     def gen():
         with requests.post(
-            'https://openrouter.ai/api/v1/messages',
-            headers=hdrs, json=payload, stream=True, timeout=180
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={'Authorization': f'Bearer {OR_KEY}', 'Content-Type': 'application/json'},
+            json=payload, stream=True, timeout=180
         ) as r:
             for line in r.iter_lines():
                 if line:
