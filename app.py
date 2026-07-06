@@ -1,12 +1,15 @@
-from flask import Flask, request, Response, send_from_directory
+from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os
+import requests, json, os, time
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
+MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
+os.makedirs(MEMORIES_DIR, exist_ok=True)
 
 @app.route('/')
 def index():
@@ -49,6 +52,57 @@ def mcp():
     if 'Mcp-Session-Id' in r.headers:
         resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
     return resp
+
+# ── 时光墙 ──────────────────────────────────────────
+
+@app.route('/api/memories', methods=['GET'])
+def get_memories():
+    files = []
+    for f in sorted(os.listdir(MEMORIES_DIR), reverse=True):
+        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+            ts_str = f.rsplit('.', 1)[0]
+            note = ''
+            note_path = os.path.join(MEMORIES_DIR, ts_str + '.txt')
+            if os.path.exists(note_path):
+                with open(note_path, 'r', encoding='utf-8') as nf:
+                    note = nf.read().strip()
+            files.append({'filename': f, 'url': f'/memories/{f}', 'note': note, 'ts': ts_str})
+    return jsonify(files)
+
+@app.route('/api/memories', methods=['POST'])
+def upload_memory():
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    file = request.files['file']
+    note = request.form.get('note', '').strip()
+    ts = str(int(time.time() * 1000))
+    ext = 'jpg'
+    if file.filename and '.' in file.filename:
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+    filename = f"{ts}.{ext}"
+    file.save(os.path.join(MEMORIES_DIR, filename))
+    if note:
+        with open(os.path.join(MEMORIES_DIR, ts + '.txt'), 'w', encoding='utf-8') as nf:
+            nf.write(note)
+    return jsonify({'filename': filename, 'url': f'/memories/{filename}', 'ts': ts})
+
+@app.route('/api/memories/<filename>', methods=['DELETE'])
+def delete_memory(filename):
+    safe = secure_filename(filename)
+    fp = os.path.join(MEMORIES_DIR, safe)
+    if os.path.exists(fp):
+        os.remove(fp)
+    ts_str = safe.rsplit('.', 1)[0]
+    note_fp = os.path.join(MEMORIES_DIR, ts_str + '.txt')
+    if os.path.exists(note_fp):
+        os.remove(note_fp)
+    return jsonify({'ok': True})
+
+@app.route('/memories/<filename>')
+def serve_memory(filename):
+    return send_from_directory(MEMORIES_DIR, filename)
+
+# ────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
