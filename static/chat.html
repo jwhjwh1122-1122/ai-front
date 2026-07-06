@@ -7,9 +7,10 @@
 <style>
 :root {
   --bg: #f0f0f3;
+  --bar-bg: rgba(240,240,243,0.45);
   --bg2: rgba(255,255,255,0.72);
-  --bubble-ai: rgba(255,255,255,0.60);
-  --bubble-user: rgba(220,220,230,0.58);
+  --bubble-ai: rgba(255,255,255,0.32);
+  --bubble-user: rgba(220,220,230,0.30);
   --text: #2c2c3a;
   --text-muted: #888;
   --accent: #9999bb;
@@ -19,9 +20,10 @@
 }
 .theme-star {
   --bg: #0d0d1a;
+  --bar-bg: rgba(13,13,26,0.45);
   --bg2: rgba(20,20,40,0.75);
-  --bubble-ai: rgba(30,30,55,0.62);
-  --bubble-user: rgba(50,50,80,0.60);
+  --bubble-ai: rgba(30,30,55,0.35);
+  --bubble-user: rgba(50,50,80,0.32);
   --text: #e8e8f0;
   --text-muted: #8888aa;
   --accent: #a0a0ee;
@@ -31,9 +33,10 @@
 }
 .theme-snow {
   --bg: #f8f9fb;
+  --bar-bg: rgba(248,249,251,0.45);
   --bg2: rgba(255,255,255,0.8);
-  --bubble-ai: rgba(255,255,255,0.65);
-  --bubble-user: rgba(235,240,250,0.62);
+  --bubble-ai: rgba(255,255,255,0.35);
+  --bubble-user: rgba(235,240,250,0.32);
   --text: #333344;
   --text-muted: #999;
   --accent: #aabbcc;
@@ -43,9 +46,10 @@
 }
 .theme-sakura {
   --bg: #fdf0f5;
+  --bar-bg: rgba(253,240,245,0.45);
   --bg2: rgba(255,245,250,0.75);
-  --bubble-ai: rgba(255,250,252,0.65);
-  --bubble-user: rgba(255,220,235,0.60);
+  --bubble-ai: rgba(255,250,252,0.32);
+  --bubble-user: rgba(255,220,235,0.28);
   --text: #3a2a30;
   --text-muted: #aaa;
   --accent: #e8a0b8;
@@ -77,9 +81,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px 10px;
-  background: var(--bg2);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--bar-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
 .topbar-left { display: flex; align-items: center; gap: 10px; }
@@ -87,7 +91,7 @@ body {
   width: 38px; height: 38px;
   border-radius: 50%;
   background: var(--accent);
-  opacity: 0.7;
+  opacity: 0.55;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
   cursor: pointer;
@@ -95,6 +99,7 @@ body {
   flex-shrink: 0;
   transition: opacity 0.2s;
 }
+.avatar.has-img { opacity: 1; }
 .avatar:active { opacity: 1; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .name { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
@@ -172,12 +177,13 @@ body {
   width: 30px; height: 30px;
   border-radius: 50%;
   background: var(--accent);
-  opacity: 0.5;
+  opacity: 0.45;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px;
   overflow: hidden;
 }
+.msg-avatar.has-img { opacity: 1; }
 .msg-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
 .bubble-wrap { max-width: 75%; display: flex; flex-direction: column; gap: 3px; }
@@ -189,9 +195,10 @@ body {
   font-size: 15px;
   line-height: 1.55;
   word-break: break-word;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 2px 12px var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 2px 16px var(--shadow);
+  border: 1px solid rgba(255,255,255,0.18);
   white-space: pre-wrap;
   user-select: text;
 }
@@ -320,9 +327,9 @@ body {
   position: relative;
   z-index: 10;
   padding: 10px 14px max(14px, env(safe-area-inset-bottom));
-  background: var(--bg2);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--bar-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-top: 1px solid var(--border);
   display: flex;
   gap: 8px;
@@ -695,10 +702,10 @@ textarea::placeholder { color: var(--text-muted); }
 </div>
 
 <div class="avatar-menu" id="avatar-menu">
-  <div class="avatar-menu-item" onclick="triggerAvatarUpload('ai')">🖼 凛的头像</div>
-  <div class="avatar-menu-item" onclick="triggerAvatarUpload('user')">🖼 宝宝的头像</div>
+  <div class="avatar-menu-item" onclick="triggerAvatarUpload('ai')">•͈ ₃ •͈ 凛的头像</div>
+  <div class="avatar-menu-item" onclick="triggerAvatarUpload('user')">⌯⦁֊⦁꧞ 宝宝的头像</div>
   <div class="avatar-menu-item" onclick="openStatusPicker()">◉ 设置状态</div>
-  <div class="avatar-menu-item" onclick="triggerBgUpload()">🎨 换背景</div>
+  <div class="avatar-menu-item" onclick="triggerBgUpload()">☾ 换背景</div>
   <div class="avatar-menu-item" onclick="clearBackground()" id="clear-bg-btn" style="display:none">✕ 清除背景</div>
 </div>
 
@@ -1080,10 +1087,12 @@ function applyAiAvatar(data) {
   const avEl = document.getElementById('avatar');
   const txtEl = document.getElementById('avatar-text');
   txtEl.style.display = 'none';
+  avEl.classList.add('has-img');
   let img = avEl.querySelector('img');
   if (!img) { img = document.createElement('img'); avEl.appendChild(img); }
   img.src = data;
   document.querySelectorAll('.msg-avatar-凛').forEach(el => {
+    el.classList.add('has-img');
     el.innerHTML = `<img src="${data}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
   });
 }
@@ -1280,7 +1289,7 @@ function appendUserBubble(text, imgData) {
   const uav = localStorage.getItem('chat-avatar-user');
   // 有头像时才显示，且DOM放在bubble-wrap前（row-reverse下显示在最右）
   const avatarHtml = uav
-    ? `<div class="msg-avatar msg-avatar-user"><img src="${uav}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
+    ? `<div class="msg-avatar msg-avatar-user has-img"><img src="${uav}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
     : '';
   let content = '';
   if (imgData) {
@@ -1301,7 +1310,7 @@ let currentThinkWrap = null;
 function startAiBubble() {
   const av = localStorage.getItem('chat-avatar-ai');
   const avatarHtml = av
-    ? `<div class="msg-avatar msg-avatar-凛"><img src="${av}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
+    ? `<div class="msg-avatar msg-avatar-凛 has-img"><img src="${av}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
     : `<div class="msg-avatar msg-avatar-凛">凛</div>`;
   const row = document.createElement('div');
   row.className = 'msg-row';
