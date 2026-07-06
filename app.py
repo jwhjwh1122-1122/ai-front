@@ -104,5 +104,14 @@ def serve_memory(filename):
 
 # ────────────────────────────────────────────────────
 
+@app.route('/api/key-info', methods=['GET'])
+def key_info():
+    try:
+        r = requests.get('https://openrouter.ai/api/v1/auth/key',
+            headers={'Authorization': f'Bearer {OR_KEY}'}, timeout=10)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
