@@ -922,10 +922,6 @@ let currentTheme = '';
 let themeLabel = '🌫️ 雨雾';
 let pendingChatImg = null;
 
-const DEFAULT_EMOJI = ['🥺','💕','✨','😊','😔','🤍','💫','👾','🌸','🍀','🎀','🫶',
-  '💌','🌙','⭐','🎐','🫧','😋','😤','🤭','🥹','😭','😂','🙄',
-  '😘','🤗','😅','🫠','💝','🌈','🍵','🐾'];
-
 // ── 主题 ──
 function setTheme(theme, label) {
   document.body.className = theme ? 'theme-' + theme : '';
@@ -981,6 +977,7 @@ async function regenAt(row) {
   const btn2 = document.getElementById('send-btn');
   btn2.textContent = '↑'; btn2.style.fontSize = '';
   btn2.disabled = false;
+}
 
 // 编辑任意一条用户消息
 function editMsgAt(row) {
@@ -1411,6 +1408,7 @@ function appendUserBubble(text, imgData, msgIdx) {
 
 let currentBubble = null;
 let currentThinkWrap = null;
+let currentThinkContent = null;
 let currentAiRow = null;
 
 function startAiBubble(msgIdx) {
