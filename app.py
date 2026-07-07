@@ -7,6 +7,7 @@ app = Flask(__name__, static_folder='static')
 CORS(app)
 
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
 MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
 MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
 os.makedirs(MEMORIES_DIR, exist_ok=True)
@@ -102,7 +103,7 @@ def delete_memory(filename):
 def serve_memory(filename):
     return send_from_directory(MEMORIES_DIR, filename)
 
-# ────────────────────────────────────────────────────
+# ── chat-v2（thinking + tools）────────────────────────
 
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
@@ -133,6 +134,47 @@ def chat_v2():
 
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+# ── TTS（ElevenLabs）────────────────────────────────
+
+VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'   # 沉的
+VOICE_DOG  = '2cdvnKJ5TZi631y5PN1s'   # 小狗
+
+@app.route('/api/tts', methods=['POST'])
+def tts():
+    if not EL_KEY:
+        return jsonify({'error': 'ElevenLabs key not set'}), 500
+    data = request.json
+    text = data.get('text', '').strip()
+    voice = data.get('voice', 'calm')
+    if not text:
+        return jsonify({'error': 'no text'}), 400
+    voice_id = VOICE_DOG if voice == 'dog' else VOICE_CALM
+    # 截断超长文本
+    if len(text) > 500:
+        text = text[:500]
+    r = requests.post(
+        f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream',
+        headers={'xi-api-key': EL_KEY, 'Content-Type': 'application/json'},
+        json={
+            'text': text,
+            'model_id': 'eleven_multilingual_v2',
+            'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}
+        },
+        stream=True, timeout=30
+    )
+    if r.status_code != 200:
+        return jsonify({'error': 'TTS failed', 'status': r.status_code}), 500
+
+    def gen():
+        for chunk in r.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
+
+    return Response(gen(), mimetype='audio/mpeg',
+                    headers={'Cache-Control': 'no-cache'})
+
+# ────────────────────────────────────────────────────
 
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
