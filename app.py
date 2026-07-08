@@ -1,6 +1,6 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os, time
+import requests, json, os, time, base64
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -27,7 +27,6 @@ def chat():
     }
     if data.get('system'):
         payload['system'] = data['system']
-
     def gen():
         with requests.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -37,7 +36,6 @@ def chat():
             for line in r.iter_lines():
                 if line:
                     yield line.decode() + '\n\n'
-
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
@@ -54,8 +52,7 @@ def mcp():
         resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
     return resp
 
-# ── 时光墙 ──────────────────────────────────────────
-
+# ── 时光墙 ──
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     files = []
@@ -103,8 +100,27 @@ def delete_memory(filename):
 def serve_memory(filename):
     return send_from_directory(MEMORIES_DIR, filename)
 
-# ── chat-v2（thinking + tools）────────────────────────
+# ── 时光墙图片读取（给凛用）──
+@app.route('/api/memories/<filename>/image', methods=['GET'])
+def get_memory_image(filename):
+    safe = secure_filename(filename)
+    fp = os.path.join(MEMORIES_DIR, safe)
+    if not os.path.exists(fp):
+        return jsonify({'error': 'not found'}), 404
+    ext = safe.rsplit('.', 1)[-1].lower()
+    mime = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+            'gif': 'image/gif', 'webp': 'image/webp'}.get(ext, 'image/jpeg')
+    with open(fp, 'rb') as f:
+        data = base64.b64encode(f.read()).decode()
+    note = ''
+    ts_str = safe.rsplit('.', 1)[0]
+    note_path = os.path.join(MEMORIES_DIR, ts_str + '.txt')
+    if os.path.exists(note_path):
+        with open(note_path, 'r', encoding='utf-8') as nf:
+            note = nf.read().strip()
+    return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
+# ── chat-v2 ──
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
@@ -121,7 +137,6 @@ def chat_v2():
         payload['tools'] = data['tools']
     if data.get('tool_choice'):
         payload['tool_choice'] = data['tool_choice']
-
     def gen():
         with requests.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -131,14 +146,12 @@ def chat_v2():
             for line in r.iter_lines():
                 if line:
                     yield line.decode() + '\n\n'
-
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ── TTS（ElevenLabs）────────────────────────────────
-
-VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'   # 沉的
-VOICE_DOG  = '2cdvnKJ5TZi631y5PN1s'   # 小狗
+# ── TTS ──
+VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
+VOICE_DOG  = '2cdvnKJ5TZi631y5PN1s'
 
 @app.route('/api/tts', methods=['POST'])
 def tts():
@@ -150,31 +163,22 @@ def tts():
     if not text:
         return jsonify({'error': 'no text'}), 400
     voice_id = VOICE_DOG if voice == 'dog' else VOICE_CALM
-    # 截断超长文本
     if len(text) > 500:
         text = text[:500]
     r = requests.post(
         f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream',
         headers={'xi-api-key': EL_KEY, 'Content-Type': 'application/json'},
-        json={
-            'text': text,
-            'model_id': 'eleven_multilingual_v2',
-            'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}
-        },
+        json={'text': text, 'model_id': 'eleven_multilingual_v2',
+              'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
         stream=True, timeout=30
     )
     if r.status_code != 200:
         return jsonify({'error': 'TTS failed', 'status': r.status_code}), 500
-
     def gen():
         for chunk in r.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
-
-    return Response(gen(), mimetype='audio/mpeg',
-                    headers={'Cache-Control': 'no-cache'})
-
-# ────────────────────────────────────────────────────
+    return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
