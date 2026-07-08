@@ -571,7 +571,8 @@ async function handleToolResult(name,result,rbEl){
     const textPart=result.content.find(c=>c.type==='text');
     const imgPart=result.content.find(c=>c.type==='image_url');
     if(rbEl){rbEl.textContent=textPart?.text||'';if(imgPart){const img=document.createElement('img');img.src=imgPart.image_url.url;img.style.cssText='max-width:100%;border-radius:8px;margin-top:6px;display:block;';rbEl.appendChild(img);}}
-    return(textPart?.text||'')+(imgPart?'\n[图片已显示]':'');
+    if(imgPart){return {type:'image_inject',text:textPart?.text||'',imageUrl:imgPart.image_url.url};}
+    return textPart?.text||'';
   }
   const content=result?.content?.[0]?.text||JSON.stringify(result)||'（空）';
   if(rbEl)rbEl.textContent=content;
@@ -668,7 +669,15 @@ async function regenAt(row){
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
         const content=await handleToolResult(tu.name,result,tu.rbEl);
-        workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+        if(content&&typeof content==='object'&&content.type==='image_inject'){
+          workMsgs.push({role:'tool',content:content.text||'图片已获取',tool_call_id:tu.id});
+          workMsgs.push({role:'user',content:[
+            {type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.text+'）'},
+            {type:'image_url',image_url:{url:content.imageUrl}}
+          ]});
+        } else {
+          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+        }
       }
       currentBubble=null;
     }
@@ -703,7 +712,16 @@ async function sendMsg(){
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
         const content=await handleToolResult(tu.name,result,tu.rbEl);
-        workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+        if(content&&typeof content==='object'&&content.type==='image_inject'){
+          // 图片注入：tool result用文字，再追加一条user消息带图片让我看见
+          workMsgs.push({role:'tool',content:content.text||'图片已获取',tool_call_id:tu.id});
+          workMsgs.push({role:'user',content:[
+            {type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.text+'）'},
+            {type:'image_url',image_url:{url:content.imageUrl}}
+          ]});
+        } else {
+          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+        }
       }
       currentBubble=null;
     }
