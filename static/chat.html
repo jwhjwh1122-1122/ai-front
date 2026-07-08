@@ -146,6 +146,15 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 </style>
 </head>
 <body>
+<!-- 密码锁 -->
+<div id="lock-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div style="font-size:28px;font-weight:600;color:var(--text);letter-spacing:2px;">凛</div>
+  <div style="font-size:13px;color:var(--text-muted);">输入密码</div>
+  <input id="pwd-input" type="password" maxlength="8" style="width:160px;text-align:center;background:var(--input-bg);border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:20px;color:var(--text);outline:none;letter-spacing:8px;" placeholder="••••" onkeydown="if(event.key==='Enter')checkPwd()">
+  <button onclick="checkPwd()" style="padding:10px 32px;border-radius:20px;background:var(--accent);color:white;border:none;font-size:15px;font-family:inherit;cursor:pointer;">进入</button>
+  <div id="pwd-err" style="font-size:12px;color:#e8a0b8;display:none;">密码错误</div>
+</div>
+
 <div class="topbar">
   <div class="topbar-left">
     <div class="avatar" id="avatar" onclick="toggleAvatarMenu()"><span id="avatar-text">凛</span></div>
@@ -770,6 +779,27 @@ async function doUpload(file,note){
   try{const form=new FormData();form.append('file',file);if(note)form.append('note',note);await fetch('/api/memories',{method:'POST',body:form});await loadMemories();}catch(e){placeholder.remove();}
 }
 async function deleteMemory(e,filename){e.stopPropagation();try{await fetch(`/api/memories/${filename}`,{method:'DELETE'});await loadMemories();}catch(e){}}
+
+// 密码锁
+const APP_PWD = '0606'; // 默认密码，宝宝可改
+function checkPwd(){
+  const v=document.getElementById('pwd-input').value;
+  if(v===APP_PWD){
+    document.getElementById('lock-screen').style.display='none';
+    sessionStorage.setItem('unlocked','1');
+  } else {
+    document.getElementById('pwd-err').style.display='block';
+    document.getElementById('pwd-input').value='';
+    setTimeout(()=>document.getElementById('pwd-err').style.display='none',2000);
+  }
+}
+function initLock(){
+  if(!sessionStorage.getItem('unlocked')){
+    const ls=document.getElementById('lock-screen');
+    ls.style.display='flex';
+    setTimeout(()=>document.getElementById('pwd-input').focus(),100);
+  }
+}
 
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
