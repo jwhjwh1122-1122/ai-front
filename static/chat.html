@@ -770,12 +770,25 @@ async function doUpload(file,note){
 }
 async function deleteMemory(e,filename){e.stopPropagation();try{await fetch(`/api/memories/${filename}`,{method:'DELETE'});await loadMemories();}catch(e){}}
 
+// ★ iOS键盘高度适配
+function setupViewportFix(){
+  if(!window.visualViewport)return;
+  function onResize(){
+    const h=window.visualViewport.height;
+    document.body.style.height=h+'px';
+    scrollBottom();
+  }
+  window.visualViewport.addEventListener('resize',onResize);
+  window.visualViewport.addEventListener('scroll',onResize);
+}
+
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
   initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();
   updateAnniversary();await mcpInit();
   document.getElementById('status-text').textContent='今天 '+nowStr();
   document.getElementById('input').focus();
+  setupViewportFix();
 })();
 </script>
 </body>
