@@ -426,7 +426,7 @@ function closeAvatarMenu(){document.getElementById('avatar-menu').classList.remo
 document.addEventListener('click',e=>{if(!e.target.closest('.topbar-right')&&!e.target.closest('.theme-menu'))document.getElementById('theme-menu').classList.remove('open');if(!e.target.closest('#avatar')&&!e.target.closest('#avatar-menu'))closeAvatarMenu();});
 
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
-function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}}
+function handleKey(e){}
 function nowStr(){return new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
 function escHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',1900);}
@@ -475,7 +475,7 @@ function renderBubbleContent(text){
   customs.forEach(item=>{
     if(!item.name)return;
     const esc=item.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    html=html.replace(new RegExp(`\\[${esc}\\]`,'g'),`<img src="${item.data}" style="width:120px;height:auto;display:block;margin:4px 0;" alt="${item.name}">`);
+    html=html.replace(new RegExp(`\\[${esc}\\]`,'g'),`<img src="${item.data}" style="width:120px;height:auto;display:block;margin:4px 0;border-radius:0;box-shadow:none;" alt="${item.name}">`);
   });
   return html;
 }
@@ -523,7 +523,16 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
     wrap.appendChild(b);currentBubble=b;
   }
   if(done){
-    currentBubble.innerHTML=renderBubbleContent(text);currentBubble.classList.remove('typing-cursor');
+    const rendered=renderBubbleContent(text);
+    currentBubble.innerHTML=rendered;
+    currentBubble.classList.remove('typing-cursor');
+    // 如果只有表情包图片，去掉bubble边框
+    if(!rendered.replace(/<img[^>]*>/g,'').replace(/\s/g,'').length){
+      currentBubble.style.background='transparent';
+      currentBubble.style.border='none';
+      currentBubble.style.boxShadow='none';
+      currentBubble.style.padding='0';
+    }
     const footer=document.createElement('div');footer.style.cssText='display:flex;align-items:center;gap:6px;';
     const time=document.createElement('span');time.className='msg-time';time.textContent=nowStr();
     const regen=document.createElement('span');regen.className='msg-action-btn';regen.textContent='๑';regen.title='重新生成';
@@ -538,7 +547,23 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
 }
 
 let bubblePressTimer=null;
-function handleBubbleLongPress(e){const el=e.currentTarget;bubblePressTimer=setTimeout(()=>{navigator.clipboard.writeText(el.textContent).then(()=>showToast('已复制')).catch(()=>showToast('复制失败'));bubblePressTimer=null;},600);}
+function handleBubbleLongPress(e){
+  const el=e.currentTarget;
+  bubblePressTimer=setTimeout(()=>{
+    const text=el.textContent;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(()=>showToast('已复制')).catch(()=>fallbackCopy(text));
+    }else{fallbackCopy(text);}
+    bubblePressTimer=null;
+  },800);
+}
+function fallbackCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text;ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
+  document.body.appendChild(ta);ta.focus();ta.select();
+  try{document.execCommand('copy');showToast('已复制');}catch(e){showToast('长按选择文字复制');}
+  document.body.removeChild(ta);
+}
 function cancelBubbleLongPress(){if(bubblePressTimer){clearTimeout(bubblePressTimer);bubblePressTimer=null;}}
 
 async function mcpInit(){
