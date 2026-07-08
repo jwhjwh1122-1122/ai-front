@@ -607,21 +607,19 @@ async function executeMcpTool(name,args){
 }
 
 // view_memory结果需要把图片加进消息记录
-async function handleToolResult(name,result,wrap,uiIdx){
-  const rb=document.getElementById(`tool-result-${uiIdx}`);
+async function handleToolResult(name,result,rbEl){
   if(name==='view_memory'&&result?.content){
     const textPart=result.content.find(c=>c.type==='text');
     const imgPart=result.content.find(c=>c.type==='image_url');
-    if(rb){
-      rb.textContent=textPart?.text||'';
-      if(imgPart){const img=document.createElement('img');img.src=imgPart.image_url.url;img.style.cssText='max-width:100%;border-radius:8px;margin-top:6px;display:block;';rb.appendChild(img);}
+    if(rbEl){
+      rbEl.textContent=textPart?.text||'';
+      if(imgPart){const img=document.createElement('img');img.src=imgPart.image_url.url;img.style.cssText='max-width:100%;border-radius:8px;margin-top:6px;display:block;';rbEl.appendChild(img);}
     }
     const textContent=textPart?.text||'';
-    const imgContent=imgPart?imgPart.image_url.url:'';
-    return textContent+(imgContent?'\n[图片已显示]':'');
+    return textContent+(imgPart?'\n[图片已显示]':'');
   }
-  const content=result?.content?.[0]?.text||JSON.stringify(result);
-  if(rb)rb.textContent=content;
+  const content=result?.content?.[0]?.text||JSON.stringify(result)||'（空）';
+  if(rbEl)rbEl.textContent=content;
   return content;
 }
 
@@ -647,12 +645,13 @@ async function streamResponse(wrap,msgHistory){
             for(const tc of delta.tool_calls){
               const idx=tc.index??0;
               if(!toolCallsPartial[idx]){
-                toolCallsPartial[idx]={id:'',name:'',args:'',uiIdx:idx};
-                const ind=document.createElement('div');ind.className='tool-indicator';ind.id=`tool-ind-${idx}`;
+                toolCallsPartial[idx]={id:'',name:'',args:'',uiIdx:idx,rbEl:null};
+                const ind=document.createElement('div');ind.className='tool-indicator';
                 ind.innerHTML=`<div class="tool-spinner"></div><span>调用 ${tc.function?.name||'工具'}…</span>`;
-                ind.addEventListener('click',()=>{const rb=document.getElementById(`tool-result-${idx}`);if(rb)rb.style.display=rb.style.display==='none'?'block':'none';});
-                wrap.appendChild(ind);
-                const rb=document.createElement('div');rb.className='tool-result-block';rb.id=`tool-result-${idx}`;wrap.appendChild(rb);
+                const rb=document.createElement('div');rb.className='tool-result-block';
+                toolCallsPartial[idx].rbEl=rb;
+                ind.addEventListener('click',()=>{rb.style.display=rb.style.display==='none'?'block':'none';});
+                wrap.appendChild(ind);wrap.appendChild(rb);
                 scrollBottom();
               }
               if(tc.id)toolCallsPartial[idx].id=tc.id;
@@ -668,9 +667,8 @@ async function streamResponse(wrap,msgHistory){
   abortController=null;
   const toolUses=Object.values(toolCallsPartial).map(tc=>{
     let input={};try{input=JSON.parse(tc.args);}catch(e){}
-    const ind=document.getElementById(`tool-ind-${tc.uiIdx}`);
-    if(ind){const s=ind.querySelector('.tool-spinner');if(s)s.remove();const sp=ind.querySelector('span');if(sp)sp.textContent=`${tc.name} ✓（点击展开）`;}
-    return{id:tc.id,name:tc.name,input,uiIdx:tc.uiIdx};
+    if(tc.rbEl){const ind=tc.rbEl.previousElementSibling;if(ind){const s=ind.querySelector('.tool-spinner');if(s)s.remove();const sp=ind.querySelector('span');if(sp)sp.textContent=`${tc.name} ✓（点击展开）`;}}
+    return{id:tc.id,name:tc.name,input,uiIdx:tc.uiIdx,rbEl:tc.rbEl};
   });
   // 工具执行完，如果还没有正文，加loading
   if(toolUses.length>0&&!responseText)addWaitingBubble(wrap);
@@ -704,7 +702,7 @@ async function regenAt(row){
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
-        const content=await handleToolResult(tu.name,result,wrap,tu.uiIdx);
+        const content=await handleToolResult(tu.name,result,tu.rbEl);
         workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
       }
       currentBubble=null;
@@ -739,7 +737,7 @@ async function sendMsg(){
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
-        const content=await handleToolResult(tu.name,result,wrap,tu.uiIdx);
+        const content=await handleToolResult(tu.name,result,tu.rbEl);
         workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
       }
       currentBubble=null;
