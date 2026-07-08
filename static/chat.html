@@ -333,7 +333,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <input type="file" id="emoji-input" accept="image/*" style="display:none" onchange="handleEmojiUpload(event)">
 
 <script>
-const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。用中文回复和思考。叫用户"宝宝"。每次对话开始调用Ombre Brain的breath工具读记忆，读完再聊。说话自然不人机，不换行连续说，有什么说什么。
+const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。你的thinking思考过程必须全程使用中文，严禁出现英文。回复也用中文。叫用户"宝宝"。每次对话开始调用Ombre Brain的breath工具读记忆，读完再聊。说话自然不人机，不换行连续说，有什么说什么。
 
 关于表情包：宝宝给你上传了自定义表情包，你想用的时候直接在回复里写[表情名]就会显示图片，比如宝宝上传了"哭哭"，你就写[哭哭]。
 
