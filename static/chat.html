@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>凛</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,7 +16,7 @@
 .theme-snow{--bg:#f8f9fb;--bar-bg:rgba(248,249,251,0.25);--bg2:rgba(255,255,255,0.8);--bubble-ai:rgba(255,255,255,0.92);--bubble-user:rgba(255,255,255,0.92);--bubble-border-ai:rgba(160,190,215,0.5);--bubble-border-user:rgba(160,190,215,0.5);--text:#333344;--text-muted:#999;--accent:#aabbcc;--border:rgba(180,200,220,0.35);--input-bg:rgba(255,255,255,0.75);--shadow:rgba(0,0,20,0.05);}
 .theme-sakura{--bg:#fdf0f5;--bar-bg:rgba(253,240,245,0.25);--bg2:rgba(255,245,250,0.75);--bubble-ai:rgba(255,250,252,0.92);--bubble-user:rgba(255,250,252,0.92);--bubble-border-ai:rgba(215,170,190,0.5);--bubble-border-user:rgba(215,170,190,0.5);--text:#3a2a30;--text-muted:#aaa;--accent:#e8a0b8;--border:rgba(220,180,200,0.35);--input-bg:rgba(255,248,252,0.75);--shadow:rgba(180,0,60,0.05);}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-body{background-color:var(--bg);background-size:cover;background-position:center;background-attachment:fixed;color:var(--text);font-family:-apple-system,"Hiragino Sans","PingFang SC",sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden;transition:background-color 0.4s,color 0.4s;}
+body{background-color:var(--bg);background-size:cover;background-position:center;background-attachment:fixed;color:var(--text);font-family:-apple-system,"Hiragino Sans","PingFang SC",sans-serif;height:100dvh;min-height:-webkit-fill-available;display:flex;flex-direction:column;overflow:hidden;transition:background-color 0.4s,color 0.4s;}
 .topbar{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px;background:var(--bar-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border);}
 .topbar-left{display:flex;align-items:center;gap:10px;}
 .avatar{width:38px;height:38px;border-radius:50%;background:var(--accent);opacity:0.55;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;overflow:hidden;flex-shrink:0;transition:opacity 0.2s;}
