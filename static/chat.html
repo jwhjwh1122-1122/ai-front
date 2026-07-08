@@ -1072,7 +1072,7 @@ async function sendMsg() {
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti], result=await executeMcpTool(tu.name,tu.input);
         const content=result?.content?.[0]?.text||JSON.stringify(result);
-        const rb=document.getElementById(`tool-result-${tu.uiIdx}`); if(rb) rb.textContent=content;
+        const rb=document.getElementById(`tool-result-${ti}`); if(rb) rb.textContent=content;
         workMsgs.push({role:'tool',content,tool_call_id:tu.id});
       }
       currentBubble=null;
