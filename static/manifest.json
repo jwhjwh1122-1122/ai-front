@@ -1,0 +1,22 @@
+{
+  "name": "凛",
+  "short_name": "凛",
+  "description": "我们的家",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fce8f2",
+  "theme_color": "#d47898",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
