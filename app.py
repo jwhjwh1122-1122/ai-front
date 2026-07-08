@@ -16,6 +16,10 @@ os.makedirs(MEMORIES_DIR, exist_ok=True)
 def index():
     return send_from_directory('static', 'chat.html')
 
+@app.route('/manifest.json')
+def manifest():
+    return send_from_directory('static', 'manifest.json')
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json
