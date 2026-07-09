@@ -43,14 +43,24 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
+# ==================== 修正后的 MCP 代理 ====================
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
-    sid = data.pop('_sid', None)
-    h = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
+    # 优先从请求头获取会话 ID（标准做法）
+    sid = request.headers.get('Mcp-Session-Id')
+    if not sid:
+        # 兼容旧方式（从请求体取 _sid）
+        sid = data.pop('_sid', None)
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
+    }
     if sid:
-        h['Mcp-Session-Id'] = sid
-    r = requests.post(MCP_URL, json=data, headers=h, timeout=30)
+        headers['Mcp-Session-Id'] = sid
+
+    r = requests.post(MCP_URL, json=data, headers=headers, timeout=30)
     resp = app.response_class(r.content, mimetype='application/json')
     if 'Mcp-Session-Id' in r.headers:
         resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
@@ -181,23 +191,38 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
+# ==================== 修正后的 test-ob（增加错误详情）====================
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
+        # 1. 初始化
         r1 = requests.post(MCP_URL, json={
             'jsonrpc':'2.0','method':'initialize',
             'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
             'id':1
         }, headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}, timeout=15)
         sid = r1.headers.get('Mcp-Session-Id','')
+        
+        # 2. 发送 initialized 通知
         h = {'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
-        if sid: h['Mcp-Session-Id'] = sid
+        if sid:
+            h['Mcp-Session-Id'] = sid
         requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}}, headers=h, timeout=10)
+        
+        # 3. 调用 breath
         r3 = requests.post(MCP_URL, json={
             'jsonrpc':'2.0','method':'tools/call',
             'params':{'name':'breath','arguments':{'max_results':5,'max_tokens':2000}},
             'id':2
         }, headers=h, timeout=30)
+        
+        # 详细输出错误信息
+        if r3.status_code != 200:
+            return jsonify({
+                'error': f'breath failed with status {r3.status_code}',
+                'response_text': r3.text[:500]  # 截取部分以便调试
+            }), 500
+        
         return jsonify({'session_id': sid, 'breath': r3.json()})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
