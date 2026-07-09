@@ -47,7 +47,10 @@ def chat():
 def mcp():
     data = request.json
     sid = data.pop('_sid', None)
-    h = {'Content-Type': 'application/json'}
+    h = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
+    }
     if sid:
         h['Mcp-Session-Id'] = sid
     r = requests.post(MCP_URL, json=data, headers=h, timeout=30)
