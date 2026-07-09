@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, os, time, base64
+from datetime import datetime  # 新增
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -20,17 +21,25 @@ def index():
 def manifest():
     return send_from_directory('static', 'manifest.json')
 
+# ========== 聊天接口（含时间注入）==========
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json
+    # 自动注入当前时间到系统提示
+    system = data.get('system', '')
+    current_time = datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')
+    if system:
+        system = f"{system}\n\n当前时间：{current_time}"
+    else:
+        system = f"当前时间：{current_time}"
+    
     payload = {
         'model': 'anthropic/claude-sonnet-4-6',
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
+        'system': system  # 注入
     }
-    if data.get('system'):
-        payload['system'] = data['system']
     def gen():
         with requests.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -43,7 +52,7 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ==================== MCP 代理（支持 SSE 流式转发）====================
+# ========== MCP 代理（支持 SSE 流式转发）==========
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
@@ -143,18 +152,26 @@ def get_memory_image(filename):
             note = nf.read().strip()
     return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
+# ========== 聊天 v2（含时间注入）==========
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
+    # 自动注入当前时间到系统提示
+    system = data.get('system', '')
+    current_time = datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')
+    if system:
+        system = f"{system}\n\n当前时间：{current_time}"
+    else:
+        system = f"当前时间：{current_time}"
+
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
         'thinking': {'type': 'enabled', 'budget_tokens': 5000},
+        'system': system  # 注入
     }
-    if data.get('system'):
-        payload['system'] = data['system']
     if data.get('tools'):
         payload['tools'] = data['tools']
     if data.get('tool_choice'):
@@ -201,11 +218,10 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ==================== 最终版 test-ob（超时延长 + 长度检测）====================
+# ========== test-ob（已包含超时延长和调试）==========
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
-        # 1. 初始化
         init_payload = {
             'jsonrpc': '2.0',
             'method': 'initialize',
@@ -235,7 +251,6 @@ def test_ob():
         if not sid:
             return jsonify({'error': 'No Mcp-Session-Id in initialize response'}), 500
 
-        # 2. 发送 notifications/initialized
         notify_headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json, text/event-stream',
@@ -250,7 +265,6 @@ def test_ob():
         if r2.status_code not in [200, 202]:
             return jsonify({'error': f'Initialized notification failed with status {r2.status_code}', 'response': r2.text}), 500
 
-        # 3. 调用 breath
         breath_payload = {
             'jsonrpc': '2.0',
             'method': 'tools/call',
@@ -264,19 +278,17 @@ def test_ob():
             MCP_URL,
             json=breath_payload,
             headers=notify_headers,
-            timeout=120  # 大幅延长
+            timeout=120
         )
 
         if r3.status_code != 200:
             return jsonify({'error': f'Breath failed with status {r3.status_code}', 'response_text': r3.text[:500]}), 500
 
-        # 强制指定编码
         r3.encoding = 'utf-8'
         raw_text = r3.text
         content_type = r3.headers.get('Content-Type', '')
 
         if 'text/event-stream' in content_type:
-            # 解析 SSE
             lines = raw_text.splitlines()
             events = []
             current_data = []
