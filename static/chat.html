@@ -536,12 +536,17 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
     const footer=document.createElement('div');footer.style.cssText='display:flex;align-items:center;gap:6px;';
     const time=document.createElement('span');time.className='msg-time';time.textContent=nowStr();
     const regen=document.createElement('span');regen.className='msg-action-btn';regen.textContent='๑';regen.title='重新生成';
-    // ★ 每条消息捕获自己的row引用
     const rowRef=capturedRow||currentAiRow;
     regen.onclick=()=>regenAt(rowRef);
     const ttsBtn=document.createElement('span');ttsBtn.className='msg-action-btn';ttsBtn.textContent='◎';ttsBtn.title='朗读';
     const capturedText=rawText||text;ttsBtn.onclick=()=>playTTS(capturedText,ttsBtn);
-    footer.appendChild(time);footer.appendChild(regen);footer.appendChild(ttsBtn);wrap.appendChild(footer);
+    const copyBtn=document.createElement('span');copyBtn.className='msg-action-btn';copyBtn.textContent='⎘';copyBtn.title='复制';
+    copyBtn.onclick=()=>{
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(capturedText).then(()=>showToast('已复制')).catch(()=>fallbackCopy(capturedText));
+      }else{fallbackCopy(capturedText);}
+    };
+    footer.appendChild(time);footer.appendChild(regen);footer.appendChild(ttsBtn);footer.appendChild(copyBtn);wrap.appendChild(footer);
   }else{currentBubble.innerHTML=renderBubbleContent(text);}
   scrollBottom();
 }
@@ -567,7 +572,14 @@ function fallbackCopy(text){
 function cancelBubbleLongPress(){if(bubblePressTimer){clearTimeout(bubblePressTimer);bubblePressTimer=null;}}
 
 async function mcpInit(){
-  try{const r=await fetch(MCP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'ai-front',version:'1.0'}},id:1})});const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;}catch(e){console.warn('MCP init failed',e);}
+  try{
+    // Step1: initialize
+    const r=await fetch(MCP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'ai-front',version:'1.0'}},id:1})});
+    const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
+    // Step2: notifications/initialized（必须，否则OB不接受后续调用）
+    const h2={'Content-Type':'application/json'};if(mcpSessionId)h2['Mcp-Session-Id']=mcpSessionId;
+    await fetch(MCP_URL,{method:'POST',headers:h2,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized',params:{}})});
+  }catch(e){console.warn('MCP init failed',e);}
 }
 let abortController=null;
 function stopGeneration(){if(abortController){abortController.abort();abortController=null;}}
