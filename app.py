@@ -58,7 +58,7 @@ def mcp():
     if sid:
         headers['Mcp-Session-Id'] = sid
 
-    r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=30)
+    r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=120)
     content_type = r.headers.get('Content-Type', 'application/json')
 
     if 'text/event-stream' in content_type:
@@ -201,7 +201,7 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ==================== 增强版 test-ob（稳健 SSE 解析）====================
+# ==================== 最终版 test-ob（超时延长 + 长度检测）====================
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
@@ -220,7 +220,7 @@ def test_ob():
             MCP_URL,
             json=init_payload,
             headers={'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'},
-            timeout=15
+            timeout=120
         )
         if r1.status_code != 200:
             return jsonify({'error': f'Initialize failed with status {r1.status_code}', 'response': r1.text}), 500
@@ -245,7 +245,7 @@ def test_ob():
             MCP_URL,
             json={'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
             headers=notify_headers,
-            timeout=10
+            timeout=120
         )
         if r2.status_code not in [200, 202]:
             return jsonify({'error': f'Initialized notification failed with status {r2.status_code}', 'response': r2.text}), 500
@@ -264,43 +264,53 @@ def test_ob():
             MCP_URL,
             json=breath_payload,
             headers=notify_headers,
-            timeout=30
+            timeout=120  # 大幅延长
         )
 
         if r3.status_code != 200:
             return jsonify({'error': f'Breath failed with status {r3.status_code}', 'response_text': r3.text[:500]}), 500
 
+        # 强制指定编码
+        r3.encoding = 'utf-8'
+        raw_text = r3.text
         content_type = r3.headers.get('Content-Type', '')
-        # 解析响应
+
         if 'text/event-stream' in content_type:
-            # 稳健的 SSE 解析：按事件分割
-            lines = r3.text.splitlines()
+            # 解析 SSE
+            lines = raw_text.splitlines()
             events = []
             current_data = []
             for line in lines:
                 if line.startswith('data: '):
                     current_data.append(line[6:])
                 elif line == '' and current_data:
-                    # 空行表示事件结束
                     events.append(''.join(current_data))
                     current_data = []
-            if current_data:  # 如果文件末尾没有空行，也加入
+            if current_data:
                 events.append(''.join(current_data))
 
             if not events:
-                return jsonify({'error': 'No SSE events found', 'raw': r3.text[:500]}), 500
+                return jsonify({'error': 'No SSE events found', 'raw': raw_text[:500], 'raw_len': len(raw_text)}), 500
 
-            # 取第一个事件的数据
             data_str = events[0]
             try:
                 breath_json = json.loads(data_str)
             except Exception as e:
-                return jsonify({'error': f'Failed to parse JSON from SSE data: {e}', 'data_str': data_str}), 500
+                return jsonify({
+                    'error': f'Failed to parse JSON from SSE data: {e}',
+                    'data_str': data_str,
+                    'data_len': len(data_str),
+                    'raw_len': len(raw_text)
+                }), 500
         else:
             try:
                 breath_json = r3.json()
             except Exception as e:
-                return jsonify({'error': f'Response is not valid JSON: {e}', 'raw': r3.text[:500]}), 500
+                return jsonify({
+                    'error': f'Response is not valid JSON: {e}',
+                    'raw': raw_text[:500],
+                    'raw_len': len(raw_text)
+                }), 500
 
         return jsonify({
             'session_id': sid,
