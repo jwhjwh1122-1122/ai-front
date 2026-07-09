@@ -47,7 +47,7 @@ def chat():
 def mcp():
     data = request.json
     sid = data.pop('_sid', None)
-    h = {'Content-Type': 'application/json'}
+    h = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
     if sid:
         h['Mcp-Session-Id'] = sid
     r = requests.post(MCP_URL, json=data, headers=h, timeout=30)
@@ -188,9 +188,9 @@ def test_ob():
             'jsonrpc':'2.0','method':'initialize',
             'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
             'id':1
-        }, headers={'Content-Type':'application/json'}, timeout=15)
+        }, headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}, timeout=15)
         sid = r1.headers.get('Mcp-Session-Id','')
-        h = {'Content-Type':'application/json'}
+        h = {'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
         if sid: h['Mcp-Session-Id'] = sid
         requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}}, headers=h, timeout=10)
         r3 = requests.post(MCP_URL, json={
