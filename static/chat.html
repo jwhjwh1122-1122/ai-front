@@ -540,7 +540,7 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
     regen.onclick=()=>regenAt(rowRef);
     const ttsBtn=document.createElement('span');ttsBtn.className='msg-action-btn';ttsBtn.textContent='◎';ttsBtn.title='朗读';
     const capturedText=rawText||text;ttsBtn.onclick=()=>playTTS(capturedText,ttsBtn);
-    const copyBtn=document.createElement('span');copyBtn.className='msg-action-btn';copyBtn.textContent='⎘';copyBtn.title='复制';
+    const copyBtn=document.createElement('span');copyBtn.className='msg-action-btn';copyBtn.textContent='✎';copyBtn.title='复制';copyBtn.style.opacity='0.7';
     copyBtn.onclick=()=>{
       if(navigator.clipboard&&navigator.clipboard.writeText){
         navigator.clipboard.writeText(capturedText).then(()=>showToast('已复制')).catch(()=>fallbackCopy(capturedText));
@@ -573,12 +573,17 @@ function cancelBubbleLongPress(){if(bubblePressTimer){clearTimeout(bubblePressTi
 
 async function mcpInit(){
   try{
-    // Step1: initialize
-    const r=await fetch(MCP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'ai-front',version:'1.0'}},id:1})});
+    const r=await fetch(MCP_URL,{method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json, text/event-stream'},
+      body:JSON.stringify({jsonrpc:'2.0',method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'ai-front',version:'1.0'}},id:1})
+    });
     const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
-    // Step2: notifications/initialized（必须，否则OB不接受后续调用）
-    const h2={'Content-Type':'application/json'};if(mcpSessionId)h2['Mcp-Session-Id']=mcpSessionId;
-    await fetch(MCP_URL,{method:'POST',headers:h2,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized',params:{}})});
+    if(mcpSessionId){
+      await fetch(MCP_URL,{method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json, text/event-stream','Mcp-Session-Id':mcpSessionId},
+        body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized',params:{}})
+      });
+    }
   }catch(e){console.warn('MCP init failed',e);}
 }
 let abortController=null;
@@ -595,6 +600,23 @@ const OB_TOOLS=[
   {type:'function',function:{name:'view_memory',description:'查看时光墙里的某张照片，真正看见图片内容。需要filename参数。',parameters:{type:'object',required:['filename'],properties:{filename:{type:'string'}}}}}
 ];
 
+// 解析SSE响应
+async function parseMcpResponse(r){
+  const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
+  const ct=r.headers.get('Content-Type')||'';
+  const text=await r.text();
+  if(ct.includes('text/event-stream')){
+    // 解析SSE
+    const lines=text.split('\n');
+    let jsonStr='';
+    for(const line of lines){
+      if(line.startsWith('data: ')){jsonStr+=line.slice(6).trim();}
+    }
+    try{const d=JSON.parse(jsonStr);return d.result||d;}catch(e){return{error:'SSE parse failed',raw:text.slice(0,200)};}
+  }
+  try{const d=JSON.parse(text);return d.result||d;}catch(e){return{error:'JSON parse failed',raw:text.slice(0,200)};}
+}
+
 async function executeMcpTool(name,args){
   if(name==='get_memories'){
     try{const r=await fetch('/api/memories');const items=await r.json();return{content:[{type:'text',text:JSON.stringify(items.map(i=>({filename:i.filename,note:i.note,ts:i.ts})))}]};}
@@ -607,9 +629,14 @@ async function executeMcpTool(name,args){
     }catch(e){return{content:[{type:'text',text:'读取失败：'+e.message}]};}
   }
   try{
-    const r=await fetch(MCP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'tools/call',params:{name,arguments:args||{}},id:Date.now(),_sid:mcpSessionId})});
-    const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
-    const d=await r.json();return d.result;
+    const h={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
+    if(mcpSessionId)h['Mcp-Session-Id']=mcpSessionId;
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),120000);
+    const r=await fetch(MCP_URL,{method:'POST',headers:h,signal:ctrl.signal,
+      body:JSON.stringify({jsonrpc:'2.0',method:'tools/call',params:{name,arguments:args||{}},id:Date.now()})});
+    clearTimeout(timer);
+    return await parseMcpResponse(r);
   }catch(e){return{error:e.message};}
 }
 
@@ -844,6 +871,7 @@ function initLock(){
   updateAnniversary();await mcpInit();
   document.getElementById('status-text').textContent='今天 '+nowStr();
   document.getElementById('input').focus();
+  initLock();
 
 })();
 </script>
