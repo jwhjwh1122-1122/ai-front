@@ -43,14 +43,12 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ==================== 修正后的 MCP 代理 ====================
+# ==================== 修正后的 MCP 代理（支持 SSE 流式转发）====================
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
-    # 优先从请求头获取会话 ID（标准做法）
     sid = request.headers.get('Mcp-Session-Id')
     if not sid:
-        # 兼容旧方式（从请求体取 _sid）
         sid = data.pop('_sid', None)
 
     headers = {
@@ -60,11 +58,26 @@ def mcp():
     if sid:
         headers['Mcp-Session-Id'] = sid
 
-    r = requests.post(MCP_URL, json=data, headers=headers, timeout=30)
-    resp = app.response_class(r.content, mimetype='application/json')
-    if 'Mcp-Session-Id' in r.headers:
-        resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
-    return resp
+    # 使用 stream=True 以便转发流式响应
+    r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=30)
+    content_type = r.headers.get('Content-Type', 'application/json')
+
+    # 如果是 SSE，流式转发
+    if 'text/event-stream' in content_type:
+        def generate():
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        resp = Response(generate(), mimetype=content_type)
+        if 'Mcp-Session-Id' in r.headers:
+            resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
+        return resp
+    else:
+        # 普通 JSON 直接返回
+        resp = app.response_class(r.content, mimetype=content_type)
+        if 'Mcp-Session-Id' in r.headers:
+            resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
+        return resp
 
 # ── 时光墙 ──
 @app.route('/api/memories', methods=['GET'])
@@ -191,17 +204,17 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ==================== 升级版 /api/test-ob（含详细调试）====================
+# ==================== 修正后的 test-ob（支持 SSE 解析）====================
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
-        # 1. 发送 initialize
+        # 1. 初始化
         init_payload = {
             'jsonrpc': '2.0',
             'method': 'initialize',
             'params': {
                 'protocolVersion': '2024-11-05',
-                'capabilities': {},  # 可留空，但某些服务器可能需要填写，我们先试空
+                'capabilities': {},
                 'clientInfo': {'name': 'test', 'version': '1.0'}
             },
             'id': 1
@@ -212,27 +225,15 @@ def test_ob():
             headers={'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'},
             timeout=15
         )
-        # 打印日志（在控制台可见）
-        print(f"Initialize status: {r1.status_code}")
-        print(f"Initialize headers: {r1.headers}")
-        print(f"Initialize body: {r1.text[:500]}")
-
-        # 检查初始化是否成功
         if r1.status_code != 200:
-            return jsonify({
-                'error': f'Initialize failed with status {r1.status_code}',
-                'response': r1.text
-            }), 500
-
-        # 尝试解析 JSON，看是否有错误
+            return jsonify({'error': f'Initialize failed with status {r1.status_code}', 'response': r1.text}), 500
         try:
             init_json = r1.json()
             if 'error' in init_json:
                 return jsonify({'error': 'Initialize returned error', 'details': init_json['error']}), 500
         except:
-            init_json = None  # 可能不是 JSON，但继续
+            init_json = None
 
-        # 获取 session id
         sid = r1.headers.get('Mcp-Session-Id', '')
         if not sid:
             return jsonify({'error': 'No Mcp-Session-Id in initialize response'}), 500
@@ -249,12 +250,8 @@ def test_ob():
             headers=notify_headers,
             timeout=10
         )
-        print(f"Initialized notification status: {r2.status_code}")
         if r2.status_code not in [200, 202]:
-            return jsonify({
-                'error': f'Initialized notification failed with status {r2.status_code}',
-                'response': r2.text
-            }), 500
+            return jsonify({'error': f'Initialized notification failed with status {r2.status_code}', 'response': r2.text}), 500
 
         # 3. 调用 breath 工具
         breath_payload = {
@@ -269,26 +266,35 @@ def test_ob():
         r3 = requests.post(
             MCP_URL,
             json=breath_payload,
-            headers=notify_headers,  # 使用相同的会话 ID
+            headers=notify_headers,
             timeout=30
         )
-        print(f"Breath status: {r3.status_code}")
-        print(f"Breath body: {r3.text[:500]}")
 
         if r3.status_code != 200:
-            return jsonify({
-                'error': f'Breath failed with status {r3.status_code}',
-                'response_text': r3.text[:500]
-            }), 500
+            return jsonify({'error': f'Breath failed with status {r3.status_code}', 'response_text': r3.text[:500]}), 500
 
-        # 尝试解析 JSON
-        try:
-            breath_json = r3.json()
-        except:
-            return jsonify({
-                'error': 'Breath response is not valid JSON',
-                'raw_response': r3.text[:500]
-            }), 500
+        # 检测响应类型，解析 JSON 或 SSE
+        content_type = r3.headers.get('Content-Type', '')
+        if 'text/event-stream' in content_type:
+            # 解析 SSE：找到第一条 data: 行
+            lines = r3.text.splitlines()
+            data_line = None
+            for line in lines:
+                if line.startswith('data: '):
+                    data_line = line[6:].strip()
+                    break
+            if data_line:
+                try:
+                    breath_json = json.loads(data_line)
+                except Exception as e:
+                    return jsonify({'error': 'SSE data is not valid JSON', 'raw_data': data_line}), 500
+            else:
+                return jsonify({'error': 'No data line found in SSE response', 'raw': r3.text[:500]}), 500
+        else:
+            try:
+                breath_json = r3.json()
+            except Exception as e:
+                return jsonify({'error': 'Response is not JSON', 'raw': r3.text[:500]}), 500
 
         return jsonify({
             'session_id': sid,
