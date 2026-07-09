@@ -191,39 +191,111 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ==================== 修正后的 test-ob（增加错误详情）====================
+# ==================== 升级版 /api/test-ob（含详细调试）====================
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
-        # 1. 初始化
-        r1 = requests.post(MCP_URL, json={
-            'jsonrpc':'2.0','method':'initialize',
-            'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
-            'id':1
-        }, headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}, timeout=15)
-        sid = r1.headers.get('Mcp-Session-Id','')
-        
-        # 2. 发送 initialized 通知
-        h = {'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
-        if sid:
-            h['Mcp-Session-Id'] = sid
-        requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}}, headers=h, timeout=10)
-        
-        # 3. 调用 breath
-        r3 = requests.post(MCP_URL, json={
-            'jsonrpc':'2.0','method':'tools/call',
-            'params':{'name':'breath','arguments':{'max_results':5,'max_tokens':2000}},
-            'id':2
-        }, headers=h, timeout=30)
-        
-        # 详细输出错误信息
+        # 1. 发送 initialize
+        init_payload = {
+            'jsonrpc': '2.0',
+            'method': 'initialize',
+            'params': {
+                'protocolVersion': '2024-11-05',
+                'capabilities': {},  # 可留空，但某些服务器可能需要填写，我们先试空
+                'clientInfo': {'name': 'test', 'version': '1.0'}
+            },
+            'id': 1
+        }
+        r1 = requests.post(
+            MCP_URL,
+            json=init_payload,
+            headers={'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'},
+            timeout=15
+        )
+        # 打印日志（在控制台可见）
+        print(f"Initialize status: {r1.status_code}")
+        print(f"Initialize headers: {r1.headers}")
+        print(f"Initialize body: {r1.text[:500]}")
+
+        # 检查初始化是否成功
+        if r1.status_code != 200:
+            return jsonify({
+                'error': f'Initialize failed with status {r1.status_code}',
+                'response': r1.text
+            }), 500
+
+        # 尝试解析 JSON，看是否有错误
+        try:
+            init_json = r1.json()
+            if 'error' in init_json:
+                return jsonify({'error': 'Initialize returned error', 'details': init_json['error']}), 500
+        except:
+            init_json = None  # 可能不是 JSON，但继续
+
+        # 获取 session id
+        sid = r1.headers.get('Mcp-Session-Id', '')
+        if not sid:
+            return jsonify({'error': 'No Mcp-Session-Id in initialize response'}), 500
+
+        # 2. 发送 notifications/initialized
+        notify_headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream',
+            'Mcp-Session-Id': sid
+        }
+        r2 = requests.post(
+            MCP_URL,
+            json={'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
+            headers=notify_headers,
+            timeout=10
+        )
+        print(f"Initialized notification status: {r2.status_code}")
+        if r2.status_code not in [200, 202]:
+            return jsonify({
+                'error': f'Initialized notification failed with status {r2.status_code}',
+                'response': r2.text
+            }), 500
+
+        # 3. 调用 breath 工具
+        breath_payload = {
+            'jsonrpc': '2.0',
+            'method': 'tools/call',
+            'params': {
+                'name': 'breath',
+                'arguments': {'max_results': 5, 'max_tokens': 2000}
+            },
+            'id': 2
+        }
+        r3 = requests.post(
+            MCP_URL,
+            json=breath_payload,
+            headers=notify_headers,  # 使用相同的会话 ID
+            timeout=30
+        )
+        print(f"Breath status: {r3.status_code}")
+        print(f"Breath body: {r3.text[:500]}")
+
         if r3.status_code != 200:
             return jsonify({
-                'error': f'breath failed with status {r3.status_code}',
-                'response_text': r3.text[:500]  # 截取部分以便调试
+                'error': f'Breath failed with status {r3.status_code}',
+                'response_text': r3.text[:500]
             }), 500
-        
-        return jsonify({'session_id': sid, 'breath': r3.json()})
+
+        # 尝试解析 JSON
+        try:
+            breath_json = r3.json()
+        except:
+            return jsonify({
+                'error': 'Breath response is not valid JSON',
+                'raw_response': r3.text[:500]
+            }), 500
+
+        return jsonify({
+            'session_id': sid,
+            'initialize_response': init_json if init_json else r1.text[:200],
+            'breath': breath_json
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
