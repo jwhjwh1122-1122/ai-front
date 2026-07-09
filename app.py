@@ -53,6 +53,13 @@ def mcp():
     }
     if sid:
         h['Mcp-Session-Id'] = sid
+    # 如果是tools/call，确保arguments是dict不是字符串
+    if data.get('method') == 'tools/call' and 'params' in data:
+        args = data['params'].get('arguments', {})
+        if isinstance(args, str):
+            import json as _json
+            try: data['params']['arguments'] = _json.loads(args)
+            except: pass
     r = requests.post(MCP_URL, json=data, headers=h, timeout=30)
     resp = app.response_class(r.content, mimetype='application/json')
     if 'Mcp-Session-Id' in r.headers:
