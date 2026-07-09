@@ -195,3 +195,40 @@ def key_info():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
+@app.route('/api/test-ob', methods=['GET'])
+def test_ob():
+    """直接在服务器端测试OB连接，绕过前端JS"""
+    try:
+        # Step1: initialize
+        r1 = requests.post(MCP_URL, json={
+            'jsonrpc':'2.0','method':'initialize',
+            'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
+            'id':1
+        }, headers={'Content-Type':'application/json'}, timeout=15)
+        sid = r1.headers.get('Mcp-Session-Id','')
+        init_result = r1.json()
+
+        # Step2: notifications/initialized
+        h2 = {'Content-Type':'application/json'}
+        if sid: h2['Mcp-Session-Id'] = sid
+        requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}},
+                      headers=h2, timeout=10)
+
+        # Step3: breath
+        h3 = {'Content-Type':'application/json'}
+        if sid: h3['Mcp-Session-Id'] = sid
+        r3 = requests.post(MCP_URL, json={
+            'jsonrpc':'2.0','method':'tools/call',
+            'params':{'name':'breath','arguments':{'max_results':5,'max_tokens':2000}},
+            'id':2
+        }, headers=h3, timeout=30)
+        breath_result = r3.json()
+
+        return jsonify({
+            'session_id': sid,
+            'init': init_result,
+            'breath': breath_result
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
