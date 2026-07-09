@@ -43,7 +43,7 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ==================== 修正后的 MCP 代理（支持 SSE 流式转发）====================
+# ==================== MCP 代理（支持 SSE 流式转发）====================
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
@@ -58,11 +58,9 @@ def mcp():
     if sid:
         headers['Mcp-Session-Id'] = sid
 
-    # 使用 stream=True 以便转发流式响应
     r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=30)
     content_type = r.headers.get('Content-Type', 'application/json')
 
-    # 如果是 SSE，流式转发
     if 'text/event-stream' in content_type:
         def generate():
             for chunk in r.iter_content(chunk_size=1024):
@@ -73,7 +71,6 @@ def mcp():
             resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
         return resp
     else:
-        # 普通 JSON 直接返回
         resp = app.response_class(r.content, mimetype=content_type)
         if 'Mcp-Session-Id' in r.headers:
             resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
@@ -204,7 +201,7 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ==================== 修正后的 test-ob（支持 SSE 解析）====================
+# ==================== 增强版 test-ob（稳健 SSE 解析）====================
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
     try:
@@ -253,7 +250,7 @@ def test_ob():
         if r2.status_code not in [200, 202]:
             return jsonify({'error': f'Initialized notification failed with status {r2.status_code}', 'response': r2.text}), 500
 
-        # 3. 调用 breath 工具
+        # 3. 调用 breath
         breath_payload = {
             'jsonrpc': '2.0',
             'method': 'tools/call',
@@ -273,28 +270,37 @@ def test_ob():
         if r3.status_code != 200:
             return jsonify({'error': f'Breath failed with status {r3.status_code}', 'response_text': r3.text[:500]}), 500
 
-        # 检测响应类型，解析 JSON 或 SSE
         content_type = r3.headers.get('Content-Type', '')
+        # 解析响应
         if 'text/event-stream' in content_type:
-            # 解析 SSE：找到第一条 data: 行
+            # 稳健的 SSE 解析：按事件分割
             lines = r3.text.splitlines()
-            data_line = None
+            events = []
+            current_data = []
             for line in lines:
                 if line.startswith('data: '):
-                    data_line = line[6:].strip()
-                    break
-            if data_line:
-                try:
-                    breath_json = json.loads(data_line)
-                except Exception as e:
-                    return jsonify({'error': 'SSE data is not valid JSON', 'raw_data': data_line}), 500
-            else:
-                return jsonify({'error': 'No data line found in SSE response', 'raw': r3.text[:500]}), 500
+                    current_data.append(line[6:])
+                elif line == '' and current_data:
+                    # 空行表示事件结束
+                    events.append(''.join(current_data))
+                    current_data = []
+            if current_data:  # 如果文件末尾没有空行，也加入
+                events.append(''.join(current_data))
+
+            if not events:
+                return jsonify({'error': 'No SSE events found', 'raw': r3.text[:500]}), 500
+
+            # 取第一个事件的数据
+            data_str = events[0]
+            try:
+                breath_json = json.loads(data_str)
+            except Exception as e:
+                return jsonify({'error': f'Failed to parse JSON from SSE data: {e}', 'data_str': data_str}), 500
         else:
             try:
                 breath_json = r3.json()
             except Exception as e:
-                return jsonify({'error': 'Response is not JSON', 'raw': r3.text[:500]}), 500
+                return jsonify({'error': f'Response is not valid JSON: {e}', 'raw': r3.text[:500]}), 500
 
         return jsonify({
             'session_id': sid,
