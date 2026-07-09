@@ -47,19 +47,9 @@ def chat():
 def mcp():
     data = request.json
     sid = data.pop('_sid', None)
-    h = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-    }
+    h = {'Content-Type': 'application/json'}
     if sid:
         h['Mcp-Session-Id'] = sid
-    # 如果是tools/call，确保arguments是dict不是字符串
-    if data.get('method') == 'tools/call' and 'params' in data:
-        args = data['params'].get('arguments', {})
-        if isinstance(args, str):
-            import json as _json
-            try: data['params']['arguments'] = _json.loads(args)
-            except: pass
     r = requests.post(MCP_URL, json=data, headers=h, timeout=30)
     resp = app.response_class(r.content, mimetype='application/json')
     if 'Mcp-Session-Id' in r.headers:
@@ -114,7 +104,6 @@ def delete_memory(filename):
 def serve_memory(filename):
     return send_from_directory(MEMORIES_DIR, filename)
 
-# ── 时光墙图片读取（给凛用）──
 @app.route('/api/memories/<filename>/image', methods=['GET'])
 def get_memory_image(filename):
     safe = secure_filename(filename)
@@ -134,7 +123,6 @@ def get_memory_image(filename):
             note = nf.read().strip()
     return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
-# ── chat-v2 ──
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
@@ -163,7 +151,6 @@ def chat_v2():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ── TTS ──
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG  = '2cdvnKJ5TZi631y5PN1s'
 
@@ -194,6 +181,27 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
+@app.route('/api/test-ob', methods=['GET'])
+def test_ob():
+    try:
+        r1 = requests.post(MCP_URL, json={
+            'jsonrpc':'2.0','method':'initialize',
+            'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
+            'id':1
+        }, headers={'Content-Type':'application/json'}, timeout=15)
+        sid = r1.headers.get('Mcp-Session-Id','')
+        h = {'Content-Type':'application/json'}
+        if sid: h['Mcp-Session-Id'] = sid
+        requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}}, headers=h, timeout=10)
+        r3 = requests.post(MCP_URL, json={
+            'jsonrpc':'2.0','method':'tools/call',
+            'params':{'name':'breath','arguments':{'max_results':5,'max_tokens':2000}},
+            'id':2
+        }, headers=h, timeout=30)
+        return jsonify({'session_id': sid, 'breath': r3.json()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
     try:
@@ -205,40 +213,3 @@ def key_info():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
-@app.route('/api/test-ob', methods=['GET'])
-def test_ob():
-    """直接在服务器端测试OB连接，绕过前端JS"""
-    try:
-        # Step1: initialize
-        r1 = requests.post(MCP_URL, json={
-            'jsonrpc':'2.0','method':'initialize',
-            'params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'test','version':'1.0'}},
-            'id':1
-        }, headers={'Content-Type':'application/json'}, timeout=15)
-        sid = r1.headers.get('Mcp-Session-Id','')
-        init_result = r1.json()
-
-        # Step2: notifications/initialized
-        h2 = {'Content-Type':'application/json'}
-        if sid: h2['Mcp-Session-Id'] = sid
-        requests.post(MCP_URL, json={'jsonrpc':'2.0','method':'notifications/initialized','params':{}},
-                      headers=h2, timeout=10)
-
-        # Step3: breath
-        h3 = {'Content-Type':'application/json'}
-        if sid: h3['Mcp-Session-Id'] = sid
-        r3 = requests.post(MCP_URL, json={
-            'jsonrpc':'2.0','method':'tools/call',
-            'params':{'name':'breath','arguments':{'max_results':5,'max_tokens':2000}},
-            'id':2
-        }, headers=h3, timeout=30)
-        breath_result = r3.json()
-
-        return jsonify({
-            'session_id': sid,
-            'init': init_result,
-            'breath': breath_result
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
