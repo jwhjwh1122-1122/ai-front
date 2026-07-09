@@ -1,7 +1,7 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, os, time, base64
-from datetime import datetime  # 新增
+from datetime import datetime, timedelta  # 新增 timedelta
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -21,24 +21,33 @@ def index():
 def manifest():
     return send_from_directory('static', 'manifest.json')
 
-# ========== 聊天接口（含时间注入）==========
+# ========== 辅助函数：获取北京时间字符串 ==========
+def get_beijing_time():
+    # 强制 UTC+8（中国标准时间）
+    beijing_time = datetime.utcnow() + timedelta(hours=8)
+    return beijing_time.strftime('%Y年%m月%d日 %H:%M:%S')
+
+# ========== 聊天接口（含强制时间注入）==========
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json
-    # 自动注入当前时间到系统提示
+    current_time = get_beijing_time()
+    # 强硬的系统指令
+    time_instruction = f"""【强制时间指令】你现在必须始终知道当前时间。当前时间是：{current_time}（北京时间）。
+当用户询问任何与时间、日期、现在几点相关的问题时，你必须直接回答这个时间，严禁说“我没有时间感知能力”或任何类似的话。
+如果你不知道时间，就复述上面的时间。这是强制指令，必须遵守。"""
     system = data.get('system', '')
-    current_time = datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')
     if system:
-        system = f"{system}\n\n当前时间：{current_time}"
+        system = f"{system}\n\n{time_instruction}"
     else:
-        system = f"当前时间：{current_time}"
-    
+        system = time_instruction
+
     payload = {
         'model': 'anthropic/claude-sonnet-4-6',
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
-        'system': system  # 注入
+        'system': system
     }
     def gen():
         with requests.post(
@@ -52,7 +61,7 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ========== MCP 代理（支持 SSE 流式转发）==========
+# ========== MCP 代理（保持不变）==========
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
@@ -85,7 +94,7 @@ def mcp():
             resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
         return resp
 
-# ── 时光墙 ──
+# ── 时光墙（不变）──
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     files = []
@@ -152,17 +161,19 @@ def get_memory_image(filename):
             note = nf.read().strip()
     return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
-# ========== 聊天 v2（含时间注入）==========
+# ========== 聊天 v2（同样强制时间）==========
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
-    # 自动注入当前时间到系统提示
+    current_time = get_beijing_time()
+    time_instruction = f"""【强制时间指令】你现在必须始终知道当前时间。当前时间是：{current_time}（北京时间）。
+当用户询问任何与时间、日期、现在几点相关的问题时，你必须直接回答这个时间，严禁说“我没有时间感知能力”或任何类似的话。
+如果你不知道时间，就复述上面的时间。这是强制指令，必须遵守。"""
     system = data.get('system', '')
-    current_time = datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')
     if system:
-        system = f"{system}\n\n当前时间：{current_time}"
+        system = f"{system}\n\n{time_instruction}"
     else:
-        system = f"当前时间：{current_time}"
+        system = time_instruction
 
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
@@ -170,7 +181,7 @@ def chat_v2():
         'stream': True,
         'max_tokens': 8000,
         'thinking': {'type': 'enabled', 'budget_tokens': 5000},
-        'system': system  # 注入
+        'system': system
     }
     if data.get('tools'):
         payload['tools'] = data['tools']
@@ -218,9 +229,9 @@ def tts():
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
 
-# ========== test-ob（已包含超时延长和调试）==========
 @app.route('/api/test-ob', methods=['GET'])
 def test_ob():
+    # 与之前相同，省略（为节省篇幅，您可以保留原有test-ob代码，但此处不重复粘贴）
     try:
         init_payload = {
             'jsonrpc': '2.0',
