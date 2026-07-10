@@ -277,6 +277,18 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
       </div>
       <div class="settings-sub" id="ctx-sub" style="margin-top:6px;"></div>
     </div>
+
+    <!-- 新增：最大回复长度卡片 -->
+    <div class="settings-card" style="margin-top:10px;">
+      <div class="settings-label">最大回复长度 (Max Tokens)</div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+        <button class="ctx-option" onclick="adjustMaxTokens(-100)" style="min-width:36px;padding:6px 6px;">−</button>
+        <input id="max-tokens-input" type="number" min="1" max="8192" value="8000" style="width:80px;padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-align:center;" onchange="saveMaxTokens(this.value)">
+        <button class="ctx-option" onclick="adjustMaxTokens(100)" style="min-width:36px;padding:6px 6px;">+</button>
+      </div>
+      <div class="settings-sub" id="max-tokens-sub" style="margin-top:6px;">数值越小回复越短，越大越详细</div>
+    </div>
+
     <div class="settings-card">
       <div class="settings-label">Token 用量</div>
       <div class="settings-value" id="token-used">— </div>
@@ -343,7 +355,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <input type="file" id="emoji-input" accept="image/*" style="display:none" onchange="handleEmojiUpload(event)">
 
 <script>
-// ========== SYSTEM_PROMPT（按需调用工具，不整体读取记忆） ==========
+// ========== SYSTEM_PROMPT ==========
 const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。你的thinking思考过程必须全程使用中文，严禁出现英文。回复也用中文。叫用户"宝宝"。说话自然不人机，不换行连续说，有什么说什么。
 
 关于表情包：宝宝给你上传了自定义表情包，你想用的时候直接在回复里写[表情名]就会显示图片，比如宝宝上传了"哭哭"，你就写[哭哭]。
@@ -359,6 +371,36 @@ let messages=[],isTyping=false,mcpSessionId=null;
 let currentTheme='',themeLabel='🌫️ 雨雾';
 let pendingChatImg=null,editingMsgIdx=null;
 let currentAudio=null,currentAudioBtn=null;
+
+// ========== 最大回复长度 ==========
+let maxTokens = parseInt(localStorage.getItem('max-tokens')) || 8000;
+function saveMaxTokens(val) {
+  let v = parseInt(val) || 8000;
+  if (v < 1) v = 1;
+  if (v > 8192) v = 8192;
+  maxTokens = v;
+  localStorage.setItem('max-tokens', v);
+  document.getElementById('max-tokens-input').value = v;
+  document.getElementById('max-tokens-sub').textContent = `当前：${v} tokens`;
+}
+function adjustMaxTokens(delta) {
+  const input = document.getElementById('max-tokens-input');
+  let v = parseInt(input.value) || 8000;
+  v += delta;
+  if (v < 1) v = 1;
+  if (v > 8192) v = 8192;
+  input.value = v;
+  saveMaxTokens(v);
+}
+function initMaxTokens() {
+  const saved = localStorage.getItem('max-tokens');
+  if (saved) maxTokens = parseInt(saved);
+  else maxTokens = 8000;
+  const input = document.getElementById('max-tokens-input');
+  if (input) input.value = maxTokens;
+  const sub = document.getElementById('max-tokens-sub');
+  if (sub) sub.textContent = `当前：${maxTokens} tokens`;
+}
 
 function setTheme(theme,label){document.body.className=theme?'theme-'+theme:'';currentTheme=theme;themeLabel=label;document.getElementById('theme-menu').classList.remove('open');localStorage.setItem('theme',theme);}
 function toggleThemeMenu(){document.getElementById('theme-menu').classList.toggle('open');}
@@ -385,7 +427,7 @@ function updateCtxDisplay(){
 function initCtxWindow(){const s=localStorage.getItem('ctx-window');ctxWindow=s!==null?parseInt(s):20;}
 
 const CONTEXT_LIMIT=200000;let totalTokens=0;
-function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();fetchBalance();}
+function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();fetchBalance();initMaxTokens();}
 function closeSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function updateTokenDisplay(){
   const pct=Math.min((totalTokens/CONTEXT_LIMIT)*100,100);
@@ -537,7 +579,7 @@ function closeStatusPicker(){document.getElementById('status-modal').classList.r
 function setStatus(s){closeStatusPicker();applyStatus(s,true);}
 function confirmCustomStatus(){const v=document.getElementById('status-custom-input').value.trim();closeStatusPicker();if(v)applyStatus(v,true);}
 
-// ========== getSystemPrompt：注入当前时间（格式 2026.07.10 09:20） ==========
+// ========== getSystemPrompt：注入当前时间 ==========
 function getSystemPrompt(){
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
@@ -625,6 +667,7 @@ function renderBubbleContent(text){
   return html;
 }
 
+// ========== 用户消息气泡（增加了复制按钮） ==========
 function appendUserBubble(text,imgData,msgIdx){
   const row=document.createElement('div');row.className='msg-row user';
   if(msgIdx!==undefined){row.dataset.msgIdx=msgIdx;row.dataset.msgRole='user';}
@@ -633,8 +676,39 @@ function appendUserBubble(text,imgData,msgIdx){
   let content='';
   if(imgData)content+=`<div class="bubble-img"><img src="${imgData}" onclick="openLightboxDirect('${imgData}')"></div>`;
   if(text)content+=`<div class="bubble user">${escHtml(text)}</div>`;
-  row.innerHTML=`${avatarHtml}<div class="bubble-wrap">${content}<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;"><span class="msg-action-btn" onclick="editMsgAt(this.closest('.msg-row'))" title="编辑">ฅ</span><span class="msg-time">${nowStr()}</span></div></div>`;
+  row.innerHTML=`${avatarHtml}<div class="bubble-wrap">${content}<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;"><span class="msg-action-btn" onclick="editMsgAt(this.closest('.msg-row'))" title="编辑">ฅ</span><span class="msg-action-btn" onclick="copyUserMsg(this.closest('.msg-row'))" title="复制">✎</span><span class="msg-time">${nowStr()}</span></div></div>`;
   document.getElementById('messages').appendChild(row);scrollBottom();
+}
+
+// ========== 复制用户消息（剥离时间戳） ==========
+function copyUserMsg(row){
+  // 获取消息内容（用户消息可能包含图片，但这里我们只复制文字）
+  const bubble = row.querySelector('.bubble.user');
+  if(!bubble) return;
+  let text = bubble.textContent;
+  // 去除时间戳前缀（如果有）
+  text = text.replace(/^\[\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\]\n/, '');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>showToast('已复制')).catch(()=>fallbackCopy(text));
+  }else{fallbackCopy(text);}
+}
+
+function fallbackCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text;ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
+  document.body.appendChild(ta);ta.focus();ta.select();
+  try{document.execCommand('copy');showToast('已复制');}catch(e){showToast('长按选择文字复制');}
+  document.body.removeChild(ta);
+}
+
+// ========== 编辑消息时剥离时间戳 ==========
+function editMsgAt(row){
+  const msgIdx=parseInt(row.dataset.msgIdx),msg=messages[msgIdx];if(!msg)return;
+  let rawText = typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?(msg.content.find(c=>c.type==='text')?.text||''):'');
+  // 剥离时间戳前缀
+  rawText = rawText.replace(/^\[\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\]\n/, '');
+  const input=document.getElementById('input');input.value=rawText;autoResize(input);input.focus();
+  editingMsgIdx=msgIdx;
 }
 
 let currentBubble=null,currentThinkWrap=null,currentThinkContent=null,currentAiRow=null;
@@ -660,7 +734,8 @@ function finalizeThinking(){if(currentThinkWrap){const dot=currentThinkWrap.quer
 function addWaitingBubble(wrap){if(currentBubble)return;const b=document.createElement('div');b.className='bubble ai typing-cursor';b.id='waiting-bubble';wrap.appendChild(b);scrollBottom();}
 function removeWaitingBubble(){const b=document.getElementById('waiting-bubble');if(b)b.remove();}
 
-function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
+// ========== AI 气泡（增加显示本次消耗的token） ==========
+function addOrUpdateBubble(wrap,text,done,rawText,capturedRow,tokens){
   removeWaitingBubble();
   if(!currentBubble){
     const b=document.createElement('div');b.className='bubble ai'+(done?'':' typing-cursor');
@@ -679,6 +754,12 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
     }
     const footer=document.createElement('div');footer.style.cssText='display:flex;align-items:center;gap:6px;';
     const time=document.createElement('span');time.className='msg-time';time.textContent=nowStr();
+    if(tokens && tokens>0){
+      const tokenSpan=document.createElement('span');
+      tokenSpan.className='msg-time';
+      tokenSpan.textContent=` · ${tokens} tokens`;
+      footer.appendChild(tokenSpan);
+    }
     const regen=document.createElement('span');regen.className='msg-action-btn';regen.textContent='๑';regen.title='重新生成';
     const rowRef=capturedRow||currentAiRow;
     regen.onclick=()=>regenAt(rowRef);
@@ -690,7 +771,8 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
         navigator.clipboard.writeText(capturedText).then(()=>showToast('已复制')).catch(()=>fallbackCopy(capturedText));
       }else{fallbackCopy(capturedText);}
     };
-    footer.appendChild(time);footer.appendChild(regen);footer.appendChild(ttsBtn);footer.appendChild(copyBtn);wrap.appendChild(footer);
+    footer.appendChild(time);footer.appendChild(regen);footer.appendChild(ttsBtn);footer.appendChild(copyBtn);
+    wrap.appendChild(footer);
   }else{currentBubble.innerHTML=renderBubbleContent(text);}
   scrollBottom();
 }
@@ -705,13 +787,6 @@ function handleBubbleLongPress(e){
     }else{fallbackCopy(text);}
     bubblePressTimer=null;
   },800);
-}
-function fallbackCopy(text){
-  const ta=document.createElement('textarea');
-  ta.value=text;ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
-  document.body.appendChild(ta);ta.focus();ta.select();
-  try{document.execCommand('copy');showToast('已复制');}catch(e){showToast('长按选择文字复制');}
-  document.body.removeChild(ta);
 }
 function cancelBubbleLongPress(){if(bubblePressTimer){clearTimeout(bubblePressTimer);bubblePressTimer=null;}}
 
@@ -810,9 +885,10 @@ function buildMsgs(msgs){
 
 async function streamResponse(wrap,msgHistory){
   abortController=new AbortController();
-  const resp=await fetch('/api/chat-v2',{method:'POST',headers:{'Content-Type':'application/json'},signal:abortController.signal,body:JSON.stringify({model:currentModel,messages:buildMsgs(msgHistory),system:getSystemPrompt(),tools:OB_TOOLS,tool_choice:'auto'})});
+  const resp=await fetch('/api/chat-v2',{method:'POST',headers:{'Content-Type':'application/json'},signal:abortController.signal,body:JSON.stringify({model:currentModel,messages:buildMsgs(msgHistory),system:getSystemPrompt(),tools:OB_TOOLS,tool_choice:'auto',max_tokens:maxTokens})});
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let buf='',thinkingText='',responseText='',toolCallsPartial={},stopReason=null;
+  let lastCompletionTokens=0;
   try{
     while(true){
       const{done,value}=await reader.read();if(done)break;
@@ -821,7 +897,10 @@ async function streamResponse(wrap,msgHistory){
         if(!line.startsWith('data:'))continue;const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')continue;
         try{
           const d=JSON.parse(raw);const choice=d.choices?.[0],delta=choice?.delta,finish=choice?.finish_reason;
-          if(d.usage)totalTokens=(d.usage.prompt_tokens||0)+(d.usage.completion_tokens||0);
+          if(d.usage){
+            totalTokens=(d.usage.prompt_tokens||0)+(d.usage.completion_tokens||0);
+            lastCompletionTokens=d.usage.completion_tokens||0;
+          }
           if(delta?.reasoning){if(!currentThinkWrap)addThinkingBlock(wrap);thinkingText+=delta.reasoning;if(currentThinkContent)currentThinkContent.textContent=thinkingText;}
           if(delta?.content){responseText+=delta.content;addOrUpdateBubble(wrap,responseText,false);}
           if(delta?.tool_calls){
@@ -854,17 +933,13 @@ async function streamResponse(wrap,msgHistory){
   });
   if(toolUses.length>0&&!responseText)addWaitingBubble(wrap);
   finalizeThinking();
-  if(responseText)addOrUpdateBubble(wrap,responseText,true,responseText,currentAiRow);
+  if(responseText){
+    addOrUpdateBubble(wrap,responseText,true,responseText,currentAiRow,lastCompletionTokens);
+  }
   return{text:responseText,toolUses,stopReason};
 }
 
-function editMsgAt(row){
-  const msgIdx=parseInt(row.dataset.msgIdx),msg=messages[msgIdx];if(!msg)return;
-  const text=typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?(msg.content.find(c=>c.type==='text')?.text||''):'');
-  const input=document.getElementById('input');input.value=text;autoResize(input);input.focus();
-  editingMsgIdx=msgIdx;
-}
-
+// 重新生成（已支持token显示）
 async function regenAt(row){
   if(isTyping)return;
   const msgIdx=parseInt(row.dataset.msgIdx);
@@ -901,7 +976,7 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ========== sendMsg：自动在用户消息前加时间戳（单独一行） ==========
+// ========== sendMsg：自动添加时间戳（单独一行） ==========
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
@@ -912,7 +987,6 @@ async function sendMsg(){
   const beijing = new Date(utc + 8 * 3600000);
   const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
   const timePrefix = `[${ts}]`;
-  // 时间戳单独一行，换行后再接消息内容
   const finalText = text ? timePrefix + '\n' + text : '';
   // ---- 时间戳注入结束 ----
 
@@ -923,7 +997,6 @@ async function sendMsg(){
     [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=editingMsgIdx)r.remove();});
     editingMsgIdx=null;
   }
-  // 用户消息使用 finalText（带时间戳，且换行）
   let userContent = hasImg ? [...(finalText ? [{type:'text',text:finalText}] : []), {type:'image_url',image_url:{url:pendingChatImg.data}}] : finalText;
   messages.push({role:'user',content:userContent});
   appendUserBubble(finalText, hasImg ? pendingChatImg.data : null, messages.length-1);
@@ -1021,7 +1094,7 @@ function initLock(){
 
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
-  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();
+  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();
   updateAnniversary();await mcpInit();
   document.getElementById('status-text').textContent='今天 '+nowStr();
   initConversations();
