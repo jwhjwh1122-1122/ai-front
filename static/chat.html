@@ -832,16 +832,14 @@ async function executeMcpTool(name,args){
   if(name==='view_memory'){
     try{const r=await fetch(`/api/memories/${args.filename}/image`);const data=await r.json();
       if(data.error)return{content:[{type:'text',text:'图片不存在'}]};
-      // 提取摘要：只取备注和文件名
       const note = data.note || '无备注';
       const summary = `照片 ${args.filename}，备注：${note}`;
-      // 同时返回图片数据用于显示
       return{
         content:[
           {type:'text',text:summary},
           {type:'image_url',image_url:{url:`data:${data.mime};base64,${data.data}`}}
         ],
-        _summary: summary  // 附加摘要，供后端存储
+        _summary: summary
       };
     }catch(e){return{content:[{type:'text',text:'读取失败：'+e.message}]};}
   }
@@ -861,7 +859,6 @@ async function handleToolResult(name,result,rbEl){
   if(name==='view_memory'&&result?.content){
     const textPart = result.content.find(c=>c.type==='text');
     const imgPart = result.content.find(c=>c.type==='image_url');
-    // 提取摘要（从后端返回的 _summary 或从文本中提取）
     let summary = result._summary || (textPart ? textPart.text : '');
     if(rbEl){
       rbEl.textContent = summary || '已查看照片';
@@ -872,13 +869,10 @@ async function handleToolResult(name,result,rbEl){
         rbEl.appendChild(img);
       }
     }
-    // 返回包含摘要的对象，以便前端存储
     return {type:'view_memory_result', summary: summary, imageUrl: imgPart?.image_url?.url || null};
   }
-  // breath 工具处理
   if(name==='breath' && result?.content){
     const text = result.content[0]?.text || '';
-    // 提取摘要：取前200字符
     const summary = text.slice(0, 200) + (text.length>200 ? '……' : '');
     if(rbEl) rbEl.textContent = summary;
     return {type:'breath_result', summary: summary, fullText: text};
@@ -910,7 +904,7 @@ function getSessionId(){
   return sid;
 }
 
-// ========== 调用后端存储记忆摘要 ==========
+// ========== 存储记忆摘要到后端 ==========
 async function storeMemorySummary(toolName, summaryText){
   try{
     const sessionId = getSessionId();
@@ -945,7 +939,6 @@ async function streamResponse(wrap,msgHistory){
           if(delta?.content){
             responseText+=delta.content;
             addOrUpdateBubble(wrap,responseText,false);
-            // 流式保存
             if(messages.length > 0 && messages[messages.length-1].role === 'assistant'){
               messages[messages.length-1].content = responseText;
             } else {
@@ -985,7 +978,6 @@ async function streamResponse(wrap,msgHistory){
   finalizeThinking();
   if(responseText){
     addOrUpdateBubble(wrap,responseText,true,responseText,currentAiRow,lastCompletionTokens);
-    // 最终保存
     saveCurrentConversation();
   }
   return{text:responseText,toolUses,stopReason};
@@ -994,14 +986,12 @@ async function streamResponse(wrap,msgHistory){
 // ========== 执行工具并存储摘要 ==========
 async function executeAndStoreTool(name, args){
   const result = await executeMcpTool(name, args);
-  // 如果是 breath 或 view_memory，提取摘要并调用后端存储
   if(name === 'breath' && result.content){
     const text = result.content[0]?.text || '';
     const summary = text.slice(0, 200) + (text.length>200 ? '……' : '');
     await storeMemorySummary('breath', summary);
   } else if(name === 'view_memory' && result.content){
     const text = result.content[0]?.text || '';
-    // 提取文件名和备注
     const filename = args.filename || '';
     const note = text.replace(/^照片\s+.*?，备注：/, '').trim();
     const summary = `照片 ${filename}，备注：${note}`;
@@ -1028,13 +1018,10 @@ async function regenAt(row){
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
         const tu=toolUses[ti];
-        // 替换为带存储的执行
         const result = await executeAndStoreTool(tu.name, tu.input);
         const content = await handleToolResult(tu.name, result, tu.rbEl);
-        // 处理图片注入等
         if(content && typeof content === 'object' && content.type === 'view_memory_result'){
           workMsgs.push({role:'tool',content:content.summary, tool_call_id:tu.id});
-          // 附加图片到用户消息（如果需要）
           if(content.imageUrl){
             workMsgs.push({role:'user', content:[
               {type:'text', text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'},
@@ -1052,6 +1039,26 @@ async function regenAt(row){
     messages.push({role:'assistant',content:finalText});
   }catch(e){addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
+}
+
+// ========== 压缩图片（修复表情包上传） ==========
+function compressImage(dataUrl, maxSize) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = function() {
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = h * maxSize / w; w = maxSize; }
+        else { w = w * maxSize / h; h = maxSize; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/png', 0.8));
+    };
+    img.src = dataUrl;
+  });
 }
 
 async function sendMsg(){
@@ -1106,7 +1113,6 @@ async function sendMsg(){
       }
       currentBubble=null;
     }
-    // 最终保存已在 streamResponse 完成
   }catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
   isTyping=false;const btn=document.getElementById('send-btn');btn.textContent='↑';btn.style.fontSize='';document.getElementById('input').focus();
 }
@@ -1194,10 +1200,35 @@ function startKeepalive() {
   }, 50 * 60 * 1000);
 }
 
-// ========== 添加后端存储路由（app.py 中已实现，这里前端仅用于存储） ==========
-// 实际上存储由后端处理，前端只是调用 fetch 发送数据，已在 executeAndStoreTool 中实现
+// ========== 表情包上传（图片压缩） ==========
+async function handleEmojiUpload(e){
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    const compressed = await compressImage(ev.target.result, 200);
+    pendingEmojiFile = compressed;
+    document.getElementById('emoji-name-input').value = '';
+    document.getElementById('emoji-name-modal').classList.add('open');
+    setTimeout(()=>document.getElementById('emoji-name-input').focus(), 100);
+  };
+  reader.readAsDataURL(file);
+}
 
-(async function(){
+async function confirmEmojiName(){
+  const name = document.getElementById('emoji-name-input').value.trim();
+  document.getElementById('emoji-name-modal').classList.remove('open');
+  if(!pendingEmojiFile) return;
+  const customs = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
+  customs.push({ name: name || `表情${customs.length+1}`, data: pendingEmojiFile });
+  localStorage.setItem('custom-emoji', JSON.stringify(customs));
+  renderEmojiGrid();
+  showToast('表情已上传');
+  pendingEmojiFile = null;
+}
+
+(function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
   initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();
   updateAnniversary();await mcpInit();
