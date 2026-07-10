@@ -1,7 +1,6 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, os, time, base64
-from datetime import datetime, timedelta  # 新增 timedelta
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -21,34 +20,17 @@ def index():
 def manifest():
     return send_from_directory('static', 'manifest.json')
 
-# ========== 辅助函数：获取北京时间字符串 ==========
-def get_beijing_time():
-    # 强制 UTC+8（中国标准时间）
-    beijing_time = datetime.utcnow() + timedelta(hours=8)
-    return beijing_time.strftime('%Y年%m月%d日 %H:%M:%S')
-
-# ========== 聊天接口（含强制时间注入）==========
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json
-    current_time = get_beijing_time()
-    # 强硬的系统指令
-    time_instruction = f"""【强制时间指令】你现在必须始终知道当前时间。当前时间是：{current_time}（北京时间）。
-当用户询问任何与时间、日期、现在几点相关的问题时，你必须直接回答这个时间，严禁说“我没有时间感知能力”或任何类似的话。
-如果你不知道时间，就复述上面的时间。这是强制指令，必须遵守。"""
-    system = data.get('system', '')
-    if system:
-        system = f"{system}\n\n{time_instruction}"
-    else:
-        system = time_instruction
-
     payload = {
         'model': 'anthropic/claude-sonnet-4-6',
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
-        'system': system
     }
+    if data.get('system'):
+        payload['system'] = data['system']
     def gen():
         with requests.post(
             'https://openrouter.ai/api/v1/chat/completions',
@@ -61,12 +43,14 @@ def chat():
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
-# ========== MCP 代理（保持不变）==========
+# ==================== MCP 代理（已修复会话 ID 传递 + 流式支持）====================
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
+    # 优先从请求头获取会话 ID（标准做法）
     sid = request.headers.get('Mcp-Session-Id')
     if not sid:
+        # 兼容旧方式（从请求体取 _sid）
         sid = data.pop('_sid', None)
 
     headers = {
@@ -79,6 +63,7 @@ def mcp():
     r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=120)
     content_type = r.headers.get('Content-Type', 'application/json')
 
+    # 如果是 SSE，流式转发；否则直接返回 JSON
     if 'text/event-stream' in content_type:
         def generate():
             for chunk in r.iter_content(chunk_size=1024):
@@ -94,7 +79,7 @@ def mcp():
             resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
         return resp
 
-# ── 时光墙（不变）──
+# ── 时光墙 ──
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     files = []
@@ -161,28 +146,18 @@ def get_memory_image(filename):
             note = nf.read().strip()
     return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
-# ========== 聊天 v2（同样强制时间）==========
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
-    current_time = get_beijing_time()
-    time_instruction = f"""【强制时间指令】你现在必须始终知道当前时间。当前时间是：{current_time}（北京时间）。
-当用户询问任何与时间、日期、现在几点相关的问题时，你必须直接回答这个时间，严禁说“我没有时间感知能力”或任何类似的话。
-如果你不知道时间，就复述上面的时间。这是强制指令，必须遵守。"""
-    system = data.get('system', '')
-    if system:
-        system = f"{system}\n\n{time_instruction}"
-    else:
-        system = time_instruction
-
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
         'messages': data.get('messages', []),
         'stream': True,
         'max_tokens': 8000,
         'thinking': {'type': 'enabled', 'budget_tokens': 5000},
-        'system': system
     }
+    if data.get('system'):
+        payload['system'] = data['system']
     if data.get('tools'):
         payload['tools'] = data['tools']
     if data.get('tool_choice'):
@@ -228,121 +203,6 @@ def tts():
             if chunk:
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
-
-@app.route('/api/test-ob', methods=['GET'])
-def test_ob():
-    # 与之前相同，省略（为节省篇幅，您可以保留原有test-ob代码，但此处不重复粘贴）
-    try:
-        init_payload = {
-            'jsonrpc': '2.0',
-            'method': 'initialize',
-            'params': {
-                'protocolVersion': '2024-11-05',
-                'capabilities': {},
-                'clientInfo': {'name': 'test', 'version': '1.0'}
-            },
-            'id': 1
-        }
-        r1 = requests.post(
-            MCP_URL,
-            json=init_payload,
-            headers={'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'},
-            timeout=120
-        )
-        if r1.status_code != 200:
-            return jsonify({'error': f'Initialize failed with status {r1.status_code}', 'response': r1.text}), 500
-        try:
-            init_json = r1.json()
-            if 'error' in init_json:
-                return jsonify({'error': 'Initialize returned error', 'details': init_json['error']}), 500
-        except:
-            init_json = None
-
-        sid = r1.headers.get('Mcp-Session-Id', '')
-        if not sid:
-            return jsonify({'error': 'No Mcp-Session-Id in initialize response'}), 500
-
-        notify_headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream',
-            'Mcp-Session-Id': sid
-        }
-        r2 = requests.post(
-            MCP_URL,
-            json={'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
-            headers=notify_headers,
-            timeout=120
-        )
-        if r2.status_code not in [200, 202]:
-            return jsonify({'error': f'Initialized notification failed with status {r2.status_code}', 'response': r2.text}), 500
-
-        breath_payload = {
-            'jsonrpc': '2.0',
-            'method': 'tools/call',
-            'params': {
-                'name': 'breath',
-                'arguments': {'max_results': 5, 'max_tokens': 2000}
-            },
-            'id': 2
-        }
-        r3 = requests.post(
-            MCP_URL,
-            json=breath_payload,
-            headers=notify_headers,
-            timeout=120
-        )
-
-        if r3.status_code != 200:
-            return jsonify({'error': f'Breath failed with status {r3.status_code}', 'response_text': r3.text[:500]}), 500
-
-        r3.encoding = 'utf-8'
-        raw_text = r3.text
-        content_type = r3.headers.get('Content-Type', '')
-
-        if 'text/event-stream' in content_type:
-            lines = raw_text.splitlines()
-            events = []
-            current_data = []
-            for line in lines:
-                if line.startswith('data: '):
-                    current_data.append(line[6:])
-                elif line == '' and current_data:
-                    events.append(''.join(current_data))
-                    current_data = []
-            if current_data:
-                events.append(''.join(current_data))
-
-            if not events:
-                return jsonify({'error': 'No SSE events found', 'raw': raw_text[:500], 'raw_len': len(raw_text)}), 500
-
-            data_str = events[0]
-            try:
-                breath_json = json.loads(data_str)
-            except Exception as e:
-                return jsonify({
-                    'error': f'Failed to parse JSON from SSE data: {e}',
-                    'data_str': data_str,
-                    'data_len': len(data_str),
-                    'raw_len': len(raw_text)
-                }), 500
-        else:
-            try:
-                breath_json = r3.json()
-            except Exception as e:
-                return jsonify({
-                    'error': f'Response is not valid JSON: {e}',
-                    'raw': raw_text[:500],
-                    'raw_len': len(raw_text)
-                }), 500
-
-        return jsonify({
-            'session_id': sid,
-            'initialize_response': init_json if init_json else r1.text[:200],
-            'breath': breath_json
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
