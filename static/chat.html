@@ -539,7 +539,6 @@ function confirmCustomStatus(){const v=document.getElementById('status-custom-in
 
 // ========== getSystemPrompt：注入当前时间（格式 2026.07.10 09:20） ==========
 function getSystemPrompt(){
-  // 获取当前北京时间，格式 2026.07.10 09:20
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const beijing = new Date(utc + 8 * 3600000);
@@ -734,7 +733,6 @@ async function mcpInit(){
 let abortController=null;
 function stopGeneration(){if(abortController){abortController.abort();abortController=null;}}
 
-// 工具定义保持不变（breath、hold、grow等仍然可用）
 const OB_TOOLS=[
   {type:'function',function:{name:'breath',description:'检索/浮现记忆。无query=自动浮现，有query=关键词检索。',parameters:{type:'object',properties:{query:{type:'string'},importance_min:{type:'number'},max_results:{type:'number'},max_tokens:{type:'number'}}}}},
   {type:'function',function:{name:'hold',description:'存储单条记忆。',parameters:{type:'object',required:['content'],properties:{content:{type:'string'},tags:{type:'string'},importance:{type:'number'},feel:{type:'boolean'}}}}},
@@ -746,7 +744,6 @@ const OB_TOOLS=[
   {type:'function',function:{name:'view_memory',description:'查看时光墙里的某张照片，真正看见图片内容。需要filename参数。',parameters:{type:'object',required:['filename'],properties:{filename:{type:'string'}}}}}
 ];
 
-// 解析SSE响应
 async function parseMcpResponse(r){
   const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
   const ct=r.headers.get('Content-Type')||'';
@@ -904,10 +901,20 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ========== sendMsg（用户消息不添加时间戳） ==========
+// ========== sendMsg：自动在用户消息前加时间戳 ==========
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
+
+  // ---- 自动生成时间戳前缀 ----
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const beijing = new Date(utc + 8 * 3600000);
+  const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
+  const timePrefix = `[${ts}] `;
+  // 把时间戳加到用户消息前面
+  const finalText = text ? timePrefix + text : '';
+  // ---- 时间戳注入结束 ----
 
   input.value='';input.style.height='auto';
   const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
@@ -916,17 +923,18 @@ async function sendMsg(){
     [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=editingMsgIdx)r.remove();});
     editingMsgIdx=null;
   }
-  let userContent=hasImg?[...(text?[{type:'text',text}]:[]),{type:'image_url',image_url:{url:pendingChatImg.data}}]:text;
+  // 用户消息使用 finalText（带时间戳）
+  let userContent = hasImg ? [...(finalText ? [{type:'text',text:finalText}] : []), {type:'image_url',image_url:{url:pendingChatImg.data}}] : finalText;
   messages.push({role:'user',content:userContent});
-  appendUserBubble(text,hasImg?pendingChatImg.data:null,messages.length-1);
-  if(hasImg)removeImgPreview();
+  appendUserBubble(finalText, hasImg ? pendingChatImg.data : null, messages.length-1);
+  if(hasImg) removeImgPreview();
   const wrap=startAiBubble(messages.length);
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;
-  let workMsgs=[...messages],finalText='';
+  let workMsgs=[...messages],finalAiText='';
   try{
     while(true){
       const rowSnap=currentAiRow;
-      const{text:aiText,toolUses,stopReason}=await streamResponse(wrap,workMsgs);finalText=aiText;
+      const{text:aiText,toolUses,stopReason}=await streamResponse(wrap,workMsgs);finalAiText=aiText;
       if(stopReason!=='tool_calls'||toolUses.length===0)break;
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
@@ -944,7 +952,7 @@ async function sendMsg(){
       }
       currentBubble=null;
     }
-    messages.push({role:'assistant',content:finalText});
+    messages.push({role:'assistant',content:finalAiText});
     if(currentAiRow)currentAiRow.dataset.msgIdx=messages.length-1;
     saveCurrentConversation();
   }catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
