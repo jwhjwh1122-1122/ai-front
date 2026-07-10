@@ -534,13 +534,24 @@ function closeStatusPicker(){document.getElementById('status-modal').classList.r
 function setStatus(s){closeStatusPicker();applyStatus(s,true);}
 function confirmCustomStatus(){const v=document.getElementById('status-custom-input').value.trim();closeStatusPicker();if(v)applyStatus(v,true);}
 
+// ---- 核心：系统提示中动态生成当前时间 ----
 function getSystemPrompt(){
-  const now=new Date().toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  const status=localStorage.getItem('user-status')||'';
-  let prompt=SYSTEM_PROMPT+`\n当前时间：${now}。`;
-  if(status)prompt+=`宝宝当前状态：${status}。`;
-  const customs=JSON.parse(localStorage.getItem('custom-emoji')||'[]');
-  if(customs.length>0)prompt+=`\n宝宝上传的表情包：${customs.map(c=>c.name).filter(Boolean).join('、')}。直接在回复里写[名字]就会显示图片。`;
+  // 获取当前北京时间，格式 2026.07.10 09:20
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const beijing = new Date(utc + 8 * 3600000);
+  const y = beijing.getFullYear();
+  const m = String(beijing.getMonth() + 1).padStart(2, '0');
+  const d = String(beijing.getDate()).padStart(2, '0');
+  const h = String(beijing.getHours()).padStart(2, '0');
+  const min = String(beijing.getMinutes()).padStart(2, '0');
+  const timeStr = `${y}.${m}.${d} ${h}:${min}`;
+
+  const status = localStorage.getItem('user-status') || '';
+  let prompt = SYSTEM_PROMPT + `\n当前时间：${timeStr}（北京时间）。`;
+  if (status) prompt += `宝宝当前状态：${status}。`;
+  const customs = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
+  if (customs.length > 0) prompt += `\n宝宝上传的表情包：${customs.map(c=>c.name).filter(Boolean).join('、')}。直接在回复里写[名字]就会显示图片。`;
   return prompt;
 }
 
@@ -658,7 +669,6 @@ function addOrUpdateBubble(wrap,text,done,rawText,capturedRow){
     const rendered=renderBubbleContent(text);
     currentBubble.innerHTML=rendered;
     currentBubble.classList.remove('typing-cursor');
-    // 如果只有表情包图片，去掉bubble边框
     if(!rendered.replace(/<img[^>]*>/g,'').replace(/\s/g,'').length){
       currentBubble.style.background='transparent';
       currentBubble.style.border='none';
@@ -738,7 +748,6 @@ async function parseMcpResponse(r){
   const ct=r.headers.get('Content-Type')||'';
   const text=await r.text();
   if(ct.includes('text/event-stream')){
-    // 解析SSE
     const lines=text.split('\n');
     let jsonStr='';
     for(const line of lines){
@@ -788,7 +797,6 @@ async function handleToolResult(name,result,rbEl){
 function buildMsgs(msgs){
   const windowed=ctxWindow>0?msgs.slice(-ctxWindow):msgs;
   const result=[...windowed];
-  // 每条对话在第一条user消息前加中文思考提醒
   const firstUser=result.findIndex(m=>m.role==='user');
   if(firstUser>=0){
     const orig=result[firstUser];
@@ -892,22 +900,10 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
+// ---- 发送消息：不再在用户消息里加时间戳，只保留系统提示中的时间 ----
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
-
-  // ---- 自动注入当前北京时间（格式 2026.07.10 09:20） ----
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const beijing = new Date(utc + 8 * 3600000);
-  const y = beijing.getFullYear();
-  const m = String(beijing.getMonth() + 1).padStart(2, '0');
-  const d = String(beijing.getDate()).padStart(2, '0');
-  const h = String(beijing.getHours()).padStart(2, '0');
-  const min = String(beijing.getMinutes()).padStart(2, '0');
-  const timeStr = `${y}.${m}.${d} ${h}:${min}`;
-  const fullText = text ? `[${timeStr}]\n${text}` : '';
-  // ---- 注入结束 ----
 
   input.value='';input.style.height='auto';
   const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
@@ -916,9 +912,10 @@ async function sendMsg(){
     [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=editingMsgIdx)r.remove();});
     editingMsgIdx=null;
   }
-  let userContent=hasImg?[...(fullText?[{type:'text',text:fullText}]:[]),{type:'image_url',image_url:{url:pendingChatImg.data}}]:fullText;
+  // 用户消息里不含时间戳，只有原始内容
+  let userContent=hasImg?[...(text?[{type:'text',text}]:[]),{type:'image_url',image_url:{url:pendingChatImg.data}}]:text;
   messages.push({role:'user',content:userContent});
-  appendUserBubble(fullText,hasImg?pendingChatImg.data:null,messages.length-1);
+  appendUserBubble(text,hasImg?pendingChatImg.data:null,messages.length-1);
   if(hasImg)removeImgPreview();
   const wrap=startAiBubble(messages.length);
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;
@@ -991,7 +988,7 @@ async function doUpload(file,note){
 async function deleteMemory(e,filename){e.stopPropagation();try{await fetch(`/api/memories/${filename}`,{method:'DELETE'});await loadMemories();}catch(e){}}
 
 // 密码锁
-const APP_PWD = '0606'; // 默认密码，宝宝可改
+const APP_PWD = '0606';
 function checkPwd(){
   const v=document.getElementById('pwd-input').value;
   if(v===APP_PWD){
@@ -1019,7 +1016,6 @@ function initLock(){
   initConversations();
   document.getElementById('input').focus();
   initLock();
-
 })();
 </script>
 </body>
