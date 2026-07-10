@@ -901,19 +901,19 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ========== sendMsg：自动在用户消息前加时间戳 ==========
+// ========== sendMsg：自动在用户消息前加时间戳（单独一行） ==========
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
 
-  // ---- 自动生成时间戳前缀 ----
+  // ---- 自动生成时间戳前缀（单独一行） ----
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const beijing = new Date(utc + 8 * 3600000);
   const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
-  const timePrefix = `[${ts}] `;
-  // 把时间戳加到用户消息前面
-  const finalText = text ? timePrefix + text : '';
+  const timePrefix = `[${ts}]`;
+  // 时间戳单独一行，换行后再接消息内容
+  const finalText = text ? timePrefix + '\n' + text : '';
   // ---- 时间戳注入结束 ----
 
   input.value='';input.style.height='auto';
@@ -923,7 +923,7 @@ async function sendMsg(){
     [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=editingMsgIdx)r.remove();});
     editingMsgIdx=null;
   }
-  // 用户消息使用 finalText（带时间戳）
+  // 用户消息使用 finalText（带时间戳，且换行）
   let userContent = hasImg ? [...(finalText ? [{type:'text',text:finalText}] : []), {type:'image_url',image_url:{url:pendingChatImg.data}}] : finalText;
   messages.push({role:'user',content:userContent});
   appendUserBubble(finalText, hasImg ? pendingChatImg.data : null, messages.length-1);
