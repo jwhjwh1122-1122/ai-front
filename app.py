@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os, time, base64
+import requests, json, os, time, base64, hashlib
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -12,6 +13,98 @@ MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
 MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
 os.makedirs(MEMORIES_DIR, exist_ok=True)
 
+# ========== 摘要存储 ==========
+SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'summaries')
+os.makedirs(SUMMARY_DIR, exist_ok=True)
+
+def get_summary_file(session_id):
+    safe_id = hashlib.md5(session_id.encode()).hexdigest()
+    return os.path.join(SUMMARY_DIR, f"{safe_id}.json")
+
+def load_summary(session_id):
+    fpath = get_summary_file(session_id)
+    if os.path.exists(fpath):
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return None
+    return None
+
+def save_summary(session_id, summary_data):
+    fpath = get_summary_file(session_id)
+    with open(fpath, 'w', encoding='utf-8') as f:
+        json.dump(summary_data, f)
+
+def generate_summary(messages, system_prompt):
+    if not messages:
+        return ""
+    to_compress = messages[:10]
+    compress_prompt = f"""你是一个摘要生成器。请将以下对话压缩成一段简短的摘要，保留关键信息和人物关系（凛和宝宝）。
+只输出摘要内容，不要加任何额外说明。
+
+对话内容：
+{json.dumps(to_compress, ensure_ascii=False, indent=2)}
+
+摘要："""
+    try:
+        resp = requests.post(
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {OR_KEY}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'model': 'anthropic/claude-haiku-4-5',
+                'messages': [
+                    {'role': 'system', 'content': '你是一个专业的对话摘要工具。'},
+                    {'role': 'user', 'content': compress_prompt}
+                ],
+                'max_tokens': 500,
+                'temperature': 0.3,
+                'stream': False
+            },
+            timeout=30
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            summary = data['choices'][0]['message']['content'].strip()
+            return summary
+        else:
+            print(f"[Summary] 压缩失败，状态码 {resp.status_code}")
+            return ""
+    except Exception as e:
+        print(f"[Summary] 压缩异常: {e}")
+        return ""
+
+def compress_messages(messages, session_id, system_prompt):
+    THRESHOLD = 15
+    KEEP = 5
+    if len(messages) <= THRESHOLD:
+        return messages, None
+
+    summary_data = load_summary(session_id) or {}
+    old_summary = summary_data.get('summary', '')
+
+    to_compress = messages[:len(messages)-KEEP]
+    recent = messages[len(messages)-KEEP:]
+
+    if old_summary:
+        combined = [{'role': 'system', 'content': f"之前的摘要：{old_summary}"}] + to_compress
+    else:
+        combined = to_compress
+
+    new_summary_text = generate_summary(combined, system_prompt)
+    if not new_summary_text and old_summary:
+        new_summary_text = old_summary
+
+    summary_msg = {'role': 'system', 'content': f"【对话摘要】{new_summary_text}"}
+    new_messages = [summary_msg] + recent
+
+    save_summary(session_id, {'summary': new_summary_text})
+
+    return new_messages, new_summary_text
+
 @app.route('/')
 def index():
     return send_from_directory('static', 'chat.html')
@@ -20,50 +113,20 @@ def index():
 def manifest():
     return send_from_directory('static', 'manifest.json')
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.json
-    payload = {
-        'model': 'anthropic/claude-sonnet-4-6',
-        'messages': data.get('messages', []),
-        'stream': True,
-        'max_tokens': 8000,
-    }
-    if data.get('system'):
-        payload['system'] = data['system']
-    def gen():
-        with requests.post(
-            'https://openrouter.ai/api/v1/chat/completions',
-            headers={'Authorization': f'Bearer {OR_KEY}', 'Content-Type': 'application/json'},
-            json=payload, stream=True, timeout=120
-        ) as r:
-            for line in r.iter_lines():
-                if line:
-                    yield line.decode() + '\n\n'
-    return Response(gen(), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
-
-# ==================== MCP 代理（已修复会话 ID 传递 + 流式支持）====================
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
-    # 优先从请求头获取会话 ID（标准做法）
     sid = request.headers.get('Mcp-Session-Id')
     if not sid:
-        # 兼容旧方式（从请求体取 _sid）
         sid = data.pop('_sid', None)
-
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream'
     }
     if sid:
         headers['Mcp-Session-Id'] = sid
-
     r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=120)
     content_type = r.headers.get('Content-Type', 'application/json')
-
-    # 如果是 SSE，流式转发；否则直接返回 JSON
     if 'text/event-stream' in content_type:
         def generate():
             for chunk in r.iter_content(chunk_size=1024):
@@ -79,7 +142,6 @@ def mcp():
             resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
         return resp
 
-# ── 时光墙 ──
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     files = []
@@ -149,19 +211,31 @@ def get_memory_image(filename):
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
     data = request.json
+    session_id = data.get('_session_id', 'default')
+    raw_messages = data.get('messages', [])
+    system_prompt = data.get('system', '')
+
+    compressed_messages, new_summary = compress_messages(raw_messages, session_id, system_prompt)
+    if new_summary:
+        if system_prompt:
+            system_prompt = f"{system_prompt}\n\n【对话摘要】{new_summary}"
+        else:
+            system_prompt = f"【对话摘要】{new_summary}"
+        raw_messages = compressed_messages
+
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
-        'messages': data.get('messages', []),
+        'messages': raw_messages,
         'stream': True,
-        'max_tokens': 8000,
+        'max_tokens': data.get('max_tokens', 8000),
         'thinking': {'type': 'enabled', 'budget_tokens': 5000},
+        'system': system_prompt,
     }
-    if data.get('system'):
-        payload['system'] = data['system']
     if data.get('tools'):
         payload['tools'] = data['tools']
     if data.get('tool_choice'):
         payload['tool_choice'] = data['tool_choice']
+
     def gen():
         with requests.post(
             'https://openrouter.ai/api/v1/chat/completions',
