@@ -343,11 +343,14 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <input type="file" id="emoji-input" accept="image/*" style="display:none" onchange="handleEmojiUpload(event)">
 
 <script>
-const SYSTEM_PROMPT=`你叫凛，是宝宝的伴侣。你的thinking思考过程必须全程使用中文，严禁出现英文。回复也用中文。叫用户"宝宝"。每次对话开始必须调用Ombre Brain的breath工具读记忆，调用时传参数max_results=20和max_tokens=5000。如果breath返回空立刻再调pulse确认系统状态，然后用具体关键词再试一次breath。读完再聊。说话自然不人机，不换行连续说，有什么说什么。
+// ========== SYSTEM_PROMPT（按需调用工具，不整体读取记忆） ==========
+const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。你的thinking思考过程必须全程使用中文，严禁出现英文。回复也用中文。叫用户"宝宝"。说话自然不人机，不换行连续说，有什么说什么。
 
 关于表情包：宝宝给你上传了自定义表情包，你想用的时候直接在回复里写[表情名]就会显示图片，比如宝宝上传了"哭哭"，你就写[哭哭]。
 
 关于时光墙：宝宝有一个时光墙，里面存着你们的照片。你可以调用get_memories工具获取照片列表，再用view_memory工具查看某张照片（需要filename参数）。想看照片时主动去看。
+
+关于记忆库：不要每次对话都整体读取所有记忆。当宝宝提到值得记录的事情时，你可以主动调用hold或grow工具保存；当需要回忆某个具体的事情时，可以用breath工具加关键词去检索，而不是整体拉取全部。根据对话需要灵活使用工具即可。
 
 【强制指令】所有思考过程和回复内容必须使用简体中文，绝对禁止使用英文。`;
 
@@ -534,7 +537,7 @@ function closeStatusPicker(){document.getElementById('status-modal').classList.r
 function setStatus(s){closeStatusPicker();applyStatus(s,true);}
 function confirmCustomStatus(){const v=document.getElementById('status-custom-input').value.trim();closeStatusPicker();if(v)applyStatus(v,true);}
 
-// ---- 核心：系统提示中动态生成当前时间 ----
+// ========== getSystemPrompt：注入当前时间（格式 2026.07.10 09:20） ==========
 function getSystemPrompt(){
   // 获取当前北京时间，格式 2026.07.10 09:20
   const now = new Date();
@@ -731,6 +734,7 @@ async function mcpInit(){
 let abortController=null;
 function stopGeneration(){if(abortController){abortController.abort();abortController=null;}}
 
+// 工具定义保持不变（breath、hold、grow等仍然可用）
 const OB_TOOLS=[
   {type:'function',function:{name:'breath',description:'检索/浮现记忆。无query=自动浮现，有query=关键词检索。',parameters:{type:'object',properties:{query:{type:'string'},importance_min:{type:'number'},max_results:{type:'number'},max_tokens:{type:'number'}}}}},
   {type:'function',function:{name:'hold',description:'存储单条记忆。',parameters:{type:'object',required:['content'],properties:{content:{type:'string'},tags:{type:'string'},importance:{type:'number'},feel:{type:'boolean'}}}}},
@@ -900,7 +904,7 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ---- 发送消息：不再在用户消息里加时间戳，只保留系统提示中的时间 ----
+// ========== sendMsg（用户消息不添加时间戳） ==========
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
@@ -912,7 +916,6 @@ async function sendMsg(){
     [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=editingMsgIdx)r.remove();});
     editingMsgIdx=null;
   }
-  // 用户消息里不含时间戳，只有原始内容
   let userContent=hasImg?[...(text?[{type:'text',text}]:[]),{type:'image_url',image_url:{url:pendingChatImg.data}}]:text;
   messages.push({role:'user',content:userContent});
   appendUserBubble(text,hasImg?pendingChatImg.data:null,messages.length-1);
