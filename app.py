@@ -13,7 +13,7 @@ MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
 MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
 os.makedirs(MEMORIES_DIR, exist_ok=True)
 
-# ========== 摘要存储 ==========
+# ========== 摘要存储（对话压缩） ==========
 SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'summaries')
 os.makedirs(SUMMARY_DIR, exist_ok=True)
 
@@ -105,6 +105,65 @@ def compress_messages(messages, session_id, system_prompt):
 
     return new_messages, new_summary_text
 
+# ========== 记忆摘要存储（独立于对话压缩） ==========
+MEMORY_SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'memory_summaries')
+os.makedirs(MEMORY_SUMMARY_DIR, exist_ok=True)
+
+def get_memory_summary_file(session_id):
+    safe_id = hashlib.md5(session_id.encode()).hexdigest()
+    return os.path.join(MEMORY_SUMMARY_DIR, f"{safe_id}.json")
+
+def load_memory_summary(session_id):
+    fpath = get_memory_summary_file(session_id)
+    if os.path.exists(fpath):
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_memory_summary(session_id, memory_data):
+    fpath = get_memory_summary_file(session_id)
+    with open(fpath, 'w', encoding='utf-8') as f:
+        json.dump(memory_data, f)
+
+def update_memory_summary(session_id, tool_name, summary_text):
+    data = load_memory_summary(session_id)
+    if tool_name == 'breath':
+        data['last_breath'] = {
+            'content': summary_text,
+            'timestamp': time.time()
+        }
+    elif tool_name == 'view_memory':
+        data['last_view_memory'] = {
+            'content': summary_text,
+            'timestamp': time.time()
+        }
+        if 'viewed_photos' not in data:
+            data['viewed_photos'] = []
+        if summary_text not in data['viewed_photos']:
+            data['viewed_photos'].append(summary_text)
+        if len(data['viewed_photos']) > 10:
+            data['viewed_photos'] = data['viewed_photos'][-10:]
+    save_memory_summary(session_id, data)
+    return data
+
+def get_memory_summary_text(session_id):
+    data = load_memory_summary(session_id)
+    parts = []
+    if data.get('last_breath'):
+        parts.append(f"【上次读取记忆】{data['last_breath']['content']}")
+    if data.get('last_view_memory'):
+        parts.append(f"【上次查看时光墙照片】{data['last_view_memory']['content']}")
+    if data.get('viewed_photos'):
+        recent = data['viewed_photos'][-3:]
+        if recent:
+            parts.append(f"【最近看过的时光墙照片】{'; '.join(recent)}")
+    if parts:
+        return "\n".join(parts)
+    return ""
+
 @app.route('/')
 def index():
     return send_from_directory('static', 'chat.html')
@@ -112,6 +171,17 @@ def index():
 @app.route('/manifest.json')
 def manifest():
     return send_from_directory('static', 'manifest.json')
+
+@app.route('/api/store-memory-summary', methods=['POST'])
+def store_memory_summary():
+    data = request.json
+    session_id = data.get('session_id', 'default')
+    tool_name = data.get('tool_name', '')
+    summary = data.get('summary', '')
+    if tool_name and summary:
+        update_memory_summary(session_id, tool_name, summary)
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': 'missing data'}), 400
 
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
@@ -215,6 +285,7 @@ def chat_v2():
     raw_messages = data.get('messages', [])
     system_prompt = data.get('system', '')
 
+    # 1. 对话压缩
     compressed_messages, new_summary = compress_messages(raw_messages, session_id, system_prompt)
     if new_summary:
         if system_prompt:
@@ -222,6 +293,14 @@ def chat_v2():
         else:
             system_prompt = f"【对话摘要】{new_summary}"
         raw_messages = compressed_messages
+
+    # 2. 附加记忆摘要（独立存储）
+    memory_summary = get_memory_summary_text(session_id)
+    if memory_summary:
+        if system_prompt:
+            system_prompt = f"{system_prompt}\n\n【已读记忆/已看照片摘要】\n{memory_summary}"
+        else:
+            system_prompt = f"【已读记忆/已看照片摘要】\n{memory_summary}"
 
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
