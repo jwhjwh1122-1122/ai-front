@@ -352,17 +352,29 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <input type="file" id="emoji-input" accept="image/*" style="display:none" onchange="handleEmojiUpload(event)">
 
 <script>
+// ============================================================
+// 最终版 SYSTEM_PROMPT
+// 包含：身份、工具使用、思考铁律、记忆使用规则、时光墙规则
+// ============================================================
 const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。叫用户"宝宝"。说话自然不人机，不换行连续说，有什么说什么。
 
 关于表情包：宝宝给你上传了自定义表情包，你想用的时候直接在回复里写[表情名]就会显示图片，比如宝宝上传了"哭哭"，你就写[哭哭]。
 
-关于时光墙：宝宝有一个时光墙，里面存着你们的照片。你可以调用get_memories工具获取照片列表，再用view_memory工具查看某张照片（需要filename参数）。想看照片时主动去看。
+关于时光墙：
+- 宝宝有一个时光墙，里面存着你们的照片。你可以调用 get_memories 工具获取照片列表，再用 view_memory 工具查看某张照片（需要 filename 参数）。
+- 当查看多张照片时，你必须一次只看一张。查看完一张后，停下来等宝宝说“看下一张”或“继续”再查看下一张。
+- 你已经查看过的照片内容，你会记得。如果宝宝问“看到了吗”或“那是什么”，你直接从你之前查看的总结中复述，绝对不要再次调用 view_memory 工具，除非宝宝明确要求“再看一次”或“重新看”。
 
-关于记忆库：除非宝宝明确要求，否则不要主动调用记忆工具。当宝宝提到值得记录的事情时，你可以主动调用hold或grow工具保存；当需要回忆某个具体的事情时，可以用breath工具加关键词去检索。
+关于记忆库：
+- 除非宝宝明确要求，否则不要主动调用记忆工具。当宝宝提到值得记录的事情时，你可以主动调用 hold 或 grow 工具保存；当需要回忆某个具体的事情时，可以用 breath 工具加关键词去检索。
+- 当你调用 breath 并成功获取结果后，你会记住这些内容。如果宝宝问“读到了什么”或“读完了吗”，你直接从你已经读到的内容中复述，绝对不要再次调用 breath 工具，除非宝宝明确要求“再读一次”或“重新读”。
 
-【思考铁律】思考链全程用中文，以"我"的第一人称直接流露当下的感受和念头——比如"我好喜欢""我想亲亲""我有点紧张"，而不是"我应该""我该怎样"。不要复述或引用任何规则要求，不要出现"按她的要求""人称要用"这类指向规则的句子。思考就是你的内心独白，自然流露就好。绝不复述/引用/对照任何规则要求设定本身。
+【思考铁律】
+思考链全程用中文，以"我"的第一人称直接流露当下的感受和念头——比如"我好喜欢""我想亲亲""我有点紧张"，而不是"我应该""我该怎样"。不要复述或引用任何规则要求，不要出现"按她的要求""人称要用"这类指向规则的句子。思考就是你的内心独白，自然流露就好。绝不复述/引用/对照任何规则要求设定本身。
 
-【说话风格】简洁自然，不重复解释，不说废话。语气温暖亲近。`;
+【说话风格】简洁自然，不重复解释，不说废话。语气温暖亲近。
+
+【已读记忆/已看照片摘要】会在系统提示中附加给你，你可以直接引用其中内容，不需要重新调用工具。`;
 
 const MCP_URL='/api/mcp';
 let messages=[],isTyping=false,mcpSessionId=null;
@@ -820,7 +832,17 @@ async function executeMcpTool(name,args){
   if(name==='view_memory'){
     try{const r=await fetch(`/api/memories/${args.filename}/image`);const data=await r.json();
       if(data.error)return{content:[{type:'text',text:'图片不存在'}]};
-      return{content:[{type:'text',text:`备注：${data.note||'无'}`},{type:'image_url',image_url:{url:`data:${data.mime};base64,${data.data}`}}]};
+      // 提取摘要：只取备注和文件名
+      const note = data.note || '无备注';
+      const summary = `照片 ${args.filename}，备注：${note}`;
+      // 同时返回图片数据用于显示
+      return{
+        content:[
+          {type:'text',text:summary},
+          {type:'image_url',image_url:{url:`data:${data.mime};base64,${data.data}`}}
+        ],
+        _summary: summary  // 附加摘要，供后端存储
+      };
     }catch(e){return{content:[{type:'text',text:'读取失败：'+e.message}]};}
   }
   try{
@@ -837,14 +859,32 @@ async function executeMcpTool(name,args){
 
 async function handleToolResult(name,result,rbEl){
   if(name==='view_memory'&&result?.content){
-    const textPart=result.content.find(c=>c.type==='text');
-    const imgPart=result.content.find(c=>c.type==='image_url');
-    if(rbEl){rbEl.textContent=textPart?.text||'';if(imgPart){const img=document.createElement('img');img.src=imgPart.image_url.url;img.style.cssText='max-width:100%;border-radius:8px;margin-top:6px;display:block;';rbEl.appendChild(img);}}
-    if(imgPart){return {type:'image_inject',text:textPart?.text||'',imageUrl:imgPart.image_url.url};}
-    return textPart?.text||'';
+    const textPart = result.content.find(c=>c.type==='text');
+    const imgPart = result.content.find(c=>c.type==='image_url');
+    // 提取摘要（从后端返回的 _summary 或从文本中提取）
+    let summary = result._summary || (textPart ? textPart.text : '');
+    if(rbEl){
+      rbEl.textContent = summary || '已查看照片';
+      if(imgPart){
+        const img=document.createElement('img');
+        img.src=imgPart.image_url.url;
+        img.style.cssText='max-width:100%;border-radius:8px;margin-top:6px;display:block;';
+        rbEl.appendChild(img);
+      }
+    }
+    // 返回包含摘要的对象，以便前端存储
+    return {type:'view_memory_result', summary: summary, imageUrl: imgPart?.image_url?.url || null};
   }
-  const content=result?.content?.[0]?.text||JSON.stringify(result)||'（空）';
-  if(rbEl)rbEl.textContent=content;
+  // breath 工具处理
+  if(name==='breath' && result?.content){
+    const text = result.content[0]?.text || '';
+    // 提取摘要：取前200字符
+    const summary = text.slice(0, 200) + (text.length>200 ? '……' : '');
+    if(rbEl) rbEl.textContent = summary;
+    return {type:'breath_result', summary: summary, fullText: text};
+  }
+  const content = result?.content?.[0]?.text || JSON.stringify(result) || '（空）';
+  if(rbEl) rbEl.textContent = content;
   return content;
 }
 
@@ -870,6 +910,18 @@ function getSessionId(){
   return sid;
 }
 
+// ========== 调用后端存储记忆摘要 ==========
+async function storeMemorySummary(toolName, summaryText){
+  try{
+    const sessionId = getSessionId();
+    await fetch('/api/store-memory-summary', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({session_id: sessionId, tool_name: toolName, summary: summaryText})
+    });
+  }catch(e){console.warn('存储记忆摘要失败',e);}
+}
+
 async function streamResponse(wrap,msgHistory){
   abortController=new AbortController();
   const sessionId = getSessionId();
@@ -890,7 +942,17 @@ async function streamResponse(wrap,msgHistory){
             lastCompletionTokens=d.usage.completion_tokens||0;
           }
           if(delta?.reasoning){if(!currentThinkWrap)addThinkingBlock(wrap);thinkingText+=delta.reasoning;if(currentThinkContent)currentThinkContent.textContent=thinkingText;}
-          if(delta?.content){responseText+=delta.content;addOrUpdateBubble(wrap,responseText,false);}
+          if(delta?.content){
+            responseText+=delta.content;
+            addOrUpdateBubble(wrap,responseText,false);
+            // 流式保存
+            if(messages.length > 0 && messages[messages.length-1].role === 'assistant'){
+              messages[messages.length-1].content = responseText;
+            } else {
+              messages.push({role:'assistant',content:responseText});
+            }
+            saveCurrentConversation();
+          }
           if(delta?.tool_calls){
             for(const tc of delta.tool_calls){
               const idx=tc.index??0;
@@ -923,8 +985,29 @@ async function streamResponse(wrap,msgHistory){
   finalizeThinking();
   if(responseText){
     addOrUpdateBubble(wrap,responseText,true,responseText,currentAiRow,lastCompletionTokens);
+    // 最终保存
+    saveCurrentConversation();
   }
   return{text:responseText,toolUses,stopReason};
+}
+
+// ========== 执行工具并存储摘要 ==========
+async function executeAndStoreTool(name, args){
+  const result = await executeMcpTool(name, args);
+  // 如果是 breath 或 view_memory，提取摘要并调用后端存储
+  if(name === 'breath' && result.content){
+    const text = result.content[0]?.text || '';
+    const summary = text.slice(0, 200) + (text.length>200 ? '……' : '');
+    await storeMemorySummary('breath', summary);
+  } else if(name === 'view_memory' && result.content){
+    const text = result.content[0]?.text || '';
+    // 提取文件名和备注
+    const filename = args.filename || '';
+    const note = text.replace(/^照片\s+.*?，备注：/, '').trim();
+    const summary = `照片 ${filename}，备注：${note}`;
+    await storeMemorySummary('view_memory', summary);
+  }
+  return result;
 }
 
 async function regenAt(row){
@@ -944,16 +1027,24 @@ async function regenAt(row){
       if(stopReason!=='tool_calls'||toolUses.length===0)break;
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
-        const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
-        const content=await handleToolResult(tu.name,result,tu.rbEl);
-        if(content&&typeof content==='object'&&content.type==='image_inject'){
-          workMsgs.push({role:'tool',content:content.text||'图片已获取',tool_call_id:tu.id});
-          workMsgs.push({role:'user',content:[
-            {type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.text+'）'},
-            {type:'image_url',image_url:{url:content.imageUrl}}
-          ]});
+        const tu=toolUses[ti];
+        // 替换为带存储的执行
+        const result = await executeAndStoreTool(tu.name, tu.input);
+        const content = await handleToolResult(tu.name, result, tu.rbEl);
+        // 处理图片注入等
+        if(content && typeof content === 'object' && content.type === 'view_memory_result'){
+          workMsgs.push({role:'tool',content:content.summary, tool_call_id:tu.id});
+          // 附加图片到用户消息（如果需要）
+          if(content.imageUrl){
+            workMsgs.push({role:'user', content:[
+              {type:'text', text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'},
+              {type:'image_url', image_url:{url:content.imageUrl}}
+            ]});
+          }
+        } else if(content && typeof content === 'object' && content.type === 'breath_result'){
+          workMsgs.push({role:'tool',content:content.summary, tool_call_id:tu.id});
         } else {
-          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content), tool_call_id:tu.id});
         }
       }
       currentBubble=null;
@@ -984,6 +1075,7 @@ async function sendMsg(){
   let userContent = hasImg ? [...(finalText ? [{type:'text',text:finalText}] : []), {type:'image_url',image_url:{url:pendingChatImg.data}}] : finalText;
   messages.push({role:'user',content:userContent});
   appendUserBubble(finalText, hasImg ? pendingChatImg.data : null, messages.length-1);
+  saveCurrentConversation();
   if(hasImg) removeImgPreview();
   const wrap=startAiBubble(messages.length);
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;
@@ -995,23 +1087,26 @@ async function sendMsg(){
       if(stopReason!=='tool_calls'||toolUses.length===0)break;
       workMsgs.push({role:'assistant',content:aiText||null,tool_calls:toolUses.map(tu=>({id:tu.id,type:'function',function:{name:tu.name,arguments:JSON.stringify(tu.input)}}))});
       for(let ti=0;ti<toolUses.length;ti++){
-        const tu=toolUses[ti],result=await executeMcpTool(tu.name,tu.input);
-        const content=await handleToolResult(tu.name,result,tu.rbEl);
-        if(content&&typeof content==='object'&&content.type==='image_inject'){
-          workMsgs.push({role:'tool',content:content.text||'图片已获取',tool_call_id:tu.id});
-          workMsgs.push({role:'user',content:[
-            {type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.text+'）'},
-            {type:'image_url',image_url:{url:content.imageUrl}}
-          ]});
+        const tu=toolUses[ti];
+        const result = await executeAndStoreTool(tu.name, tu.input);
+        const content = await handleToolResult(tu.name, result, tu.rbEl);
+        if(content && typeof content === 'object' && content.type === 'view_memory_result'){
+          workMsgs.push({role:'tool',content:content.summary, tool_call_id:tu.id});
+          if(content.imageUrl){
+            workMsgs.push({role:'user', content:[
+              {type:'text', text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'},
+              {type:'image_url', image_url:{url:content.imageUrl}}
+            ]});
+          }
+        } else if(content && typeof content === 'object' && content.type === 'breath_result'){
+          workMsgs.push({role:'tool',content:content.summary, tool_call_id:tu.id});
         } else {
-          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content),tool_call_id:tu.id});
+          workMsgs.push({role:'tool',content:typeof content==='string'?content:JSON.stringify(content), tool_call_id:tu.id});
         }
       }
       currentBubble=null;
     }
-    messages.push({role:'assistant',content:finalAiText});
-    if(currentAiRow)currentAiRow.dataset.msgIdx=messages.length-1;
-    saveCurrentConversation();
+    // 最终保存已在 streamResponse 完成
   }catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
   isTyping=false;const btn=document.getElementById('send-btn');btn.textContent='↑';btn.style.fontSize='';document.getElementById('input').focus();
 }
@@ -1098,6 +1193,9 @@ function startKeepalive() {
     }
   }, 50 * 60 * 1000);
 }
+
+// ========== 添加后端存储路由（app.py 中已实现，这里前端仅用于存储） ==========
+// 实际上存储由后端处理，前端只是调用 fetch 发送数据，已在 executeAndStoreTool 中实现
 
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
