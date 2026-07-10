@@ -125,7 +125,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .lightbox-close{position:absolute;top:max(20px,env(safe-area-inset-top));right:20px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);color:white;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .note-modal{display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,0.5);align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom);}
 .note-modal.open{display:flex;}
-.note-modal-inner{background:var(--bg2);backdrop-filter:blur(20px);border-radius:20px 20px 0 0;padding:20px 18px max(24px,env(safe-area-inset-bottom));width:100%;max-width:500px;}
+/* 修改：让所有模态框内层可滚动，关闭按钮固定顶部 */
+.note-modal-inner{background:var(--bg2);backdrop-filter:blur(20px);border-radius:20px 20px 0 0;padding:20px 18px max(24px,env(safe-area-inset-bottom));width:100%;max-width:500px;max-height:90vh;overflow-y:auto;position:relative;}
 .note-modal-title{font-size:15px;font-weight:600;margin-bottom:14px;}
 .note-input{width:100%;background:var(--input-bg);border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;font-size:15px;color:var(--text);font-family:inherit;outline:none;resize:none;height:72px;transition:border-color 0.2s;}
 .note-input:focus{border-color:var(--accent);}.note-input::placeholder{color:var(--text-muted);}
@@ -243,11 +244,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
     </div>
   </div>
 </div>
+<!-- 设置面板 -->
 <div class="note-modal" id="settings-modal">
-  <div class="note-modal-inner" style="padding-bottom:max(28px,env(safe-area-inset-bottom))">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+  <div class="note-modal-inner">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;position:sticky;top:0;background:var(--bg2);z-index:1;padding-bottom:4px;">
       <div class="note-modal-title" style="margin:0">会话信息</div>
-      <div class="emoji-close-btn" onclick="closeSettings()">✕</div>
+      <div class="emoji-close-btn" onclick="closeSettings()" style="cursor:pointer;">✕</div>
     </div>
     <div class="settings-card" style="margin-top:10px;">
       <div class="settings-label">模型</div>
@@ -277,18 +279,16 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
       </div>
       <div class="settings-sub" id="ctx-sub" style="margin-top:6px;"></div>
     </div>
-
-    <!-- 新增：最大回复长度卡片 -->
+    <!-- 最大回复长度卡片（实时保存） -->
     <div class="settings-card" style="margin-top:10px;">
       <div class="settings-label">最大回复长度 (Max Tokens)</div>
       <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
         <button class="ctx-option" onclick="adjustMaxTokens(-100)" style="min-width:36px;padding:6px 6px;">−</button>
-        <input id="max-tokens-input" type="number" min="1" max="8192" value="8000" style="width:80px;padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-align:center;" onchange="saveMaxTokens(this.value)">
+        <input id="max-tokens-input" type="number" min="1" max="8192" value="8000" style="width:80px;padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-align:center;" oninput="saveMaxTokens(this.value)">
         <button class="ctx-option" onclick="adjustMaxTokens(100)" style="min-width:36px;padding:6px 6px;">+</button>
       </div>
       <div class="settings-sub" id="max-tokens-sub" style="margin-top:6px;">数值越小回复越短，越大越详细</div>
     </div>
-
     <div class="settings-card">
       <div class="settings-label">Token 用量</div>
       <div class="settings-value" id="token-used">— </div>
@@ -364,7 +364,8 @@ const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。你的thinking思考过�
 
 关于记忆库：不要每次对话都整体读取所有记忆。当宝宝提到值得记录的事情时，你可以主动调用hold或grow工具保存；当需要回忆某个具体的事情时，可以用breath工具加关键词去检索，而不是整体拉取全部。根据对话需要灵活使用工具即可。
 
-【强制指令】所有思考过程和回复内容必须使用简体中文，绝对禁止使用英文。`;
+【强制指令】所有思考过程和回复内容必须使用简体中文，绝对禁止使用英文。
+说话简洁自然，不重复解释，不说废话。`;
 
 const MCP_URL='/api/mcp';
 let messages=[],isTyping=false,mcpSessionId=null;
@@ -372,7 +373,7 @@ let currentTheme='',themeLabel='🌫️ 雨雾';
 let pendingChatImg=null,editingMsgIdx=null;
 let currentAudio=null,currentAudioBtn=null;
 
-// ========== 最大回复长度 ==========
+// ========== 最大回复长度（实时保存） ==========
 let maxTokens = parseInt(localStorage.getItem('max-tokens')) || 8000;
 function saveMaxTokens(val) {
   let v = parseInt(val) || 8000;
@@ -380,8 +381,10 @@ function saveMaxTokens(val) {
   if (v > 8192) v = 8192;
   maxTokens = v;
   localStorage.setItem('max-tokens', v);
-  document.getElementById('max-tokens-input').value = v;
-  document.getElementById('max-tokens-sub').textContent = `当前：${v} tokens`;
+  const input = document.getElementById('max-tokens-input');
+  if (input) input.value = v;
+  const sub = document.getElementById('max-tokens-sub');
+  if (sub) sub.textContent = `当前：${v} tokens`;
 }
 function adjustMaxTokens(delta) {
   const input = document.getElementById('max-tokens-input');
@@ -667,7 +670,7 @@ function renderBubbleContent(text){
   return html;
 }
 
-// ========== 用户消息气泡（增加了复制按钮） ==========
+// ========== 用户消息气泡（复制按钮） ==========
 function appendUserBubble(text,imgData,msgIdx){
   const row=document.createElement('div');row.className='msg-row user';
   if(msgIdx!==undefined){row.dataset.msgIdx=msgIdx;row.dataset.msgRole='user';}
@@ -682,11 +685,9 @@ function appendUserBubble(text,imgData,msgIdx){
 
 // ========== 复制用户消息（剥离时间戳） ==========
 function copyUserMsg(row){
-  // 获取消息内容（用户消息可能包含图片，但这里我们只复制文字）
   const bubble = row.querySelector('.bubble.user');
   if(!bubble) return;
   let text = bubble.textContent;
-  // 去除时间戳前缀（如果有）
   text = text.replace(/^\[\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\]\n/, '');
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(()=>showToast('已复制')).catch(()=>fallbackCopy(text));
@@ -705,7 +706,6 @@ function fallbackCopy(text){
 function editMsgAt(row){
   const msgIdx=parseInt(row.dataset.msgIdx),msg=messages[msgIdx];if(!msg)return;
   let rawText = typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?(msg.content.find(c=>c.type==='text')?.text||''):'');
-  // 剥离时间戳前缀
   rawText = rawText.replace(/^\[\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\]\n/, '');
   const input=document.getElementById('input');input.value=rawText;autoResize(input);input.focus();
   editingMsgIdx=msgIdx;
@@ -734,7 +734,7 @@ function finalizeThinking(){if(currentThinkWrap){const dot=currentThinkWrap.quer
 function addWaitingBubble(wrap){if(currentBubble)return;const b=document.createElement('div');b.className='bubble ai typing-cursor';b.id='waiting-bubble';wrap.appendChild(b);scrollBottom();}
 function removeWaitingBubble(){const b=document.getElementById('waiting-bubble');if(b)b.remove();}
 
-// ========== AI 气泡（增加显示本次消耗的token） ==========
+// ========== AI 气泡（显示 token 消耗） ==========
 function addOrUpdateBubble(wrap,text,done,rawText,capturedRow,tokens){
   removeWaitingBubble();
   if(!currentBubble){
@@ -939,7 +939,7 @@ async function streamResponse(wrap,msgHistory){
   return{text:responseText,toolUses,stopReason};
 }
 
-// 重新生成（已支持token显示）
+// 重新生成
 async function regenAt(row){
   if(isTyping)return;
   const msgIdx=parseInt(row.dataset.msgIdx);
@@ -981,14 +981,12 @@ async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
 
-  // ---- 自动生成时间戳前缀（单独一行） ----
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const beijing = new Date(utc + 8 * 3600000);
   const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
   const timePrefix = `[${ts}]`;
   const finalText = text ? timePrefix + '\n' + text : '';
-  // ---- 时间戳注入结束 ----
 
   input.value='';input.style.height='auto';
   const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
