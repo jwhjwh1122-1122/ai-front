@@ -354,7 +354,6 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <script>
 // ============================================================
 // 最终版 SYSTEM_PROMPT
-// 包含：身份、工具使用、思考铁律、记忆使用规则、时光墙规则
 // ============================================================
 const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。叫用户"宝宝"。说话自然不人机，不换行连续说，有什么说什么。
 
@@ -641,9 +640,7 @@ function toggleEmojiPanel(){document.getElementById('emoji-panel').classList.tog
 function closeEmojiPanel(){document.getElementById('emoji-panel').classList.remove('open');}
 function triggerEmojiUpload(){document.getElementById('emoji-input').click();}
 let pendingEmojiFile=null;
-function handleEmojiUpload(e){const file=e.target.files[0];e.target.value='';if(!file)return;pendingEmojiFile=file;document.getElementById('emoji-name-input').value='';document.getElementById('emoji-name-modal').classList.add('open');setTimeout(()=>document.getElementById('emoji-name-input').focus(),100);}
-function confirmEmojiName(){const name=document.getElementById('emoji-name-input').value.trim();document.getElementById('emoji-name-modal').classList.remove('open');if(!pendingEmojiFile)return;const r=new FileReader();r.onload=ev=>{const c=JSON.parse(localStorage.getItem('custom-emoji')||'[]');c.push({name:name||`表情${c.length+1}`,data:ev.target.result});localStorage.setItem('custom-emoji',JSON.stringify(c));renderEmojiGrid();showToast('表情已上传');};r.readAsDataURL(pendingEmojiFile);pendingEmojiFile=null;}
-function cancelEmojiName(){document.getElementById('emoji-name-modal').classList.remove('open');pendingEmojiFile=null;}
+// 表情包上传和压缩在末尾定义
 
 function renderMarkdown(text){
   let h=escHtml(text);
@@ -904,7 +901,6 @@ function getSessionId(){
   return sid;
 }
 
-// ========== 存储记忆摘要到后端 ==========
 async function storeMemorySummary(toolName, summaryText){
   try{
     const sessionId = getSessionId();
@@ -983,7 +979,6 @@ async function streamResponse(wrap,msgHistory){
   return{text:responseText,toolUses,stopReason};
 }
 
-// ========== 执行工具并存储摘要 ==========
 async function executeAndStoreTool(name, args){
   const result = await executeMcpTool(name, args);
   if(name === 'breath' && result.content){
@@ -1041,7 +1036,6 @@ async function regenAt(row){
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ========== 压缩图片（修复表情包上传） ==========
 function compressImage(dataUrl, maxSize) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -1200,7 +1194,6 @@ function startKeepalive() {
   }, 50 * 60 * 1000);
 }
 
-// ========== 表情包上传（图片压缩） ==========
 async function handleEmojiUpload(e){
   const file = e.target.files[0];
   e.target.value = '';
@@ -1228,7 +1221,8 @@ async function confirmEmojiName(){
   pendingEmojiFile = null;
 }
 
-(function(){
+// ========== 修复点：function → async function ==========
+(async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
   initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();
   updateAnniversary();await mcpInit();
