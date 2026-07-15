@@ -28,7 +28,7 @@ THINKING_BUDGET = int(os.environ.get('THINKING_BUDGET', '2000'))
 # 太大则每次请求 token 变多。按体验和账单自己权衡着调。
 COMPRESS_THRESHOLD = int(os.environ.get('COMPRESS_THRESHOLD', '60'))
 COMPRESS_KEEP = int(os.environ.get('COMPRESS_KEEP', '30'))
-MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
+MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
 
 # ========== 持久化数据目录 ==========
 # 在 Zeabur 给服务挂载一个 Volume（比如挂到 /data），
