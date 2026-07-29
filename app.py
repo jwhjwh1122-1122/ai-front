@@ -331,10 +331,11 @@ def chat_v2():
         api_url = 'https://openrouter.ai/api/v1/chat/completions'
         auth_header = f'Bearer {OR_KEY}'
 
-    if data.get('tools'):
-        payload['tools'] = data['tools']
-    if data.get('tool_choice'):
-        payload['tool_choice'] = data['tool_choice']
+    # if data.get('tools'):
+#     payload['tools'] = data['tools']
+# if data.get('tool_choice'):
+#     payload['tool_choice'] = data['tool_choice']
+
 
     def gen():
         with requests.post(
