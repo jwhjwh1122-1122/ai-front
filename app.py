@@ -779,6 +779,36 @@ NET_UA = {'User-Agent': 'LinStudy/1.0 (https://jwh.zeabur.app; personal reading 
           'Accept': 'application/json'}
 WS_API = 'https://zh.wikisource.org/w/api.php'
 WS_REST = 'https://zh.wikisource.org/w/rest.php/v1/search/page'
+# 让维基按简体输出（它原文多是繁体，靠这个参数做简繁转换）
+WS_ZH = {'variant': 'zh-cn', 'uselang': 'zh-cn'}
+
+# 第二道保险：装了 opencc 就再转一次，没装也不影响
+try:
+    from opencc import OpenCC as _OpenCC
+    _T2S = _OpenCC('t2s')
+except Exception:
+    _T2S = None
+
+# 高频繁体字，用来判断是不是没转成功
+_TRAD_HINT = '們說國過來這時個為與會學實對發還嗎麼樣兒點裡萬產務動車輪讀書畫聽見長門開關無愛華萬雲龍鳳'
+
+
+def _to_simplified(text):
+    if not text:
+        return text
+    if _T2S:
+        try:
+            return _T2S.convert(text)
+        except Exception:
+            return text
+    return text
+
+
+def _looks_traditional(text):
+    if not text:
+        return False
+    sample = text[:3000]
+    return sum(1 for c in _TRAD_HINT if c in sample) >= 3
 
 
 def _safe_url(u):
@@ -801,15 +831,17 @@ def _ws_search(q, limit=8):
     err = ''
     # 先走标准 API
     try:
-        r = requests.get(WS_API, params={'action': 'query', 'list': 'search',
-                                         'srsearch': q, 'srlimit': limit,
-                                         'srnamespace': 0, 'format': 'json'},
-                         headers=NET_UA, timeout=20)
+        p = {'action': 'query', 'list': 'search', 'srsearch': q,
+             'srlimit': limit, 'srnamespace': 0, 'format': 'json'}
+        p.update(WS_ZH)
+        r = requests.get(WS_API, params=p, headers=NET_UA, timeout=20)
         if r.status_code == 200:
             hits = (r.json().get('query') or {}).get('search') or []
             if hits:
+                # ref 用原始标题（取书时才找得到），title 显示简体
                 return [{'source': 'wikisource', 'ref': h['title'],
-                         'title': h['title'], 'author': '中文维基文库'} for h in hits]
+                         'title': _to_simplified(h['title']),
+                         'author': '中文维基文库'} for h in hits]
             err = '这个词没搜到'
         else:
             err = f'HTTP {r.status_code}'
@@ -823,7 +855,8 @@ def _ws_search(q, limit=8):
             pages = r.json().get('pages') or []
             if pages:
                 return [{'source': 'wikisource', 'ref': p.get('title'),
-                         'title': p.get('title'), 'author': '中文维基文库'}
+                         'title': _to_simplified(p.get('title')),
+                         'author': '中文维基文库'}
                         for p in pages if p.get('title')]
         else:
             err = err or f'REST HTTP {r.status_code}'
@@ -835,10 +868,11 @@ def _ws_search(q, limit=8):
 
 
 def _ws_extract(titles):
-    r = requests.get(WS_API, params={'action': 'query', 'prop': 'extracts',
-                                     'explaintext': 1, 'exlimit': len(titles),
-                                     'titles': '|'.join(titles), 'format': 'json'},
-                     headers=NET_UA, timeout=45)
+    p = {'action': 'query', 'prop': 'extracts', 'explaintext': 1,
+         'exlimit': len(titles), 'titles': '|'.join(titles),
+         'converttitles': 1, 'format': 'json'}
+    p.update(WS_ZH)
+    r = requests.get(WS_API, params=p, headers=NET_UA, timeout=45)
     pages = ((r.json().get('query') or {}).get('pages') or {}).values()
     return {p.get('title'): (p.get('extract') or '') for p in pages}
 
@@ -848,9 +882,9 @@ def _ws_fetch(title):
     main = _ws_extract([title]).get(title, '') or ''
     subs = []
     try:  # 先按目录页里的链接顺序取，章节次序才对
-        r = requests.get(WS_API, params={'action': 'parse', 'page': title,
-                                         'prop': 'links', 'format': 'json'},
-                         headers=NET_UA, timeout=25)
+        pp = {'action': 'parse', 'page': title, 'prop': 'links', 'format': 'json'}
+        pp.update(WS_ZH)
+        r = requests.get(WS_API, params=pp, headers=NET_UA, timeout=25)
         for l in ((r.json().get('parse') or {}).get('links') or []):
             t = l.get('*', '')
             if l.get('ns') == 0 and t.startswith(title + '/') and t not in subs:
@@ -878,8 +912,28 @@ def _ws_fetch(title):
                 if ex.get(t, '').strip():
                     parts.append(ex[t].strip())
         if parts:
-            return '\n\n'.join(parts)
-    return main
+            return _ws_simplify('\n\n'.join(parts), title)
+    return _ws_simplify(main, title)
+
+
+def _ws_simplify(text, title):
+    """维基已按 zh-cn 输出；若仍是繁体，再用 opencc 兜底，
+    两者都不行就整页重新解析一次（解析器一定会做简繁转换）"""
+    if not _looks_traditional(text):
+        return text
+    if _T2S:
+        return _to_simplified(text)
+    try:
+        pp = {'action': 'parse', 'page': title, 'prop': 'text', 'format': 'json'}
+        pp.update(WS_ZH)
+        r = requests.get(WS_API, params=pp, headers=NET_UA, timeout=40)
+        html = ((r.json().get('parse') or {}).get('text') or {}).get('*') or ''
+        got = _strip_html(html)
+        if got and not _looks_traditional(got):
+            return got
+    except Exception:
+        pass
+    return text
 
 
 def _gd_search(q, limit=8):
