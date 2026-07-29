@@ -1,6 +1,6 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os, time, base64, hashlib
+import requests, json, os, time, base64, hashlib, io
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 
@@ -554,6 +554,388 @@ def chat_v2():
 
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG = '2cdvnKJ5TZi631y5PN1s'
+
+
+# ============================================================
+# 书房：存书、拆页、记进度
+# ============================================================
+BOOKS_DIR = os.path.join(os.path.dirname(__file__), 'books')
+os.makedirs(BOOKS_DIR, exist_ok=True)
+PAGE_CHARS = 900          # 一页约 900 字，手机上一屏多一点
+
+
+def _decode_text(raw):
+    for enc in ('utf-8', 'utf-8-sig', 'gb18030', 'big5'):
+        try:
+            return raw.decode(enc)
+        except Exception:
+            continue
+    return raw.decode('utf-8', 'ignore')
+
+
+def _strip_html(html):
+    import re as _re
+    html = _re.sub(r'(?is)<(script|style).*?</\1>', ' ', html)
+    html = _re.sub(r'(?i)<br\s*/?>', '\n', html)
+    html = _re.sub(r'(?i)</(p|div|h[1-6]|li)>', '\n\n', html)
+    text = _re.sub(r'(?s)<[^>]+>', '', html)
+    import html as _html
+    text = _html.unescape(text)
+    text = _re.sub(r'[ \t]+', ' ', text)
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _read_epub(raw):
+    """不装额外依赖，epub 本质就是个 zip"""
+    import zipfile, re as _re
+    title = ''
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        names = z.namelist()
+        opf_path = None
+        if 'META-INF/container.xml' in names:
+            c = z.read('META-INF/container.xml').decode('utf-8', 'ignore')
+            m = _re.search(r'full-path="([^"]+)"', c)
+            if m:
+                opf_path = m.group(1)
+        order = []
+        if opf_path and opf_path in names:
+            opf = z.read(opf_path).decode('utf-8', 'ignore')
+            tm = _re.search(r'(?is)<dc:title[^>]*>(.*?)</dc:title>', opf)
+            if tm:
+                title = _strip_html(tm.group(1))[:80]
+            manifest = dict(_re.findall(r'(?is)<item\b[^>]*?id="([^"]+)"[^>]*?href="([^"]+)"', opf))
+            manifest2 = dict(_re.findall(r'(?is)<item\b[^>]*?href="([^"]+)"[^>]*?id="([^"]+)"', opf))
+            for href, iid in manifest2.items():
+                manifest.setdefault(iid, href)
+            base = opf_path.rsplit('/', 1)[0] if '/' in opf_path else ''
+            for idref in _re.findall(r'(?is)<itemref\b[^>]*?idref="([^"]+)"', opf):
+                href = manifest.get(idref)
+                if not href:
+                    continue
+                full = (base + '/' + href) if base else href
+                full = full.replace('/./', '/')
+                if full in names:
+                    order.append(full)
+        if not order:
+            order = sorted(n for n in names
+                           if n.lower().endswith(('.xhtml', '.html', '.htm')))
+        parts = []
+        for n in order:
+            try:
+                parts.append(_strip_html(z.read(n).decode('utf-8', 'ignore')))
+            except Exception:
+                continue
+    return title, '\n\n'.join(p for p in parts if p.strip())
+
+
+def _paginate(text):
+    """按段落攒页，尽量不把一段话拦腰截断"""
+    paras = [p.strip() for p in text.split('\n') if p.strip()]
+    pages, buf = [], ''
+    for p in paras:
+        while len(p) > PAGE_CHARS:
+            if buf:
+                pages.append(buf.strip())
+                buf = ''
+            cut = p.rfind('。', 0, PAGE_CHARS)
+            if cut < PAGE_CHARS // 2:
+                cut = PAGE_CHARS
+            else:
+                cut += 1
+            pages.append(p[:cut].strip())
+            p = p[cut:]
+        if len(buf) + len(p) + 1 > PAGE_CHARS and buf:
+            pages.append(buf.strip())
+            buf = p
+        else:
+            buf = (buf + '\n' + p) if buf else p
+    if buf.strip():
+        pages.append(buf.strip())
+    return pages or ['（这本书是空的）']
+
+
+def _book_path(bid):
+    return os.path.join(BOOKS_DIR, secure_filename(bid) + '.json')
+
+
+def _load_book(bid):
+    p = _book_path(bid)
+    if not os.path.exists(p):
+        return None
+    with open(p, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _save_book(book):
+    with open(_book_path(book['id']), 'w', encoding='utf-8') as f:
+        json.dump(book, f, ensure_ascii=False)
+
+
+# ---- 网上找书：中文维基文库（古籍/公版）+ 古腾堡（外文公版）----
+NET_UA = {'User-Agent': 'lin-study/1.0 (personal reading app)'}
+WS_API = 'https://zh.wikisource.org/w/api.php'
+
+
+def _safe_url(u):
+    from urllib.parse import urlparse
+    p = urlparse(u or '')
+    if p.scheme not in ('http', 'https'):
+        return False
+    host = (p.hostname or '').lower()
+    if not host or host in ('localhost', '0.0.0.0', '::1'):
+        return False
+    if host.startswith(('127.', '10.', '192.168.', '169.254.', '172.16.',
+                        '172.17.', '172.18.', '172.19.', '172.2', '172.30.', '172.31.')):
+        return False
+    if host.endswith(('.internal', '.local')):
+        return False
+    return True
+
+
+def _ws_search(q, limit=8):
+    r = requests.get(WS_API, params={'action': 'query', 'list': 'search',
+                                     'srsearch': q, 'srlimit': limit,
+                                     'srnamespace': 0, 'format': 'json'},
+                     headers=NET_UA, timeout=20)
+    hits = (r.json().get('query') or {}).get('search') or []
+    return [{'source': 'wikisource', 'ref': h['title'], 'title': h['title'],
+             'author': '中文维基文库'} for h in hits]
+
+
+def _ws_extract(titles):
+    r = requests.get(WS_API, params={'action': 'query', 'prop': 'extracts',
+                                     'explaintext': 1, 'exlimit': len(titles),
+                                     'titles': '|'.join(titles), 'format': 'json'},
+                     headers=NET_UA, timeout=45)
+    pages = ((r.json().get('query') or {}).get('pages') or {}).values()
+    return {p.get('title'): (p.get('extract') or '') for p in pages}
+
+
+def _ws_fetch(title):
+    """维基文库很多书是目录页 + 分章子页面，要按目录顺序拼起来"""
+    main = _ws_extract([title]).get(title, '') or ''
+    subs = []
+    try:  # 先按目录页里的链接顺序取，章节次序才对
+        r = requests.get(WS_API, params={'action': 'parse', 'page': title,
+                                         'prop': 'links', 'format': 'json'},
+                         headers=NET_UA, timeout=25)
+        for l in ((r.json().get('parse') or {}).get('links') or []):
+            t = l.get('*', '')
+            if l.get('ns') == 0 and t.startswith(title + '/') and t not in subs:
+                subs.append(t)
+    except Exception:
+        pass
+    if not subs:
+        try:
+            r = requests.get(WS_API, params={'action': 'query', 'list': 'allpages',
+                                             'apprefix': title + '/', 'apnamespace': 0,
+                                             'aplimit': 300, 'format': 'json'},
+                             headers=NET_UA, timeout=25)
+            subs = [p['title'] for p in ((r.json().get('query') or {}).get('allpages') or [])]
+        except Exception:
+            subs = []
+    if len(main) < 1200 and subs:
+        parts = []
+        for i in range(0, min(len(subs), 300), 20):
+            batch = subs[i:i + 20]
+            try:
+                ex = _ws_extract(batch)
+            except Exception:
+                continue
+            for t in batch:
+                if ex.get(t, '').strip():
+                    parts.append(ex[t].strip())
+        if parts:
+            return '\n\n'.join(parts)
+    return main
+
+
+def _gd_search(q, limit=8):
+    r = requests.get('https://gutendex.com/books', params={'search': q},
+                     headers=NET_UA, timeout=20)
+    out = []
+    for b in (r.json().get('results') or []):
+        fmts = b.get('formats') or {}
+        url = None
+        for k, v in fmts.items():
+            if k.startswith('text/plain') and not str(v).endswith('.zip'):
+                url = v
+                break
+        if not url:
+            continue
+        au = (b.get('authors') or [{}])[0].get('name', '')
+        out.append({'source': 'gutenberg', 'ref': url,
+                    'title': (b.get('title') or '')[:80], 'author': au or '古腾堡'})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _gd_fetch(url):
+    if not _safe_url(url):
+        return ''
+    r = requests.get(url, headers=NET_UA, timeout=60)
+    text = _decode_text(r.content)
+    import re as _re
+    m = _re.search(r'(?i)\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG.*?\*\*\*', text)
+    if m:
+        text = text[m.end():]
+    m = _re.search(r'(?i)\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG', text)
+    if m:
+        text = text[:m.start()]
+    return text.strip()
+
+
+def _url_fetch(url):
+    """贴任意网址：txt 直接读，网页去标签，epub 当书拆"""
+    if not _safe_url(url):
+        return '', ''
+    r = requests.get(url, headers=NET_UA, timeout=60)
+    ctype = (r.headers.get('Content-Type') or '').lower()
+    if 'epub' in ctype or url.lower().endswith('.epub'):
+        return _read_epub(r.content)
+    raw = _decode_text(r.content)
+    if 'html' in ctype or raw.lstrip()[:200].lower().startswith(('<!doctype', '<html')):
+        import re as _re
+        title = ''
+        tm = _re.search(r'(?is)<title[^>]*>(.*?)</title>', raw)
+        if tm:
+            title = _strip_html(tm.group(1))[:80]
+        body = raw
+        bm = _re.search(r'(?is)<body[^>]*>(.*)</body>', raw)
+        if bm:
+            body = bm.group(1)
+        return title, _strip_html(body)
+    return '', raw
+
+
+@app.route('/api/books/search', methods=['GET'])
+def search_books():
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    results, errs = [], []
+    for fn, name in ((_ws_search, '维基文库'), (_gd_search, '古腾堡')):
+        try:
+            results += fn(q)
+        except Exception as e:
+            errs.append(f'{name}没连上')
+    if not results:
+        return jsonify({'error': '没找到，换个书名试试' + ('（' + '、'.join(errs) + '）' if errs else '')}), 200
+    return jsonify(results)
+
+
+@app.route('/api/books/fetch', methods=['POST'])
+def fetch_book():
+    data = request.json or {}
+    src = data.get('source')
+    ref = data.get('ref') or ''
+    title = (data.get('title') or '').strip()[:80]
+    try:
+        if src == 'wikisource':
+            text = _ws_fetch(ref)
+        elif src == 'gutenberg':
+            text = _gd_fetch(ref)
+        else:
+            t2, text = _url_fetch(ref)
+            if not title:
+                title = t2
+    except Exception as e:
+        return jsonify({'error': f'取不下来：{e}'}), 502
+    text = (text or '').strip()
+    if len(text) < 50:
+        return jsonify({'error': '这个地址没读到正文'}), 400
+    pages = _paginate(text)
+    book = {'id': str(int(time.time() * 1000)), 'title': title or '无名',
+            'pages': pages, 'progress': 0, 'added': int(time.time() * 1000)}
+    _save_book(book)
+    return jsonify({'id': book['id'], 'title': book['title'], 'pages': len(pages)})
+
+
+@app.route('/api/books', methods=['GET'])
+def list_books():
+    out = []
+    for fn in os.listdir(BOOKS_DIR):
+        if not fn.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(BOOKS_DIR, fn), 'r', encoding='utf-8') as f:
+                b = json.load(f)
+            out.append({'id': b['id'], 'title': b.get('title', '无名'),
+                        'pages': len(b.get('pages', [])),
+                        'progress': b.get('progress', 0),
+                        'added': b.get('added', 0)})
+        except Exception:
+            continue
+    out.sort(key=lambda x: x.get('added', 0))
+    return jsonify(out)
+
+
+@app.route('/api/books', methods=['POST'])
+def add_book():
+    title, text = '', ''
+    if 'file' in request.files:
+        f = request.files['file']
+        raw = f.read()
+        name = f.filename or 'book'
+        if name.lower().endswith('.epub'):
+            try:
+                title, text = _read_epub(raw)
+            except Exception as e:
+                return jsonify({'error': f'epub 打不开：{e}'}), 400
+        else:
+            text = _decode_text(raw)
+        if not title:
+            title = os.path.splitext(os.path.basename(name))[0][:80]
+    else:
+        data = request.json or {}
+        title = (data.get('title') or '无名').strip()[:80]
+        text = data.get('text') or ''
+    text = (text or '').strip()
+    if not text:
+        return jsonify({'error': '没读到正文'}), 400
+    pages = _paginate(text)
+    book = {'id': str(int(time.time() * 1000)), 'title': title or '无名',
+            'pages': pages, 'progress': 0, 'added': int(time.time() * 1000)}
+    _save_book(book)
+    return jsonify({'id': book['id'], 'title': book['title'], 'pages': len(pages)})
+
+
+@app.route('/api/books/<bid>', methods=['DELETE'])
+def delete_book(bid):
+    p = _book_path(bid)
+    if os.path.exists(p):
+        os.remove(p)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/books/<bid>/page', methods=['GET'])
+def book_page(bid):
+    book = _load_book(bid)
+    if not book:
+        return jsonify({'error': 'not found'}), 404
+    pages = book.get('pages', [])
+    total = len(pages)
+    try:
+        i = int(request.args.get('i', 0))
+    except Exception:
+        i = 0
+    i = max(0, min(i, total - 1))
+    return jsonify({'index': i, 'total': total, 'text': pages[i],
+                    'title': book.get('title', '')})
+
+
+@app.route('/api/books/<bid>/progress', methods=['POST'])
+def book_progress(bid):
+    book = _load_book(bid)
+    if not book:
+        return jsonify({'error': 'not found'}), 404
+    data = request.json or {}
+    book['progress'] = max(0, int(data.get('page', 0)))
+    _save_book(book)
+    return jsonify({'ok': True})
+
 
 
 @app.route('/api/stt', methods=['POST'])
