@@ -10,7 +10,7 @@ CORS(app)
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
-MCP_URL = 'https://ombrebrain-jwh.zeabur.app/mcp'
+MCP_URL = 'https://ombrebrain-jwhjwh.zeabur.app/mcp'
 
 MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
 os.makedirs(MEMORIES_DIR, exist_ok=True)
