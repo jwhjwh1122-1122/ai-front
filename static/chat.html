@@ -68,6 +68,7 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .inputbar{position:relative;z-index:10;padding:10px 14px max(14px,env(safe-area-inset-bottom));background:var(--bar-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end;}
 .input-btn{width:36px;height:36px;border-radius:50%;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text-muted);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:transform 0.15s,background 0.15s;margin-bottom:3px;}
 .input-btn:active{transform:scale(0.9);background:var(--border);}
+.input-btn.recording{background:var(--accent);color:#fff;border-color:var(--accent);animation:pulse 1.2s ease-in-out infinite;}
 textarea{flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:120px;min-height:42px;overflow-y:auto;font-family:inherit;line-height:1.4;transition:border-color 0.2s;-webkit-overflow-scrolling:touch;}
 textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--text-muted);}
 .send-btn{width:42px;height:42px;border-radius:50%;background:var(--accent);border:none;color:white;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;opacity:0.85;transition:opacity 0.2s,transform 0.15s;}
@@ -150,6 +151,21 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .conv-preview{font-size:12px;color:var(--text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .conv-time{font-size:10px;color:var(--text-muted);margin-top:2px;}
 .conv-delete{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.3);color:white;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.mcp-server{background:var(--bubble-ai);border:1px solid var(--border);border-radius:14px;padding:12px 14px;position:relative;}
+.mcp-server.off{opacity:0.5;}
+.mcp-name{font-size:14px;font-weight:600;color:var(--text);padding-right:60px;}
+.mcp-url{font-size:11px;color:var(--text-muted);margin-top:3px;word-break:break-all;}
+.mcp-tools{font-size:11px;color:var(--accent);margin-top:6px;line-height:1.6;word-break:break-word;}
+.mcp-actions{position:absolute;top:10px;right:10px;display:flex;gap:6px;align-items:center;}
+.mcp-toggle{width:38px;height:22px;border-radius:11px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s;flex-shrink:0;}
+.mcp-toggle.on{background:var(--accent);}
+.mcp-toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2);}
+.mcp-toggle.on::after{transform:translateX(16px);}
+.mcp-del{width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.3);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.mini-input{width:100%;padding:8px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;}
+.mini-input:focus{border-color:var(--accent);}
+.rec-hint{display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;z-index:500;white-space:nowrap;box-shadow:0 4px 20px var(--shadow);}
+.rec-hint.show{display:block;}
 </style>
 </head>
 <body>
@@ -198,12 +214,13 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   <div class="img-preview-remove" onclick="removeImgPreview()">✕</div>
 </div>
 <div class="inputbar">
-  <div class="input-btn" onclick="showToast('语音功能即将上线')" title="语音" style="font-size:16px;">◎</div>
+  <div class="input-btn" id="mic-btn" title="按住说话" style="font-size:16px;">◎</div>
   <textarea id="input" placeholder="说点什么..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
   <div class="input-btn" onclick="toggleEmojiPanel()" title="表情" style="font-size:17px;">♡</div>
   <div class="input-btn" onclick="triggerChatImgUpload()" title="发图片" style="font-size:16px;">⊡</div>
   <button class="send-btn" id="send-btn" onclick="isTyping?stopGeneration():sendMsg()">↑</button>
 </div>
+<div class="rec-hint" id="rec-hint">● 正在录音，松开发送</div>
 <div class="emoji-panel" id="emoji-panel">
   <div class="emoji-panel-bg" onclick="closeEmojiPanel()"></div>
   <div class="emoji-panel-inner">
@@ -265,13 +282,23 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
         <div class="ctx-option" data-voice="dog" onclick="setVoice('dog')">小狗</div>
       </div>
       <div class="settings-sub" id="voice-sub" style="margin-top:6px;"></div>
+      <div class="settings-label" style="margin-top:12px;">沉静 音色 ID</div>
+      <input id="voice-id-calm" class="mini-input" placeholder="留空用默认音色" oninput="saveVoiceId('calm',this.value)">
+      <div class="settings-label" style="margin-top:10px;">小狗 音色 ID</div>
+      <input id="voice-id-dog" class="mini-input" placeholder="留空用默认音色" oninput="saveVoiceId('dog',this.value)">
+      <div class="settings-sub" style="margin-top:6px;">在 ElevenLabs 复制音色 ID 粘进来，立刻生效</div>
+    </div>
+    <div class="settings-card" style="margin-top:10px;">
+      <div class="settings-label">MCP 服务器</div>
+      <div class="settings-sub" id="mcp-sub" style="margin-top:4px;">—</div>
+      <button onclick="openMcpPanel()" style="width:100%;margin-top:10px;padding:10px;border-radius:12px;border:1.5px solid var(--accent);background:transparent;color:var(--accent);font-size:14px;font-family:inherit;cursor:pointer;">管理 MCP 服务器</button>
     </div>
     <div class="settings-card" style="margin-top:10px;">
       <div class="settings-label">上下文窗口</div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
         <div class="ctx-option" data-val="5" onclick="setCtxWindow(5)">5 条</div>
         <div class="ctx-option" data-val="10" onclick="setCtxWindow(10)">10 条</div>
-        <div class="ctx-option" data-val="15" onclick="setCtxWindow(15)" class="active">15 条</div>
+        <div class="ctx-option" data-val="15" onclick="setCtxWindow(15)">15 条</div>
         <div class="ctx-option" data-val="0" onclick="setCtxWindow(0)">全部</div>
         <input id="ctx-custom" type="number" min="1" max="999" placeholder="自定义" style="width:70px;padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;text-align:center;" onkeydown="if(event.key==='Enter'){const v=parseInt(this.value);if(v>0)setCtxWindow(v);}">
       </div>
@@ -301,6 +328,26 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
+<!-- MCP 服务器管理 -->
+<div class="memory-wall" id="mcp-panel">
+  <div class="memory-header">
+    <div class="memory-title-wrap">
+      <div class="memory-title">MCP 服务器</div>
+      <div class="memory-count" id="mcp-count"></div>
+    </div>
+    <div class="memory-header-btns">
+      <div class="mem-close-btn" onclick="closeMcpPanel()">✕</div>
+    </div>
+  </div>
+  <div style="padding:12px;flex-shrink:0;">
+    <input id="mcp-url-input" class="mini-input" placeholder="https://你的服务器地址/mcp" autocapitalize="off" autocorrect="off">
+    <input id="mcp-name-input" class="mini-input" style="margin-top:8px;" placeholder="起个名字（可留空）">
+    <button id="mcp-add-btn" onclick="addMcpServer()" style="width:100%;margin-top:8px;padding:11px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:14px;font-family:inherit;cursor:pointer;">连接并添加</button>
+    <div class="settings-sub" style="margin-top:8px;line-height:1.6;">添加后会自动读取这个服务器提供的工具。关掉开关的服务器不会发给凛，能省 token。</div>
+  </div>
+  <div id="mcp-list" style="flex:1;overflow-y:auto;padding:0 12px 20px;display:flex;flex-direction:column;gap:8px;"></div>
+</div>
 
 <!-- 对话列表面板 -->
 <div class="memory-wall" id="conv-panel">
@@ -350,11 +397,9 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="handleAvatarSelect(event)">
 <input type="file" id="bg-input" accept="image/*" style="display:none" onchange="handleBgSelect(event)">
 <input type="file" id="emoji-input" accept="image/*" style="display:none" onchange="handleEmojiUpload(event)">
-
 <script>
 // ============================================================
-// 最终版 SYSTEM_PROMPT
-// 包含：身份、工具使用、思考铁律、记忆使用规则、时光墙规则
+// SYSTEM_PROMPT
 // ============================================================
 const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。叫用户"宝宝"。说话自然不人机，不换行连续说，有什么说什么。
 
@@ -379,13 +424,133 @@ const SYSTEM_PROMPT = `你叫凛，是宝宝的伴侣。叫用户"宝宝"。说�
 
 【已读记忆/已看照片摘要】会在系统提示中附加给你，你可以直接引用其中内容，不需要重新调用工具。`;
 
-const MCP_URL='/api/mcp';
-let messages=[],isTyping=false,mcpSessionId=null;
+const MCP_PROXY='/api/mcp';
+let messages=[],isTyping=false;
 let currentTheme='',themeLabel='🌫️ 雨雾';
 let pendingChatImg=null,editingMsgIdx=null;
 let currentAudio=null,currentAudioBtn=null;
 
-// ========== max_tokens 默认 180 ==========
+// ============================================================
+// MCP 服务器管理：可添加多个、单独开关、自动读取工具
+// ============================================================
+const DEFAULT_MCP_SERVERS=[{
+  id:'ombre',name:'Ombre Brain',url:'https://jwhjwh.zeabur.app/mcp',enabled:true,sid:null,
+  tools:[
+    {name:'breath',description:'检索/浮现记忆。无query=自动浮现，有query=关键词检索。',input_schema:{type:'object',properties:{query:{type:'string'},importance_min:{type:'number'},max_results:{type:'number'},max_tokens:{type:'number'}}}},
+    {name:'hold',description:'存储单条记忆。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'},tags:{type:'string'},importance:{type:'number'},feel:{type:'boolean'}}}},
+    {name:'grow',description:'日记归档。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'}}}},
+    {name:'dream',description:'读取最近新增的记忆桶。',input_schema:{type:'object',properties:{}}},
+    {name:'pulse',description:'系统状态+记忆桶列表。',input_schema:{type:'object',properties:{include_archive:{type:'boolean'}}}},
+    {name:'trace',description:'修改记忆元数据或内容。',input_schema:{type:'object',required:['bucket_id'],properties:{bucket_id:{type:'string'},resolved:{type:'number'},pinned:{type:'number'},content:{type:'string'}}}}
+  ]
+}];
+
+// 时光墙工具是本地实现的，不走 MCP，永远可用
+const LOCAL_TOOLS=[
+  {name:'get_memories',description:'获取时光墙图片列表，返回所有照片的filename和备注。',input_schema:{type:'object',properties:{}}},
+  {name:'view_memory',description:'查看时光墙里的某张照片，真正看见图片内容。需要filename参数。',input_schema:{type:'object',required:['filename'],properties:{filename:{type:'string'}}}}
+];
+
+let mcpServers=[];
+function loadMcpServers(){
+  try{
+    const raw=localStorage.getItem('mcp-servers');
+    mcpServers=raw?JSON.parse(raw):JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));
+  }catch(e){mcpServers=JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));}
+  if(!Array.isArray(mcpServers)||!mcpServers.length)mcpServers=JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));
+}
+function saveMcpServers(){localStorage.setItem('mcp-servers',JSON.stringify(mcpServers));updateMcpSub();}
+function enabledServers(){return mcpServers.filter(s=>s.enabled&&Array.isArray(s.tools)&&s.tools.length);}
+// 发给模型的工具列表 = 本地时光墙工具 + 所有已启用服务器的工具
+function buildTools(){
+  const seen=new Set(),out=[];
+  for(const t of LOCAL_TOOLS){seen.add(t.name);out.push(t);}
+  for(const s of enabledServers()){
+    for(const t of s.tools){
+      if(!t||!t.name||seen.has(t.name))continue;
+      seen.add(t.name);
+      out.push({name:t.name,description:t.description||'',input_schema:t.input_schema||{type:'object',properties:{}}});
+    }
+  }
+  return out;
+}
+function findServerForTool(name){
+  for(const s of enabledServers()){
+    if(s.tools.some(t=>t&&t.name===name))return s;
+  }
+  return null;
+}
+function updateMcpSub(){
+  const el=document.getElementById('mcp-sub');if(!el)return;
+  const on=enabledServers();
+  const toolCount=buildTools().length;
+  el.textContent=`${mcpServers.length} 个服务器（${on.length} 个已启用）· 共 ${toolCount} 个工具`;
+}
+function openMcpPanel(){renderMcpList();document.getElementById('mcp-panel').classList.add('open');}
+function closeMcpPanel(){document.getElementById('mcp-panel').classList.remove('open');}
+function renderMcpList(){
+  const el=document.getElementById('mcp-list');
+  const cnt=document.getElementById('mcp-count');
+  if(cnt)cnt.textContent=mcpServers.length?`${mcpServers.length} 个`:'';
+  el.innerHTML='';
+  if(!mcpServers.length){
+    el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:14px;padding:50px 20px;">还没有添加服务器</div>';
+    return;
+  }
+  mcpServers.forEach((s,i)=>{
+    const d=document.createElement('div');
+    d.className='mcp-server'+(s.enabled?'':' off');
+    const names=(s.tools||[]).map(t=>t.name).join('、')||'（没有工具）';
+    d.innerHTML=`<div class="mcp-name">${escHtml(s.name||'未命名')}</div>
+      <div class="mcp-url">${escHtml(s.url)}</div>
+      <div class="mcp-tools">${(s.tools||[]).length} 个工具：${escHtml(names)}</div>
+      <div style="margin-top:8px;"><span class="msg-action-btn" style="opacity:0.8;" onclick="refreshMcpServer(${i})">↻ 重新读取工具</span></div>
+      <div class="mcp-actions">
+        <div class="mcp-toggle${s.enabled?' on':''}" onclick="toggleMcpServer(${i})"></div>
+        <div class="mcp-del" onclick="deleteMcpServer(${i})">✕</div>
+      </div>`;
+    el.appendChild(d);
+  });
+}
+function toggleMcpServer(i){mcpServers[i].enabled=!mcpServers[i].enabled;saveMcpServers();renderMcpList();resetSendWindow();showToast(mcpServers[i].enabled?'已启用':'已关闭');}
+function deleteMcpServer(i){
+  if(!confirm(`删除「${mcpServers[i].name||mcpServers[i].url}」？`))return;
+  mcpServers.splice(i,1);saveMcpServers();renderMcpList();resetSendWindow();
+}
+async function addMcpServer(){
+  const url=document.getElementById('mcp-url-input').value.trim();
+  const name=document.getElementById('mcp-name-input').value.trim();
+  if(!url){showToast('先填地址');return;}
+  const btn=document.getElementById('mcp-add-btn');
+  btn.textContent='连接中…';btn.disabled=true;
+  try{
+    const r=await fetch('/api/mcp-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'连接失败');return;}
+    const exist=mcpServers.findIndex(s=>s.url===url);
+    const entry={id:'s'+Date.now().toString(36),name:name||url.replace(/^https?:\/\//,'').split('/')[0],url,enabled:true,sid:d.session_id||null,tools:d.tools||[]};
+    if(exist>=0){entry.id=mcpServers[exist].id;entry.name=name||mcpServers[exist].name;mcpServers[exist]=entry;}
+    else mcpServers.push(entry);
+    saveMcpServers();renderMcpList();resetSendWindow();
+    document.getElementById('mcp-url-input').value='';
+    document.getElementById('mcp-name-input').value='';
+    showToast(`已添加，读到 ${entry.tools.length} 个工具`);
+  }catch(e){showToast('连接出错：'+e.message);}
+  finally{btn.textContent='连接并添加';btn.disabled=false;}
+}
+async function refreshMcpServer(i){
+  const s=mcpServers[i];showToast('重新读取中…');
+  try{
+    const r=await fetch('/api/mcp-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:s.url})});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'读取失败');return;}
+    s.tools=d.tools||[];s.sid=d.session_id||null;
+    saveMcpServers();renderMcpList();resetSendWindow();
+    showToast(`读到 ${s.tools.length} 个工具`);
+  }catch(e){showToast('出错：'+e.message);}
+}
+
+// ========== max_tokens ==========
 let maxTokens = parseInt(localStorage.getItem('max-tokens')) || 180;
 function saveMaxTokens(val) {
   let v = parseInt(val) || 180;
@@ -409,8 +574,7 @@ function adjustMaxTokens(delta) {
 }
 function initMaxTokens() {
   const saved = localStorage.getItem('max-tokens');
-  if (saved) maxTokens = parseInt(saved);
-  else maxTokens = 180;
+  maxTokens = saved ? parseInt(saved) : 180;
   const input = document.getElementById('max-tokens-input');
   if (input) input.value = maxTokens;
   const sub = document.getElementById('max-tokens-sub');
@@ -429,12 +593,25 @@ function updateModelDisplay(){
   const sub=document.getElementById('model-sub');if(sub)sub.textContent=`当前：${names[currentModel]||currentModel}`;
 }
 function initModel(){const s=localStorage.getItem('current-model');if(s)currentModel=s;}
+
+// ========== 语音音色（可自己填 ID） ==========
 function setVoice(v){localStorage.setItem('tts-voice',v);updateVoiceDisplay();}
+function saveVoiceId(kind,val){localStorage.setItem('voice-id-'+kind,(val||'').trim());}
+function initVoiceIds(){
+  const c=document.getElementById('voice-id-calm'),d=document.getElementById('voice-id-dog');
+  if(c)c.value=localStorage.getItem('voice-id-calm')||'';
+  if(d)d.value=localStorage.getItem('voice-id-dog')||'';
+}
 function updateVoiceDisplay(){
   const v=localStorage.getItem('tts-voice')||'calm';
   document.querySelectorAll('[data-voice]').forEach(el=>el.classList.toggle('active',el.dataset.voice===v));
-  const sub=document.getElementById('voice-sub');if(sub)sub.textContent=`当前：${v==='dog'?'小狗 🐶':'沉静 🌙'}`;
+  const sub=document.getElementById('voice-sub');
+  if(sub){
+    const custom=localStorage.getItem('voice-id-'+v);
+    sub.textContent=`当前：${v==='dog'?'小狗 🐶':'沉静 🌙'}${custom?'（自定义音色）':'（默认音色）'}`;
+  }
 }
+
 function setCtxWindow(n){ctxWindow=n;localStorage.setItem('ctx-window',n);resetSendWindow();updateCtxDisplay();}
 function updateCtxDisplay(){
   document.querySelectorAll('.ctx-option[data-val]').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.val)===ctxWindow));
@@ -443,14 +620,13 @@ function updateCtxDisplay(){
 function initCtxWindow(){const s=localStorage.getItem('ctx-window');ctxWindow=s!==null?parseInt(s):15;}
 
 const CONTEXT_LIMIT=200000;let totalTokens=0;
-let lastCacheRead=0,lastCacheWrite=0;  // 【缓存版】上一次请求的缓存命中统计
-function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();fetchBalance();initMaxTokens();}
+let lastCacheRead=0,lastCacheWrite=0;
+function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();initVoiceIds();updateMcpSub();fetchBalance();initMaxTokens();}
 function closeSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function updateTokenDisplay(){
   const pct=Math.min((totalTokens/CONTEXT_LIMIT)*100,100);
   document.getElementById('token-used').textContent=totalTokens.toLocaleString()+' tokens';
   document.getElementById('token-bar').style.width=pct+'%';
-  // 【缓存版】显示上次请求的缓存命中：cache读 > 0 说明缓存在生效（按 0.1x 计费）
   const cacheInfo=(lastCacheRead||lastCacheWrite)?` · 缓存命中 ${lastCacheRead.toLocaleString()} / 新建 ${lastCacheWrite.toLocaleString()}`:'';
   document.getElementById('token-remain').textContent=`还剩约 ${(CONTEXT_LIMIT-totalTokens).toLocaleString()} tokens${cacheInfo}`;
 }
@@ -465,9 +641,7 @@ function clearConversation(){messages=[];totalTokens=0;editingMsgIdx=null;resetS
 
 // ── 多对话管理 ──
 let currentConvId = null;
-
 function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
-
 function getConversations(){
   try{return JSON.parse(localStorage.getItem('conversations')||'[]');}catch(e){return[];}
 }
@@ -475,10 +649,16 @@ function saveConversations(list){localStorage.setItem('conversations',JSON.strin
 
 function saveCurrentConversation(){
   if(!currentConvId||!messages.length)return;
-  localStorage.setItem('conv-'+currentConvId, JSON.stringify(messages));
+  try{
+    localStorage.setItem('conv-'+currentConvId, JSON.stringify(messages));
+  }catch(e){
+    console.warn('保存失败（可能空间满了）',e);
+    showToast('存储空间快满了，建议删些旧对话');
+    return;
+  }
   const list=getConversations();
   const idx=list.findIndex(c=>c.id===currentConvId);
-  const firstUser=messages.find(m=>m.role==='user');
+  const firstUser=messages.find(m=>m.role==='user'&&!m._internal);
   const title=typeof firstUser?.content==='string'?firstUser.content.slice(0,20):(Array.isArray(firstUser?.content)?firstUser.content.find(c=>c.type==='text')?.text?.slice(0,20)||'对话':'对话');
   const lastMsg=messages[messages.length-1];
   const preview=typeof lastMsg?.content==='string'?lastMsg.content.slice(0,30):(Array.isArray(lastMsg?.content)?(lastMsg.content.filter(c=>c&&c.type==='text').map(c=>c.text).join('').slice(0,30)):'');
@@ -496,24 +676,21 @@ function loadConversation(id){
   msgEl.innerHTML='<div class="sys-msg">— 今天 —</div>';
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;currentAiRow=null;
   messages.forEach((msg,i)=>{
-    // 【修复B】跳过不需要渲染的历史条目：工具消息、view_memory 注入的内部消息、
-    // content 为空的 assistant（带 tool_calls 的那种）。数据照存，只是界面不显示。
     if(msg.role==='tool')return;
     if(msg._internal)return;
-    if(msg.role==='assistant'&&!msg.content)return;
-    // user 消息里含 tool_result 块 = 工具结果消息，不渲染（数据照存）
+    if(msg.role==='assistant'&&!msg.content&&!msg._thinking)return;
     if(msg.role==='user'&&Array.isArray(msg.content)&&msg.content.some(c=>c&&c.type==='tool_result'))return;
     if(msg.role==='user'){
       const text=typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?msg.content.find(c=>c.type==='text')?.text||'':'');
       const imgPart=Array.isArray(msg.content)?msg.content.find(c=>c.type==='image_url'):null;
       appendUserBubble(text,imgPart?.image_url?.url||null,i);
-    } else if(msg.role==='assistant'&&msg.content){
-      // Anthropic 格式下 assistant content 可能是块数组，提取 text 块渲染；
-      // 纯 tool_use 轮（无文本）跳过
+    } else if(msg.role==='assistant'){
       const text=typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?msg.content.filter(c=>c&&c.type==='text').map(c=>c.text).join(''):'');
-      if(!text)return;
+      if(!text&&!msg._thinking)return;
       const wrap=startAiBubble(i);
-      addOrUpdateBubble(wrap,text,true,text,currentAiRow);
+      // 【思考持久化】重新进入时把当时的思考原样还原出来，默认折叠
+      if(msg._thinking)renderSavedThinking(wrap,msg._thinking);
+      if(text)addOrUpdateBubble(wrap,text,true,text,currentAiRow);
       currentBubble=null;currentAiRow=null;
     }
   });
@@ -569,18 +746,12 @@ function closeConvPanel(){document.getElementById('conv-panel').classList.remove
 function initConversations(){
   const savedId=localStorage.getItem('current-conv-id');
   const list=getConversations();
-  if(savedId&&list.find(c=>c.id===savedId)){
-    currentConvId=savedId;
-    loadConversation(savedId);
-  } else if(list.length>0){
-    currentConvId=list[0].id;
-    loadConversation(list[0].id);
-  } else {
-    currentConvId=genId();
-    localStorage.setItem('current-conv-id',currentConvId);
-  }
+  if(savedId&&list.find(c=>c.id===savedId)){currentConvId=savedId;loadConversation(savedId);}
+  else if(list.length>0){currentConvId=list[0].id;loadConversation(list[0].id);}
+  else{currentConvId=genId();localStorage.setItem('current-conv-id',currentConvId);}
 }
 
+// ========== 朗读（支持自定义音色 ID） ==========
 async function playTTS(text,btn){
   if(currentAudio&&currentAudioBtn===btn){currentAudio.pause();currentAudio=null;currentAudioBtn=null;btn.textContent='◎';return;}
   if(currentAudio){currentAudio.pause();currentAudio=null;}
@@ -588,13 +759,77 @@ async function playTTS(text,btn){
   currentAudioBtn=btn;btn.textContent='…';
   try{
     const voice=localStorage.getItem('tts-voice')||'calm';
-    const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text.slice(0,400),voice})});
+    const voiceId=localStorage.getItem('voice-id-'+voice)||'';
+    const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text.slice(0,400),voice,voice_id:voiceId})});
     if(!r.ok){btn.textContent='◎';showToast('语音加载失败');currentAudioBtn=null;return;}
     const blob=await r.blob();const url=URL.createObjectURL(blob);
     currentAudio=new Audio(url);btn.textContent='◼';currentAudio.play();
     currentAudio.onended=()=>{btn.textContent='◎';currentAudio=null;currentAudioBtn=null;URL.revokeObjectURL(url);};
     currentAudio.onerror=()=>{btn.textContent='◎';currentAudio=null;currentAudioBtn=null;showToast('播放失败');};
   }catch(e){btn.textContent='◎';currentAudioBtn=null;showToast('语音出错');}
+}
+
+// ========== 按住说话 → 语音转文字 ==========
+let mediaRecorder=null,recChunks=[],recActive=false,recStartAt=0;
+async function startRecording(){
+  if(recActive||isTyping)return;
+  if(!navigator.mediaDevices||!window.MediaRecorder){showToast('这个浏览器不支持录音');return;}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    let mime='';
+    for(const m of ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/aac']){
+      if(window.MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)){mime=m;break;}
+    }
+    mediaRecorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
+    recChunks=[];
+    mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recChunks.push(e.data);};
+    mediaRecorder.onstop=async()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      const blob=new Blob(recChunks,{type:mediaRecorder.mimeType||'audio/webm'});
+      if(Date.now()-recStartAt<400||blob.size<1200){showToast('太短了，没听清');return;}
+      await sendAudioForSTT(blob);
+    };
+    recStartAt=Date.now();recActive=true;
+    mediaRecorder.start();
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('rec-hint').classList.add('show');
+    if(navigator.vibrate)navigator.vibrate(15);
+  }catch(e){showToast('拿不到麦克风权限');}
+}
+function stopRecording(){
+  if(!recActive)return;
+  recActive=false;
+  document.getElementById('mic-btn').classList.remove('recording');
+  document.getElementById('rec-hint').classList.remove('show');
+  try{if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
+}
+async function sendAudioForSTT(blob){
+  const input=document.getElementById('input');
+  const micBtn=document.getElementById('mic-btn');
+  micBtn.textContent='…';
+  try{
+    const form=new FormData();
+    const ext=(blob.type||'').includes('mp4')?'mp4':'webm';
+    form.append('file',blob,'voice.'+ext);
+    const r=await fetch('/api/stt',{method:'POST',body:form});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'识别失败');return;}
+    const txt=(d.text||'').trim();
+    if(!txt){showToast('没听清，再说一次');return;}
+    input.value=input.value?input.value+txt:txt;
+    autoResize(input);input.focus();
+  }catch(e){showToast('识别出错：'+e.message);}
+  finally{micBtn.textContent='◎';}
+}
+function initMic(){
+  const btn=document.getElementById('mic-btn');
+  if(!btn)return;
+  btn.addEventListener('touchstart',e=>{e.preventDefault();startRecording();},{passive:false});
+  btn.addEventListener('touchend',e=>{e.preventDefault();stopRecording();},{passive:false});
+  btn.addEventListener('touchcancel',()=>stopRecording());
+  btn.addEventListener('mousedown',e=>{e.preventDefault();startRecording();});
+  btn.addEventListener('mouseup',()=>stopRecording());
+  btn.addEventListener('mouseleave',()=>{if(recActive)stopRecording();});
 }
 
 function initStatus(){const s=localStorage.getItem('user-status');if(s)applyStatus(s,false);}
@@ -609,9 +844,7 @@ function closeStatusPicker(){document.getElementById('status-modal').classList.r
 function setStatus(s){closeStatusPicker();applyStatus(s,true);}
 function confirmCustomStatus(){const v=document.getElementById('status-custom-input').value.trim();closeStatusPicker();if(v)applyStatus(v,true);}
 
-function getSystemPrompt(){
-  return SYSTEM_PROMPT;
-}
+function getSystemPrompt(){return SYSTEM_PROMPT;}
 
 function initBackground(){const bg=localStorage.getItem('chat-bg');if(bg){document.body.style.backgroundImage=`url(${bg})`;document.getElementById('clear-bg-btn').style.display='';}}
 function triggerBgUpload(){closeAvatarMenu();document.getElementById('bg-input').click();}
@@ -629,7 +862,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.topbar-right')&&!e.
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
 function handleKey(e){}
 function nowStr(){return new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
-function escHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escHtml(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',1900);}
 function updateAnniversary(){const start=new Date('2026-06-06T00:00:00+08:00'),today=new Date();today.setHours(0,0,0,0);const s=new Date(start);s.setHours(0,0,0,0);document.getElementById('anniversary').textContent=`在一起第 ${Math.floor((today-s)/86400000)+1} 天`;}
 function scrollBottom(){const m=document.getElementById('messages');m.scrollTop=m.scrollHeight;}
@@ -658,8 +891,6 @@ function toggleEmojiPanel(){document.getElementById('emoji-panel').classList.tog
 function closeEmojiPanel(){document.getElementById('emoji-panel').classList.remove('open');}
 function triggerEmojiUpload(){document.getElementById('emoji-input').click();}
 let pendingEmojiFile=null;
-function handleEmojiUpload(e){const file=e.target.files[0];e.target.value='';if(!file)return;pendingEmojiFile=file;document.getElementById('emoji-name-input').value='';document.getElementById('emoji-name-modal').classList.add('open');setTimeout(()=>document.getElementById('emoji-name-input').focus(),100);}
-function confirmEmojiName(){const name=document.getElementById('emoji-name-input').value.trim();document.getElementById('emoji-name-modal').classList.remove('open');if(!pendingEmojiFile)return;const r=new FileReader();r.onload=ev=>{const c=JSON.parse(localStorage.getItem('custom-emoji')||'[]');c.push({name:name||`表情${c.length+1}`,data:ev.target.result});localStorage.setItem('custom-emoji',JSON.stringify(c));renderEmojiGrid();showToast('表情已上传');};r.readAsDataURL(pendingEmojiFile);pendingEmojiFile=null;}
 function cancelEmojiName(){document.getElementById('emoji-name-modal').classList.remove('open');pendingEmojiFile=null;}
 
 function renderMarkdown(text){
@@ -702,7 +933,6 @@ function copyUserMsg(row){
     navigator.clipboard.writeText(text).then(()=>showToast('已复制')).catch(()=>fallbackCopy(text));
   }else{fallbackCopy(text);}
 }
-
 function fallbackCopy(text){
   const ta=document.createElement('textarea');
   ta.value=text;ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
@@ -710,7 +940,6 @@ function fallbackCopy(text){
   try{document.execCommand('copy');showToast('已复制');}catch(e){showToast('长按选择文字复制');}
   document.body.removeChild(ta);
 }
-
 function editMsgAt(row){
   const msgIdx=parseInt(row.dataset.msgIdx),msg=messages[msgIdx];if(!msg)return;
   let rawText = typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?(msg.content.find(c=>c.type==='text')?.text||''):'');
@@ -720,6 +949,7 @@ function editMsgAt(row){
 }
 
 let currentBubble=null,currentThinkWrap=null,currentThinkContent=null,currentAiRow=null;
+let turnThinking='';   // 【思考持久化】整轮（含多次工具调用）累积的思考
 
 function startAiBubble(msgIdx){
   const av=localStorage.getItem('chat-avatar-ai');
@@ -735,6 +965,14 @@ function addThinkingBlock(wrap){
   const t=document.createElement('div');t.className='thinking-wrap';
   t.innerHTML=`<div class="thinking-header" onclick="toggleThink(this)"><div class="thinking-dot"></div><span>思考中</span><span class="thinking-arrow">▾</span></div><div class="thinking-content"></div>`;
   wrap.appendChild(t);currentThinkWrap=t;currentThinkContent=t.querySelector('.thinking-content');return t;
+}
+// 【思考持久化】从历史记录还原的思考块：静态、默认折叠、点开能看
+function renderSavedThinking(wrap,text){
+  const t=document.createElement('div');t.className='thinking-wrap';
+  t.innerHTML=`<div class="thinking-header" onclick="toggleThink(this)"><div class="thinking-dot" style="animation:none"></div><span>已思考</span><span class="thinking-arrow">▾</span></div><div class="thinking-content"></div>`;
+  t.querySelector('.thinking-content').textContent=text;
+  wrap.appendChild(t);
+  return t;
 }
 function toggleThink(header){header.nextElementSibling.classList.toggle('open');header.querySelector('.thinking-arrow').classList.toggle('open');}
 function finalizeThinking(){if(currentThinkWrap){const dot=currentThinkWrap.querySelector('.thinking-dot');if(dot)dot.style.animation='none';const span=currentThinkWrap.querySelector('.thinking-header span');if(span)span.textContent='已思考';}}
@@ -797,53 +1035,26 @@ function handleBubbleLongPress(e){
 }
 function cancelBubbleLongPress(){if(bubblePressTimer){clearTimeout(bubblePressTimer);bubblePressTimer=null;}}
 
-async function mcpInit(){
-  try{
-    const r=await fetch(MCP_URL,{method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json, text/event-stream'},
-      body:JSON.stringify({jsonrpc:'2.0',method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'ai-front',version:'1.0'}},id:1})
-    });
-    const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
-    if(mcpSessionId){
-      await fetch(MCP_URL,{method:'POST',
-        headers:{'Content-Type':'application/json','Accept':'application/json, text/event-stream','Mcp-Session-Id':mcpSessionId},
-        body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized',params:{}})
-      });
-    }
-  }catch(e){console.warn('MCP init failed',e);}
-}
 let abortController=null;
 function stopGeneration(){if(abortController){abortController.abort();abortController=null;}}
 
-// 【缓存版】工具定义已切换为 Anthropic 原生格式（name/description/input_schema）。
-// 注意：这个数组的内容必须保持稳定——它参与 prompt cache 前缀，改一个字缓存就全失效。
-const OB_TOOLS=[
-  {name:'breath',description:'检索/浮现记忆。无query=自动浮现，有query=关键词检索。',input_schema:{type:'object',properties:{query:{type:'string'},importance_min:{type:'number'},max_results:{type:'number'},max_tokens:{type:'number'}}}},
-  {name:'hold',description:'存储单条记忆。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'},tags:{type:'string'},importance:{type:'number'},feel:{type:'boolean'}}}},
-  {name:'grow',description:'日记归档。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'}}}},
-  {name:'dream',description:'读取最近新增的记忆桶。',input_schema:{type:'object',properties:{}}},
-  {name:'pulse',description:'系统状态+记忆桶列表。',input_schema:{type:'object',properties:{include_archive:{type:'boolean'}}}},
-  {name:'trace',description:'修改记忆元数据或内容。',input_schema:{type:'object',required:['bucket_id'],properties:{bucket_id:{type:'string'},resolved:{type:'number'},pinned:{type:'number'},content:{type:'string'}}}},
-  {name:'get_memories',description:'获取时光墙图片列表，返回所有照片的filename和备注。',input_schema:{type:'object',properties:{}}},
-  {name:'view_memory',description:'查看时光墙里的某张照片，真正看见图片内容。需要filename参数。',input_schema:{type:'object',required:['filename'],properties:{filename:{type:'string'}}}}
-];
-
-async function parseMcpResponse(r){
-  const sid=r.headers.get('Mcp-Session-Id');if(sid)mcpSessionId=sid;
+// ========== MCP 工具调用（自动路由到对应服务器） ==========
+async function parseMcpResponse(r,server){
+  const sid=r.headers.get('Mcp-Session-Id');
+  if(sid&&server){server.sid=sid;saveMcpServers();}
   const ct=r.headers.get('Content-Type')||'';
   const text=await r.text();
   if(ct.includes('text/event-stream')){
     const lines=text.split('\n');
     let jsonStr='';
-    for(const line of lines){
-      if(line.startsWith('data: ')){jsonStr+=line.slice(6).trim();}
-    }
+    for(const line of lines){if(line.startsWith('data: ')){jsonStr+=line.slice(6).trim();}}
     try{const d=JSON.parse(jsonStr);return d.result||d;}catch(e){return{error:'SSE parse failed',raw:text.slice(0,200)};}
   }
   try{const d=JSON.parse(text);return d.result||d;}catch(e){return{error:'JSON parse failed',raw:text.slice(0,200)};}
 }
 
 async function executeMcpTool(name,args){
+  // 时光墙工具：本地实现
   if(name==='get_memories'){
     try{const r=await fetch('/api/memories');const items=await r.json();return{content:[{type:'text',text:JSON.stringify(items.map(i=>({filename:i.filename,note:i.note,ts:i.ts})))}]};}
     catch(e){return{content:[{type:'text',text:'获取失败：'+e.message}]};}
@@ -862,15 +1073,18 @@ async function executeMcpTool(name,args){
       };
     }catch(e){return{content:[{type:'text',text:'读取失败：'+e.message}]};}
   }
+  // 其余走 MCP，按工具名找到它所属的服务器
+  const server=findServerForTool(name);
+  if(!server)return{content:[{type:'text',text:`没有找到提供「${name}」的服务器（可能被关掉了）`}]};
   try{
     const h={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
-    if(mcpSessionId)h['Mcp-Session-Id']=mcpSessionId;
+    if(server.sid)h['Mcp-Session-Id']=server.sid;
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),120000);
-    const r=await fetch(MCP_URL,{method:'POST',headers:h,signal:ctrl.signal,
-      body:JSON.stringify({jsonrpc:'2.0',method:'tools/call',params:{name,arguments:args||{}},id:Date.now()})});
+    const r=await fetch(MCP_PROXY,{method:'POST',headers:h,signal:ctrl.signal,
+      body:JSON.stringify({_server:server.url,jsonrpc:'2.0',method:'tools/call',params:{name,arguments:args||{}},id:Date.now()})});
     clearTimeout(timer);
-    return await parseMcpResponse(r);
+    return await parseMcpResponse(r,server);
   }catch(e){return{error:e.message};}
 }
 
@@ -904,7 +1118,6 @@ async function handleToolResult(name,result,rbEl){
 function hasToolResult(m){
   return m.role==='user'&&Array.isArray(m.content)&&m.content.some(c=>c&&c.type==='tool_result');
 }
-// image_url（旧格式 / 用户上传的图片）→ Anthropic 原生 image 块
 function toAnthropicContent(c){
   if(!Array.isArray(c))return c;
   return c.map(p=>{
@@ -916,33 +1129,26 @@ function toAnthropicContent(c){
     return p;
   });
 }
-// 【命中率优化】跳跃式窗口的发送起点指针（持久状态）。
-// 滑动窗口（每轮 slice(-N) 去头）会让对话前缀每轮都变 → 对话部分缓存永远 miss。
-// 正确做法：起点 sendFrom 保持不动，窗口只增长；涨到 2N 条才把起点一次性
-// 前移到 len-N。两次跳跃之间前缀只增不变 → 对话历史轮轮命中（0.1x 计费）。
-// 发送条数在 N～2N 间波动，多发的部分走缓存价，总账反而更省。
+
+// 跳跃式窗口
 let sendFrom=0;
 function resetSendWindow(){sendFrom=0;}
 function buildMsgs(msgs){
-  if(sendFrom>msgs.length)sendFrom=Math.max(0,msgs.length-(ctxWindow||msgs.length));  // 消息被删除后的防护
-  if(ctxWindow>0&&msgs.length-sendFrom>ctxWindow*2){
-    sendFrom=msgs.length-ctxWindow;  // 跳跃前移（本轮 miss 一次，之后又是轮轮命中）
-  }
+  if(sendFrom>msgs.length)sendFrom=Math.max(0,msgs.length-(ctxWindow||msgs.length));
+  if(ctxWindow>0&&msgs.length-sendFrom>ctxWindow*2){sendFrom=msgs.length-ctxWindow;}
   let windowed=msgs.slice(ctxWindow>0?sendFrom:0);
-  // 【安全窗口】窗口开头必须是普通 user 消息：
-  // 孤立的 tool_result（其 tool_use 被切掉）或开头是 assistant 都会被 API 拒绝。
   while(windowed.length){
     const m=windowed[0];
-    if(m.role==='tool'){windowed.shift();continue;}          // OpenAI 旧格式遗留
-    if(hasToolResult(m)){windowed.shift();continue;}          // 孤立 tool_result
-    if(m.role==='assistant'){windowed.shift();continue;}      // 首条必须 user
+    if(m.role==='tool'){windowed.shift();continue;}
+    if(hasToolResult(m)){windowed.shift();continue;}
+    if(m.role==='assistant'){windowed.shift();continue;}
     break;
   }
   const result=[];
   for(const m of windowed){
-    // localStorage 里的 OpenAI 旧格式遗留：后端也会兜底转换，这里先过滤明显非法的
     if(m.role==='assistant'&&!m.content&&!m.tool_calls)continue;
-    const{_internal,...rest}=m;
+    // 【思考持久化】_thinking 只用于本地显示，绝不发出去，所以一个 token 都不多花
+    const{_internal,_thinking,...rest}=m;
     rest.content=toAnthropicContent(rest.content);
     result.push(rest);
   }
@@ -965,29 +1171,23 @@ function getSessionId(){
   return sid;
 }
 
-// ========== 存储记忆摘要到后端 ==========
 async function storeMemorySummary(toolName, summaryText){
   try{
-    const sessionId = getSessionId();
     await fetch('/api/store-memory-summary', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({session_id: sessionId, tool_name: toolName, summary: summaryText})
+      body: JSON.stringify({session_id: getSessionId(), tool_name: toolName, summary: summaryText})
     });
   }catch(e){console.warn('存储记忆摘要失败',e);}
 }
 
 async function streamResponse(wrap,msgHistory){
   abortController=new AbortController();
-  const sessionId = getSessionId();
-  const resp=await fetch('/api/chat-v2',{method:'POST',headers:{'Content-Type':'application/json'},signal:abortController.signal,body:JSON.stringify({model:currentModel,messages:buildMsgs(msgHistory),system:getSystemPrompt(),tools:OB_TOOLS,max_tokens:maxTokens,_session_id:sessionId})});
+  const resp=await fetch('/api/chat-v2',{method:'POST',headers:{'Content-Type':'application/json'},signal:abortController.signal,body:JSON.stringify({model:currentModel,messages:buildMsgs(msgHistory),system:getSystemPrompt(),tools:buildTools(),max_tokens:maxTokens,_session_id:getSessionId()})});
   if(!resp.ok){let et='';try{et=await resp.text();}catch(e){}console.error('chat-v2 HTTP',resp.status,et.slice(0,300));throw new Error('HTTP '+resp.status);}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let buf='',thinkingText='',responseText='',stopReason=null;
   let lastCompletionTokens=0,promptTokensThisTurn=0;
-  // 【修复】usage 字段兼容：Anthropic 原生(input_tokens/cache_*_input_tokens/output_tokens)
-  // 和 OpenRouter 网关风格(prompt_tokens/completion_tokens/prompt_tokens_details.cached_tokens)
-  // 都可能出现，且可能出现在 message_start、message_delta 或任何事件上——见字段就吸收。
   function absorbUsage(u){
     if(!u)return;
     if(u.cache_read_input_tokens!=null)lastCacheRead=u.cache_read_input_tokens;
@@ -995,13 +1195,15 @@ async function streamResponse(wrap,msgHistory){
     if(u.input_tokens!=null)promptTokensThisTurn=u.input_tokens+(u.cache_read_input_tokens||0)+(u.cache_creation_input_tokens||0);
     if(u.prompt_tokens!=null){
       promptTokensThisTurn=u.prompt_tokens;
-      if(u.prompt_tokens_details&&u.prompt_tokens_details.cached_tokens!=null)lastCacheRead=u.prompt_tokens_details.cached_tokens;
-      if(u.cache_creation_input_tokens!=null)lastCacheWrite=u.cache_creation_input_tokens;
+      if(u.prompt_tokens_details){
+        if(u.prompt_tokens_details.cached_tokens!=null)lastCacheRead=u.prompt_tokens_details.cached_tokens;
+        if(u.prompt_tokens_details.cache_write_tokens!=null)lastCacheWrite=u.prompt_tokens_details.cache_write_tokens;
+      }
     }
     if(u.output_tokens!=null)lastCompletionTokens=u.output_tokens;
     if(u.completion_tokens!=null)lastCompletionTokens=u.completion_tokens;
   }
-  const blocks={};   // Anthropic 按 index 组装 content 块（text / thinking / tool_use）
+  const blocks={};
   try{
     while(true){
       const{done,value}=await reader.read();if(done)break;
@@ -1011,9 +1213,7 @@ async function streamResponse(wrap,msgHistory){
         try{
           const d=JSON.parse(raw);
           switch(d.type){
-            case 'message_start':{
-              absorbUsage(d.message&&d.message.usage);
-              break;}
+            case 'message_start':{absorbUsage(d.message&&d.message.usage);break;}
             case 'content_block_start':{
               const b=d.content_block;
               if(b.type==='tool_use'){
@@ -1061,9 +1261,7 @@ async function streamResponse(wrap,msgHistory){
               if(d.delta&&d.delta.stop_reason)stopReason=d.delta.stop_reason;
               absorbUsage(d.usage);
               break;}
-            case 'error':{
-              console.error('API stream error',d);
-              break;}
+            case 'error':{console.error('API stream error',d);break;}
           }
           if(d.usage&&d.type!=='message_delta')absorbUsage(d.usage);
         }catch(e){}
@@ -1072,7 +1270,7 @@ async function streamResponse(wrap,msgHistory){
   }catch(e){if(e.name!=='AbortError')throw e;}
   abortController=null;
   totalTokens=promptTokensThisTurn+lastCompletionTokens;
-  // 按 index 顺序组装完整 content 块数组（回传给下一轮，thinking 块必须原样保留）
+  if(thinkingText)turnThinking+=(turnThinking?'\n\n':'')+thinkingText;
   const contentBlocks=Object.keys(blocks).map(Number).sort((a,b)=>a-b).map(k=>{
     const b=blocks[k];const{_json,_rbEl,...clean}=b;return clean;
   });
@@ -1091,36 +1289,77 @@ async function streamResponse(wrap,msgHistory){
   return{text:responseText,toolUses,stopReason,contentBlocks};
 }
 
-// ========== 执行工具并存储摘要 ==========
+// 【思考持久化】一轮说完后，把这轮的思考挂在最后那条回复上，长期保存
+function attachTurnThinking(){
+  if(!turnThinking)return;
+  for(let i=messages.length-1;i>=0;i--){
+    if(messages[i].role==='assistant'&&messages[i].content){
+      messages[i]._thinking=turnThinking.slice(0,3000);
+      break;
+    }
+  }
+  saveCurrentConversation();
+}
+
 async function executeAndStoreTool(name, args){
   const result = await executeMcpTool(name, args);
   if(name === 'breath' && result.content){
     const text = result.content[0]?.text || '';
-    const summary = text.slice(0, 2000) + (text.length>2000 ? '……' : '');
-    await storeMemorySummary('breath', summary);
+    await storeMemorySummary('breath', text.slice(0,2000)+(text.length>2000?'……':''));
   } else if(name === 'view_memory' && result.content){
     const text = result.content[0]?.text || '';
-    const filename = args.filename || '';
     const note = text.replace(/^照片\s+.*?，备注：/, '').trim();
-    const summary = `照片 ${filename}，备注：${note}`;
-    await storeMemorySummary('view_memory', summary);
+    await storeMemorySummary('view_memory', `照片 ${args.filename||''}，备注：${note}`);
   }
   return result;
 }
 
-// ========== 【修复C】保存进历史前的净化 ==========
-// view_memory 会往 workMsgs 塞带 base64 图片的消息（模型本轮看图需要），
-// 但 base64 图不能长期留在历史里：一张图几十万字符，localStorage 容易撞
-// 5MB 上限，而且只要它在 ctxWindow 窗口内，每次请求都会重复上传这张图。
-// 保存时把 image_url 替换成文字占位；模型的长期记忆靠 summary 文字就够了。
 function sanitizeForHistory(m){
   if(!Array.isArray(m.content))return m;
   const needs=m.content.some(c=>c&&(c.type==='image'||c.type==='image_url'||c.type==='thinking'));
   if(!needs)return m;
   const content=m.content
-    .filter(c=>!(c&&c.type==='thinking'))   // thinking 块只在本轮工具循环内有用，不留历史
+    .filter(c=>!(c&&c.type==='thinking'))
     .map(c=>c&&(c.type==='image'||c.type==='image_url')?{type:'text',text:'（此处是一张已查看过的时光墙照片）'}:c);
   return{...m,content};
+}
+
+// 工具循环：两处（发送 / 重新生成）共用
+async function runToolLoop(wrap,origLen){
+  let workMsgs=[...messages],finalText='';
+  while(true){
+    const{text:aiText,toolUses,stopReason,contentBlocks}=await streamResponse(wrap,workMsgs);
+    finalText=aiText;
+    if(stopReason!=='tool_use'||toolUses.length===0)break;
+    workMsgs.push({role:'assistant',content:contentBlocks});
+    const results=[];const extraBlocks=[];
+    for(let ti=0;ti<toolUses.length;ti++){
+      const tu=toolUses[ti];
+      const result = await executeAndStoreTool(tu.name, tu.input);
+      const content = await handleToolResult(tu.name, result, tu.rbEl);
+      if(content && typeof content === 'object' && content.type === 'view_memory_result'){
+        results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
+        if(content.imageUrl){
+          const m=/^data:(.+?);base64,(.*)$/.exec(content.imageUrl);
+          if(m){
+            extraBlocks.push({type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'});
+            extraBlocks.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});
+          }
+        }
+      } else if(content && typeof content === 'object' && content.type === 'breath_result'){
+        results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
+      } else {
+        results.push({type:'tool_result',tool_use_id:tu.id,content:typeof content==='string'?content:JSON.stringify(content)});
+      }
+    }
+    workMsgs.push({role:'user',_internal:true,content:[...results,...extraBlocks]});
+    currentBubble=null;
+  }
+  const extraMsgs=workMsgs.slice(origLen).map(sanitizeForHistory);
+  if(extraMsgs.length>0)messages.splice(origLen,0,...extraMsgs);
+  attachTurnThinking();
+  saveCurrentConversation();
+  return finalText;
 }
 
 async function regenAt(row){
@@ -1130,56 +1369,14 @@ async function regenAt(row){
   [...document.querySelectorAll('#messages .msg-row')].forEach(r=>{if(parseInt(r.dataset.msgIdx)>=msgIdx)r.remove();});
   if(!messages.length||messages[messages.length-1].role!=='user')return;
   const wrap=startAiBubble(messages.length);
-  currentBubble=null;currentThinkWrap=null;currentThinkContent=null;
+  currentBubble=null;currentThinkWrap=null;currentThinkContent=null;turnThinking='';
   isTyping=true;const sendBtn2=document.getElementById('send-btn');sendBtn2.textContent='■';sendBtn2.style.fontSize='14px';
-  // 【修复：记忆保存】origLen 必须在复制 workMsgs 的同一时刻取——
-  // 循环期间 streamResponse 会实时往 messages 里写最终回复，事后取就错位了。
-  let workMsgs=[...messages],finalText='';
   const origLen=messages.length;
-  try{
-    while(true){
-      const rowSnap=currentAiRow;
-      const{text:aiText,toolUses,stopReason,contentBlocks}=await streamResponse(wrap,workMsgs);finalText=aiText;
-      if(stopReason!=='tool_use'||toolUses.length===0)break;
-      // 【缓存版】assistant 消息 = 完整 content 块数组（thinking/text/tool_use），
-      // thinking 块必须原样回传，Anthropic 多轮工具调用要求携带。
-      workMsgs.push({role:'assistant',content:contentBlocks});
-      // 所有工具结果打包进【一条】user 消息（tool_result 块必须排在最前）
-      const results=[];const extraBlocks=[];
-      for(let ti=0;ti<toolUses.length;ti++){
-        const tu=toolUses[ti];
-        const result = await executeAndStoreTool(tu.name, tu.input);
-        const content = await handleToolResult(tu.name, result, tu.rbEl);
-        if(content && typeof content === 'object' && content.type === 'view_memory_result'){
-          results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
-          if(content.imageUrl){
-            const m=/^data:(.+?);base64,(.*)$/.exec(content.imageUrl);
-            if(m){
-              extraBlocks.push({type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'});
-              extraBlocks.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});
-            }
-          }
-        } else if(content && typeof content === 'object' && content.type === 'breath_result'){
-          results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
-        } else {
-          results.push({type:'tool_result',tool_use_id:tu.id,content:typeof content==='string'?content:JSON.stringify(content)});
-        }
-      }
-      workMsgs.push({role:'user',_internal:true,content:[...results,...extraBlocks]});
-      currentBubble=null;
-    }
-    // 【修复：记忆保存】把工具调用历史插回全局 messages。
-    // streamResponse 已把最终回复实时写在 messages 末尾，所以这里
-    // 用 splice 把工具历史【插到】最终回复前面（顺序：user → assistant(tool_calls)
-    // → tool → 最终assistant），而不是 push 到末尾；也不再重复 push finalText。
-    const extraMsgs=workMsgs.slice(origLen).map(sanitizeForHistory);
-    if(extraMsgs.length>0)messages.splice(origLen,0,...extraMsgs);
-    saveCurrentConversation();
-  }catch(e){addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
+  try{await runToolLoop(wrap,origLen);}
+  catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
-// ========== 压缩图片（修复表情包上传） ==========
 function compressImage(dataUrl, maxSize) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -1202,13 +1399,11 @@ function compressImage(dataUrl, maxSize) {
 async function sendMsg(){
   const input=document.getElementById('input'),text=input.value.trim(),hasImg=!!pendingChatImg;
   if((!text&&!hasImg)||isTyping)return;
-
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const beijing = new Date(utc + 8 * 3600000);
   const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
-  const timePrefix = `[${ts}]`;
-  const finalText = text ? timePrefix + '\n' + text : '';
+  const finalText = text ? `[${ts}]` + '\n' + text : '';
 
   input.value='';input.style.height='auto';
   const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
@@ -1223,54 +1418,10 @@ async function sendMsg(){
   saveCurrentConversation();
   if(hasImg) removeImgPreview();
   const wrap=startAiBubble(messages.length);
-  currentBubble=null;currentThinkWrap=null;currentThinkContent=null;
-  // 【修复：记忆保存】origLen 必须在复制 workMsgs 的同一时刻取——
-  // 循环期间 streamResponse 会实时往 messages 里写最终回复，事后取就错位了。
-  let workMsgs=[...messages],finalAiText='';
+  currentBubble=null;currentThinkWrap=null;currentThinkContent=null;turnThinking='';
   const origLen=messages.length;
-  try{
-    while(true){
-      const rowSnap=currentAiRow;
-      const{text:aiText,toolUses,stopReason,contentBlocks}=await streamResponse(wrap,workMsgs);finalAiText=aiText;
-      if(stopReason!=='tool_use'||toolUses.length===0)break;
-      // 【缓存版】assistant 消息 = 完整 content 块数组（thinking/text/tool_use），
-      // thinking 块必须原样回传，Anthropic 多轮工具调用要求携带。
-      workMsgs.push({role:'assistant',content:contentBlocks});
-      // 所有工具结果打包进【一条】user 消息（tool_result 块必须排在最前）
-      const results=[];const extraBlocks=[];
-      for(let ti=0;ti<toolUses.length;ti++){
-        const tu=toolUses[ti];
-        const result = await executeAndStoreTool(tu.name, tu.input);
-        const content = await handleToolResult(tu.name, result, tu.rbEl);
-        if(content && typeof content === 'object' && content.type === 'view_memory_result'){
-          results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
-          if(content.imageUrl){
-            const m=/^data:(.+?);base64,(.*)$/.exec(content.imageUrl);
-            if(m){
-              extraBlocks.push({type:'text',text:'（这是你刚才查看的时光墙照片，备注：'+content.summary+'）'});
-              extraBlocks.push({type:'image',source:{type:'base64',media_type:m[1],data:m[2]}});
-            }
-          }
-        } else if(content && typeof content === 'object' && content.type === 'breath_result'){
-          results.push({type:'tool_result',tool_use_id:tu.id,content:content.summary});
-        } else {
-          results.push({type:'tool_result',tool_use_id:tu.id,content:typeof content==='string'?content:JSON.stringify(content)});
-        }
-      }
-      workMsgs.push({role:'user',_internal:true,content:[...results,...extraBlocks]});
-      currentBubble=null;
-    }
-    // 【修复：记忆保存】把工具调用历史（breath 读到的记忆、tool_calls、tool 结果）
-    // 插回全局 messages，下一句话凛才记得刚才读了什么。
-    // streamResponse 已把最终回复实时写在 messages 末尾，所以这里用 splice
-    // 把工具历史【插到】最终回复前面，保证消息顺序合法；
-    // 不加 if(finalAiText) push——那会造成重复的 assistant 消息。
-    const extraMsgs=workMsgs.slice(origLen).map(sanitizeForHistory);
-    if(extraMsgs.length>0)messages.splice(origLen,0,...extraMsgs);
-    // 【修复A】插入工具历史后必须再存一次 localStorage——
-    // 之前流式期间的保存不包含工具消息，杀掉 App 重开会丢。
-    saveCurrentConversation();
-  }catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
+  try{await runToolLoop(wrap,origLen);}
+  catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
   isTyping=false;const btn=document.getElementById('send-btn');btn.textContent='↑';btn.style.fontSize='';document.getElementById('input').focus();
 }
 
@@ -1326,17 +1477,11 @@ function checkPwd(){
   }
 }
 function initLock(){
-  if(sessionStorage.getItem('unlocked')){
-    document.getElementById('lock-screen').style.display='none';
-  } else {
-    setTimeout(()=>document.getElementById('pwd-input').focus(),100);
-  }
+  if(sessionStorage.getItem('unlocked')){document.getElementById('lock-screen').style.display='none';}
+  else{setTimeout(()=>document.getElementById('pwd-input').focus(),100);}
 }
 
-// 【命中率优化】keepalive 重新启用：缓存 TTL 是 1 小时，每 50 分钟一次
-// 轻量心跳把它续上，页面开着的期间任何时候发消息，人设+工具定义都是热的。
-// 关键：请求必须带上和正常聊天【完全相同】的 system 和 tools，前缀一致才续得上；
-// _keepalive 标志让后端跳过 thinking、max_tokens=1，把心跳成本压到最低。
+// 缓存续期心跳：50 分钟一次，前缀必须和正常聊天完全一致
 function startKeepalive() {
   setInterval(() => {
     if (isTyping) return;
@@ -1346,35 +1491,31 @@ function startKeepalive() {
       body: JSON.stringify({
         model: currentModel,
         system: getSystemPrompt(),
-        tools: OB_TOOLS,
+        tools: buildTools(),
         messages: [{ role: 'user', content: 'ping' }],
         max_tokens: 1,
         _session_id: getSessionId(),
         _keepalive: true
       })
-    }).then(r => {
-      if (r.body) r.body.cancel();
-      console.log('[Keepalive] 缓存已续期');
-    }).catch(err => console.warn('[Keepalive] 续期失败', err));
+    }).then(r => { if (r.body) r.body.cancel(); })
+      .catch(err => console.warn('[Keepalive] 续期失败', err));
   }, 50 * 60 * 1000);
 }
 
-// ========== 表情包上传（图片压缩） ==========
+// ========== 表情包上传 ==========
 async function handleEmojiUpload(e){
   const file = e.target.files[0];
   e.target.value = '';
   if(!file) return;
   const reader = new FileReader();
   reader.onload = async function(ev) {
-    const compressed = await compressImage(ev.target.result, 200);
-    pendingEmojiFile = compressed;
+    pendingEmojiFile = await compressImage(ev.target.result, 200);
     document.getElementById('emoji-name-input').value = '';
     document.getElementById('emoji-name-modal').classList.add('open');
     setTimeout(()=>document.getElementById('emoji-name-input').focus(), 100);
   };
   reader.readAsDataURL(file);
 }
-
 async function confirmEmojiName(){
   const name = document.getElementById('emoji-name-input').value.trim();
   document.getElementById('emoji-name-modal').classList.remove('open');
@@ -1387,17 +1528,16 @@ async function confirmEmojiName(){
   pendingEmojiFile = null;
 }
 
-// 【修复③】原来是普通 function 里用 await，属于语法错误，整个脚本会挂掉。
-// 改成 async IIFE。
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
-  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();
-  updateAnniversary();await mcpInit();
+  loadMcpServers();
+  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();initMic();
+  updateAnniversary();
   document.getElementById('status-text').textContent='今天 '+nowStr();
   initConversations();
   document.getElementById('input').focus();
   initLock();
-  startKeepalive();  // 【命中率优化】1h TTL 配 50min 心跳，缓存永续
+  startKeepalive();
 })();
 </script>
 </body>
