@@ -348,12 +348,12 @@ def chat_v2():
                 yield 'data: {"error": "upstream error"}\n\n'
                 return
             n = 0
-                        n = 0
             for line in r.iter_lines():
                 if line:
                     if line.startswith(b':'):
                         continue
                     if n < 5:
+
                         print(f"[chat-v2] 收到{n}: {line.decode()[:200]}", flush=True)
                         n += 1
                     yield line.decode() + '\n\n'
