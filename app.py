@@ -552,6 +552,108 @@ def chat_v2():
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
+# ============================================================
+# 放映室：存视频、转录台词
+# ============================================================
+VIDEOS_DIR = os.path.join(os.path.dirname(__file__), 'static', 'videos')
+os.makedirs(VIDEOS_DIR, exist_ok=True)
+VIDEO_EXT = ('.mp4', '.mov', '.m4v', '.webm', '.mkv')
+
+
+@app.route('/api/videos', methods=['GET'])
+def list_videos():
+    out = []
+    for f in sorted(os.listdir(VIDEOS_DIR), reverse=True):
+        if not f.lower().endswith(VIDEO_EXT):
+            continue
+        base = f.rsplit('.', 1)[0]
+        note = ''
+        np = os.path.join(VIDEOS_DIR, base + '.txt')
+        if os.path.exists(np):
+            with open(np, 'r', encoding='utf-8') as nf:
+                note = nf.read().strip()
+        has_tr = os.path.exists(os.path.join(VIDEOS_DIR, base + '.trans.txt'))
+        try:
+            size = os.path.getsize(os.path.join(VIDEOS_DIR, f))
+        except Exception:
+            size = 0
+        out.append({'filename': f, 'url': f'/videos/{f}', 'note': note,
+                    'ts': base, 'size': size, 'transcribed': has_tr})
+    return jsonify(out)
+
+
+@app.route('/api/videos', methods=['POST'])
+def upload_video():
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    f = request.files['file']
+    note = (request.form.get('note') or '').strip()
+    ext = 'mp4'
+    if f.filename and '.' in f.filename:
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+    if '.' + ext not in VIDEO_EXT:
+        return jsonify({'error': '这个格式放不了，用 mp4 或 mov'}), 400
+    ts = str(int(time.time() * 1000))
+    fn = f'{ts}.{ext}'
+    f.save(os.path.join(VIDEOS_DIR, fn))
+    if note:
+        with open(os.path.join(VIDEOS_DIR, ts + '.txt'), 'w', encoding='utf-8') as nf:
+            nf.write(note)
+    return jsonify({'filename': fn, 'url': f'/videos/{fn}', 'ts': ts})
+
+
+@app.route('/api/videos/<filename>', methods=['DELETE'])
+def delete_video(filename):
+    safe = secure_filename(filename)
+    base = safe.rsplit('.', 1)[0]
+    for p in (os.path.join(VIDEOS_DIR, safe),
+              os.path.join(VIDEOS_DIR, base + '.txt'),
+              os.path.join(VIDEOS_DIR, base + '.trans.txt')):
+        if os.path.exists(p):
+            os.remove(p)
+    return jsonify({'ok': True})
+
+
+@app.route('/videos/<filename>')
+def serve_video(filename):
+    # conditional=True 让浏览器能拖进度条（Range 请求）
+    return send_from_directory(VIDEOS_DIR, filename, conditional=True)
+
+
+@app.route('/api/videos/<filename>/transcribe', methods=['POST'])
+def transcribe_video(filename):
+    """把视频里的话转成文字，转过一次就存下来，不重复花钱"""
+    safe = secure_filename(filename)
+    fp = os.path.join(VIDEOS_DIR, safe)
+    if not os.path.exists(fp):
+        return jsonify({'error': '视频不在了'}), 404
+    cache = os.path.join(VIDEOS_DIR, safe.rsplit('.', 1)[0] + '.trans.txt')
+    if os.path.exists(cache):
+        with open(cache, 'r', encoding='utf-8') as f:
+            return jsonify({'text': f.read(), 'cached': True})
+    if not EL_KEY:
+        return jsonify({'error': '语音识别未配置'}), 500
+    if os.path.getsize(fp) > 90 * 1024 * 1024:
+        return jsonify({'error': '视频太大了，转录不了（90MB 以内）'}), 400
+    last_err = ''
+    for model_id in ('scribe_v2', 'scribe_v1'):
+        try:
+            with open(fp, 'rb') as vf:
+                r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
+                                  headers={'xi-api-key': EL_KEY},
+                                  files={'file': (safe, vf, 'video/mp4')},
+                                  data={'model_id': model_id}, timeout=300)
+            if r.status_code == 200:
+                text = ((r.json() or {}).get('text') or '').strip()
+                with open(cache, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                return jsonify({'text': text, 'cached': False})
+            last_err = f'{r.status_code} {r.text[:200]}'
+        except Exception as e:
+            last_err = str(e)
+    return jsonify({'error': f'转录失败：{last_err}'}), 502
+
+
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG = '2cdvnKJ5TZi631y5PN1s'
 
@@ -673,8 +775,10 @@ def _save_book(book):
 
 
 # ---- 网上找书：中文维基文库（古籍/公版）+ 古腾堡（外文公版）----
-NET_UA = {'User-Agent': 'lin-study/1.0 (personal reading app)'}
+NET_UA = {'User-Agent': 'LinStudy/1.0 (https://jwh.zeabur.app; personal reading app) python-requests',
+          'Accept': 'application/json'}
 WS_API = 'https://zh.wikisource.org/w/api.php'
+WS_REST = 'https://zh.wikisource.org/w/rest.php/v1/search/page'
 
 
 def _safe_url(u):
@@ -694,13 +798,40 @@ def _safe_url(u):
 
 
 def _ws_search(q, limit=8):
-    r = requests.get(WS_API, params={'action': 'query', 'list': 'search',
-                                     'srsearch': q, 'srlimit': limit,
-                                     'srnamespace': 0, 'format': 'json'},
-                     headers=NET_UA, timeout=20)
-    hits = (r.json().get('query') or {}).get('search') or []
-    return [{'source': 'wikisource', 'ref': h['title'], 'title': h['title'],
-             'author': '中文维基文库'} for h in hits]
+    err = ''
+    # 先走标准 API
+    try:
+        r = requests.get(WS_API, params={'action': 'query', 'list': 'search',
+                                         'srsearch': q, 'srlimit': limit,
+                                         'srnamespace': 0, 'format': 'json'},
+                         headers=NET_UA, timeout=20)
+        if r.status_code == 200:
+            hits = (r.json().get('query') or {}).get('search') or []
+            if hits:
+                return [{'source': 'wikisource', 'ref': h['title'],
+                         'title': h['title'], 'author': '中文维基文库'} for h in hits]
+            err = '这个词没搜到'
+        else:
+            err = f'HTTP {r.status_code}'
+    except Exception as e:
+        err = str(e)[:120]
+    # 备用：新版 REST 接口
+    try:
+        r = requests.get(WS_REST, params={'q': q, 'limit': limit},
+                         headers=NET_UA, timeout=20)
+        if r.status_code == 200:
+            pages = r.json().get('pages') or []
+            if pages:
+                return [{'source': 'wikisource', 'ref': p.get('title'),
+                         'title': p.get('title'), 'author': '中文维基文库'}
+                        for p in pages if p.get('title')]
+        else:
+            err = err or f'REST HTTP {r.status_code}'
+    except Exception as e:
+        err = err or str(e)[:120]
+    if err:
+        raise RuntimeError(err)
+    return []
 
 
 def _ws_extract(titles):
@@ -820,9 +951,11 @@ def search_books():
         try:
             results += fn(q)
         except Exception as e:
-            errs.append(f'{name}没连上')
+            msg = str(e)[:120]
+            errs.append(f'{name}：{msg}')
+            print(f'[books/search] {name} 失败 q={q} err={msg}', flush=True)
     if not results:
-        return jsonify({'error': '没找到，换个书名试试' + ('（' + '、'.join(errs) + '）' if errs else '')}), 200
+        return jsonify({'error': '没找到。' + ('；'.join(errs) if errs else '换个书名试试')}), 200
     return jsonify(results)
 
 
