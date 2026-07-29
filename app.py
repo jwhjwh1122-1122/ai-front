@@ -8,103 +8,17 @@ app = Flask(__name__, static_folder='static')
 CORS(app)
 
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
-DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
-MCP_URL = 'https://ombrebrain-jwhjwh.zeabur.app/mcp'
+MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
 
 MEMORIES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'memories')
 os.makedirs(MEMORIES_DIR, exist_ok=True)
 
-# ========== 摘要存储（对话压缩） ==========
+# 思考预算（tokens）。OpenRouter 规定：max_tokens 必须严格大于思考预算，
+# 且思考预算最小 1024。所以最终发出去的 max_tokens = 用户设置 + REASONING_BUDGET。
+REASONING_BUDGET = 2000
 
-SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'summaries')
-os.makedirs(SUMMARY_DIR, exist_ok=True)
-
-def get_summary_file(session_id):
-    safe_id = hashlib.md5(session_id.encode()).hexdigest()
-    return os.path.join(SUMMARY_DIR, f"{safe_id}.json")
-
-def load_summary(session_id):
-    fpath = get_summary_file(session_id)
-    if os.path.exists(fpath):
-        try:
-            with open(fpath, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return None
-    return None
-
-def save_summary(session_id, summary_data):
-    fpath = get_summary_file(session_id)
-    with open(fpath, 'w', encoding='utf-8') as f:
-        json.dump(summary_data, f)
-
-def generate_summary(messages, system_prompt):
-    if not messages:
-        return ""
-    to_compress = messages[:10]
-    compress_prompt = f"""你是一个摘要生成器。请将以下对话压缩成一段简短的摘要，保留关键信息和人物关系（凛和宝宝）。
-
-只输出摘要内容，不要加任何额外说明。
-
-对话内容：
-
-{json.dumps(to_compress, ensure_ascii=False, indent=2)}
-
-摘要："""
-    try:
-        resp = requests.post(
-            'https://openrouter.ai/api/v1/chat/completions',
-            headers={
-                'Authorization': f'Bearer {OR_KEY}',
-                'Content-Type': 'application/json'
-            },
-            json={
-                'model': 'anthropic/claude-haiku-4-5',
-                'messages': [
-                    {'role': 'system', 'content': '你是一个专业的对话摘要工具。'},
-                    {'role': 'user', 'content': compress_prompt}
-                ],
-                'max_tokens': 500,
-                'temperature': 0.3,
-                'stream': False
-            },
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            summary = data['choices'][0]['message']['content'].strip()
-            return summary
-        else:
-            print(f"[Summary] 压缩失败，状态码 {resp.status_code}")
-            return ""
-    except Exception as e:
-        print(f"[Summary] 压缩异常: {e}")
-        return ""
-
-def compress_messages(messages, session_id, system_prompt):
-    THRESHOLD = 15
-    KEEP = 5
-    if len(messages) <= THRESHOLD:
-        return messages, None
-    summary_data = load_summary(session_id) or {}
-    old_summary = summary_data.get('summary', '')
-    to_compress = messages[:len(messages)-KEEP]
-    recent = messages[len(messages)-KEEP:]
-    if old_summary:
-        combined = [{'role': 'system', 'content': f"之前的摘要：{old_summary}"}] + to_compress
-    else:
-        combined = to_compress
-    new_summary_text = generate_summary(combined, system_prompt)
-    if not new_summary_text and old_summary:
-        new_summary_text = old_summary
-    summary_msg = {'role': 'system', 'content': f"【对话摘要】{new_summary_text}"}
-    new_messages = [summary_msg] + recent
-    save_summary(session_id, {'summary': new_summary_text})
-    return new_messages, new_summary_text
-
-# ========== 记忆摘要存储（独立于对话压缩） ==========
-
+# ========== 记忆摘要存储 ==========
 MEMORY_SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'memory_summaries')
 os.makedirs(MEMORY_SUMMARY_DIR, exist_ok=True)
 
@@ -118,7 +32,7 @@ def load_memory_summary(session_id):
         try:
             with open(fpath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception:
             return {}
     return {}
 
@@ -130,15 +44,9 @@ def save_memory_summary(session_id, memory_data):
 def update_memory_summary(session_id, tool_name, summary_text):
     data = load_memory_summary(session_id)
     if tool_name == 'breath':
-        data['last_breath'] = {
-            'content': summary_text,
-            'timestamp': time.time()
-        }
+        data['last_breath'] = {'content': summary_text, 'timestamp': time.time()}
     elif tool_name == 'view_memory':
-        data['last_view_memory'] = {
-            'content': summary_text,
-            'timestamp': time.time()
-        }
+        data['last_view_memory'] = {'content': summary_text, 'timestamp': time.time()}
         if 'viewed_photos' not in data:
             data['viewed_photos'] = []
         if summary_text not in data['viewed_photos']:
@@ -159,9 +67,241 @@ def get_memory_summary_text(session_id):
         recent = data['viewed_photos'][-3:]
         if recent:
             parts.append(f"【最近看过的时光墙照片】{'; '.join(recent)}")
-    if parts:
-        return "\n".join(parts)
-    return ""
+    return "\n".join(parts) if parts else ""
+
+
+# ============================================================
+# 翻译层：前端说 Anthropic 原生格式，OpenRouter 说 OpenAI 格式
+# ============================================================
+
+def _blocks_to_openai_content(blocks):
+    """Anthropic content 块数组 -> OpenAI content（字符串或 parts 数组）"""
+    if not isinstance(blocks, list):
+        return blocks
+    parts = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        t = b.get('type')
+        if t == 'text':
+            parts.append({'type': 'text', 'text': b.get('text', '')})
+        elif t == 'image':
+            src = b.get('source') or {}
+            if src.get('type') == 'base64':
+                url = f"data:{src.get('media_type','image/jpeg')};base64,{src.get('data','')}"
+                parts.append({'type': 'image_url', 'image_url': {'url': url}})
+        elif t == 'image_url':
+            parts.append(b)
+    if not parts:
+        return ''
+    if len(parts) == 1 and parts[0]['type'] == 'text':
+        return parts[0]['text']
+    return parts
+
+
+def to_openai_messages(messages):
+    """把前端的 Anthropic 风格消息数组翻译成 OpenAI 风格"""
+    out = []
+    for m in messages or []:
+        role = m.get('role')
+        content = m.get('content')
+
+        if role == 'assistant':
+            text_parts, tool_calls, reasoning_details = [], [], []
+            if isinstance(content, str):
+                text_parts.append(content)
+            elif isinstance(content, list):
+                for b in content:
+                    if not isinstance(b, dict):
+                        continue
+                    bt = b.get('type')
+                    if bt == 'text':
+                        text_parts.append(b.get('text', ''))
+                    elif bt == 'thinking':
+                        rd = {
+                            'type': 'reasoning.text',
+                            'text': b.get('thinking', ''),
+                            'format': 'anthropic-claude-v1',
+                            'index': len(reasoning_details),
+                        }
+                        if b.get('signature'):
+                            rd['signature'] = b['signature']
+                        reasoning_details.append(rd)
+                    elif bt == 'tool_use':
+                        tool_calls.append({
+                            'id': b.get('id'),
+                            'type': 'function',
+                            'function': {
+                                'name': b.get('name'),
+                                'arguments': json.dumps(b.get('input') or {}, ensure_ascii=False),
+                            },
+                        })
+            msg = {'role': 'assistant', 'content': ''.join(text_parts)}
+            if tool_calls:
+                msg['tool_calls'] = tool_calls
+            if reasoning_details:
+                msg['reasoning_details'] = reasoning_details
+            out.append(msg)
+            continue
+
+        # user：可能混着 tool_result 块（要拆成独立的 tool 消息）
+        if role == 'user' and isinstance(content, list):
+            tool_results = [b for b in content if isinstance(b, dict) and b.get('type') == 'tool_result']
+            others = [b for b in content if isinstance(b, dict) and b.get('type') != 'tool_result']
+            for tr in tool_results:
+                c = tr.get('content')
+                if not isinstance(c, str):
+                    c = json.dumps(c, ensure_ascii=False)
+                out.append({'role': 'tool', 'tool_call_id': tr.get('tool_use_id'), 'content': c})
+            if others:
+                out.append({'role': 'user', 'content': _blocks_to_openai_content(others)})
+            continue
+
+        if role == 'tool':
+            out.append(m)
+            continue
+
+        out.append({'role': role, 'content': _blocks_to_openai_content(content)})
+    return out
+
+
+def to_openai_tools(tools):
+    """Anthropic 工具定义 -> OpenAI function 定义"""
+    result = []
+    for t in tools or []:
+        if t.get('type') == 'function':
+            result.append(t)
+            continue
+        result.append({
+            'type': 'function',
+            'function': {
+                'name': t.get('name'),
+                'description': t.get('description', ''),
+                'parameters': t.get('input_schema') or {'type': 'object', 'properties': {}},
+            },
+        })
+    return result
+
+
+def sse(obj):
+    return 'data: ' + json.dumps(obj, ensure_ascii=False) + '\n\n'
+
+
+def translate_stream(resp):
+    """OpenAI 风格 SSE -> Anthropic 风格 SSE（前端认识的那套）"""
+    THINK_IDX, TEXT_IDX = 0, 1
+    think_open = text_open = False
+    tool_blocks = {}          # openai tool_call index -> our block index
+    next_tool_idx = 2
+    open_tool_indices = []
+    stop_reason = 'end_turn'
+    started = False
+    last_usage = None
+
+    for raw in resp.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode('utf-8', 'ignore')
+        if line.startswith(':'):          # OpenRouter 心跳，丢掉
+            continue
+        if not line.startswith('data:'):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == '[DONE]':
+            continue
+        try:
+            d = json.loads(payload)
+        except Exception:
+            continue
+
+        if not started:
+            started = True
+            yield sse({'type': 'message_start', 'message': {'usage': d.get('usage') or {}}})
+
+        if d.get('usage'):
+            last_usage = d['usage']
+
+        choices = d.get('choices') or []
+        if not choices:
+            continue
+        ch = choices[0]
+        delta = ch.get('delta') or {}
+
+        # ── 思考 ──
+        think_text, think_sig = '', None
+        rds = delta.get('reasoning_details')
+        if rds:
+            for item in rds:
+                if item.get('text'):
+                    think_text += item['text']
+                if item.get('signature'):
+                    think_sig = item['signature']
+        elif delta.get('reasoning'):
+            think_text = delta['reasoning']
+
+        if think_text or think_sig:
+            if not think_open:
+                think_open = True
+                yield sse({'type': 'content_block_start', 'index': THINK_IDX,
+                           'content_block': {'type': 'thinking', 'thinking': ''}})
+            if think_text:
+                yield sse({'type': 'content_block_delta', 'index': THINK_IDX,
+                           'delta': {'type': 'thinking_delta', 'thinking': think_text}})
+            if think_sig:
+                yield sse({'type': 'content_block_delta', 'index': THINK_IDX,
+                           'delta': {'type': 'signature_delta', 'signature': think_sig}})
+
+        # ── 正文 ──
+        if delta.get('content'):
+            if think_open:
+                think_open = False
+                yield sse({'type': 'content_block_stop', 'index': THINK_IDX})
+            if not text_open:
+                text_open = True
+                yield sse({'type': 'content_block_start', 'index': TEXT_IDX,
+                           'content_block': {'type': 'text', 'text': ''}})
+            yield sse({'type': 'content_block_delta', 'index': TEXT_IDX,
+                       'delta': {'type': 'text_delta', 'text': delta['content']}})
+
+        # ── 工具调用 ──
+        for tc in delta.get('tool_calls') or []:
+            oi = tc.get('index', 0)
+            if oi not in tool_blocks:
+                if think_open:
+                    think_open = False
+                    yield sse({'type': 'content_block_stop', 'index': THINK_IDX})
+                tool_blocks[oi] = next_tool_idx
+                open_tool_indices.append(next_tool_idx)
+                fn = tc.get('function') or {}
+                yield sse({'type': 'content_block_start', 'index': next_tool_idx,
+                           'content_block': {'type': 'tool_use',
+                                             'id': tc.get('id') or f'call_{next_tool_idx}',
+                                             'name': fn.get('name') or '',
+                                             'input': {}}})
+                next_tool_idx += 1
+            args = (tc.get('function') or {}).get('arguments')
+            if args:
+                yield sse({'type': 'content_block_delta', 'index': tool_blocks[oi],
+                           'delta': {'type': 'input_json_delta', 'partial_json': args}})
+
+        fr = ch.get('finish_reason')
+        if fr:
+            stop_reason = 'tool_use' if fr == 'tool_calls' else ('max_tokens' if fr == 'length' else 'end_turn')
+
+    if think_open:
+        yield sse({'type': 'content_block_stop', 'index': THINK_IDX})
+    if text_open:
+        yield sse({'type': 'content_block_stop', 'index': TEXT_IDX})
+    for idx in open_tool_indices:
+        yield sse({'type': 'content_block_stop', 'index': idx})
+    if tool_blocks:
+        stop_reason = 'tool_use'
+    yield sse({'type': 'message_delta', 'delta': {'stop_reason': stop_reason},
+               'usage': last_usage or {}})
+    yield 'data: [DONE]\n\n'
+
+
+# ========== 路由 ==========
 
 @app.route('/')
 def index():
@@ -188,10 +328,8 @@ def mcp():
     sid = request.headers.get('Mcp-Session-Id')
     if not sid:
         sid = data.pop('_sid', None)
-    headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-    }
+    headers = {'Content-Type': 'application/json',
+               'Accept': 'application/json, text/event-stream'}
     if sid:
         headers['Mcp-Session-Id'] = sid
     r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=120)
@@ -202,14 +340,11 @@ def mcp():
                 if chunk:
                     yield chunk
         resp = Response(generate(), mimetype=content_type)
-        if 'Mcp-Session-Id' in r.headers:
-            resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
-        return resp
     else:
         resp = app.response_class(r.content, mimetype=content_type)
-        if 'Mcp-Session-Id' in r.headers:
-            resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
-        return resp
+    if 'Mcp-Session-Id' in r.headers:
+        resp.headers['Mcp-Session-Id'] = r.headers['Mcp-Session-Id']
+    return resp
 
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
@@ -277,89 +412,84 @@ def get_memory_image(filename):
             note = nf.read().strip()
     return jsonify({'filename': safe, 'note': note, 'mime': mime, 'data': data})
 
+
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
-    data = request.json
+    data = request.json or {}
     session_id = data.get('_session_id', 'default')
+    keepalive = bool(data.get('_keepalive'))
     raw_messages = data.get('messages', [])
     system_prompt = data.get('system', '')
-    model = data.get('model', 'anthropic/claude-sonnet-4-6')
 
-    # 1. 对话压缩
-    compressed_messages, new_summary = compress_messages(raw_messages, session_id, system_prompt)
-    if new_summary:
-        if system_prompt:
-            system_prompt = f"{system_prompt}\n\n【对话摘要】{new_summary}"
-        else:
-            system_prompt = f"【对话摘要】{new_summary}"
-        raw_messages = compressed_messages
-
-    # 2. 附加记忆摘要（独立存储）
+    # 记忆摘要附加到 system（放在末尾，前面的人设保持不变 → 缓存前缀稳定）
     memory_summary = get_memory_summary_text(session_id)
     if memory_summary:
-        if system_prompt:
-            system_prompt = f"{system_prompt}\n\n【已读记忆/已看照片摘要】\n{memory_summary}"
-        else:
-            system_prompt = f"【已读记忆/已看照片摘要】\n{memory_summary}"
+        system_prompt = (system_prompt + "\n\n" if system_prompt else "") + \
+                        f"【已读记忆/已看照片摘要】\n{memory_summary}"
 
-    is_deepseek = 'deepseek' in model.lower()
+    oa_messages = to_openai_messages(raw_messages)
+    if system_prompt:
+        oa_messages = [{'role': 'system', 'content': system_prompt}] + oa_messages
 
-    if is_deepseek:
-        # DeepSeek：system放进messages第一条，走官方API
-        messages_to_send = raw_messages
-        if system_prompt:
-            messages_to_send = [{'role': 'system', 'content': system_prompt}] + raw_messages
+    user_max = int(data.get('max_tokens', 800) or 800)
 
-        payload = {
-            'model': model,
-            'messages': messages_to_send,
-            'stream': True,
-            'max_tokens': data.get('max_tokens', 8000),
-        }
-        api_url = 'https://api.deepseek.com/v1/chat/completions'
-        auth_header = f'Bearer {DS_KEY}'
+    payload = {
+        'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
+        'messages': oa_messages,
+        'stream': True,
+        # 自动缓存：OpenRouter 会把断点放在最后一个可缓存块并随对话前移
+        'cache_control': {'type': 'ephemeral', 'ttl': '1h'},
+        'session_id': str(session_id)[:256],   # 粘性路由，保证缓存命中同一家
+        'usage': {'include': True},
+    }
+
+    if keepalive:
+        payload['max_tokens'] = 1
     else:
-        # Claude：走OpenRouter，带thinking
-        payload = {
-            'model': model,
-            'messages': raw_messages,
-            'stream': True,
-            'max_tokens': data.get('max_tokens', 8000),
-            'thinking': {'type': 'enabled', 'budget_tokens': 5000},
-            'system': system_prompt,
-        }
-        api_url = 'https://openrouter.ai/api/v1/chat/completions'
-        auth_header = f'Bearer {OR_KEY}'
+        # OpenRouter 规定 max_tokens 必须严格大于思考预算
+        payload['max_tokens'] = user_max + REASONING_BUDGET
+        payload['reasoning'] = {'max_tokens': REASONING_BUDGET}
 
-    # if data.get('tools'):
-#     payload['tools'] = data['tools']
-# if data.get('tool_choice'):
-#     payload['tool_choice'] = data['tool_choice']
+    if data.get('tools'):
+        payload['tools'] = to_openai_tools(data['tools'])
+    if data.get('tool_choice'):
+        payload['tool_choice'] = data['tool_choice']
 
     def gen():
-        with requests.post(
-            'https://openrouter.ai/api/v1/chat/completions',
-            headers={'Authorization': f'Bearer {OR_KEY}', 'Content-Type': 'application/json'},
-            json=payload, stream=True, timeout=180
-        ) as r:
-            print(f"[chat-v2] 状态码 {r.status_code}", flush=True)
-            if r.status_code != 200:
-                print(f"[chat-v2] 报错内容: {r.text[:500]}", flush=True)
-                yield 'data: {"error": "upstream error"}\n\n'
-                return
-            n = 0
-            for line in r.iter_lines():
-                if line:
-                    if line.startswith(b':'):
-                        continue
-                    if n < 5:
-                        print(f"[chat-v2] 收到{n}: {line.decode()[:200]}", flush=True)
-                        n += 1
-                    yield line.decode() + '\n\n'
+        try:
+            with requests.post(
+                'https://openrouter.ai/api/v1/chat/completions',
+                headers={'Authorization': f'Bearer {OR_KEY}',
+                         'Content-Type': 'application/json'},
+                json=payload, stream=True, timeout=180
+            ) as r:
+                if r.status_code != 200:
+                    body = r.text[:500]
+                    print(f"[chat-v2] 上游 {r.status_code}: {body}", flush=True)
+                    yield sse({'type': 'content_block_start', 'index': 1,
+                               'content_block': {'type': 'text', 'text': ''}})
+                    yield sse({'type': 'content_block_delta', 'index': 1,
+                               'delta': {'type': 'text_delta',
+                                         'text': f'（出错了 {r.status_code}：{body[:200]}）'}})
+                    yield sse({'type': 'content_block_stop', 'index': 1})
+                    yield sse({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {}})
+                    yield 'data: [DONE]\n\n'
+                    return
+                for chunk in translate_stream(r):
+                    yield chunk
+        except Exception as e:
+            print(f"[chat-v2] 异常: {e}", flush=True)
+            yield sse({'type': 'content_block_start', 'index': 1,
+                       'content_block': {'type': 'text', 'text': ''}})
+            yield sse({'type': 'content_block_delta', 'index': 1,
+                       'delta': {'type': 'text_delta', 'text': f'（连接出错：{e}）'}})
+            yield sse({'type': 'content_block_stop', 'index': 1})
+            yield sse({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {}})
+            yield 'data: [DONE]\n\n'
 
-    
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
 
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG = '2cdvnKJ5TZi631y5PN1s'
@@ -385,11 +515,13 @@ def tts():
     )
     if r.status_code != 200:
         return jsonify({'error': 'TTS failed', 'status': r.status_code}), 500
+
     def gen():
         for chunk in r.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
     return Response(gen(), mimetype='audio/mpeg', headers={'Cache-Control': 'no-cache'})
+
 
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
@@ -399,6 +531,7 @@ def key_info():
         return jsonify(r.json())
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
