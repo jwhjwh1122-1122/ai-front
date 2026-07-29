@@ -322,17 +322,78 @@ def store_memory_summary():
         return jsonify({'status': 'ok'})
     return jsonify({'error': 'missing data'}), 400
 
+def _mcp_once(url, body, sid=None, timeout=60):
+    """对任意 MCP 服务器发一次请求，返回 (解析后的 result, 会话id)"""
+    headers = {'Content-Type': 'application/json',
+               'Accept': 'application/json, text/event-stream'}
+    if sid:
+        headers['Mcp-Session-Id'] = sid
+    r = requests.post(url, json=body, headers=headers, timeout=timeout)
+    new_sid = r.headers.get('Mcp-Session-Id') or sid
+    text = r.text or ''
+    ctype = r.headers.get('Content-Type', '')
+    if 'text/event-stream' in ctype:
+        buf = ''
+        for line in text.split('\n'):
+            if line.startswith('data:'):
+                buf += line[5:].strip()
+        text = buf
+    try:
+        d = json.loads(text)
+    except Exception:
+        return {'error': 'parse failed', 'raw': text[:300]}, new_sid
+    return d.get('result', d), new_sid
+
+
+@app.route('/api/mcp-connect', methods=['POST'])
+def mcp_connect():
+    """连一个 MCP 服务器，握手并把它的工具列表拉回来"""
+    data = request.json or {}
+    url = (data.get('url') or '').strip()
+    if not url:
+        return jsonify({'error': '请填写服务器地址'}), 400
+    try:
+        _, sid = _mcp_once(url, {
+            'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+            'params': {'protocolVersion': '2024-11-05', 'capabilities': {},
+                       'clientInfo': {'name': 'ai-front', 'version': '1.0'}}
+        })
+        if sid:
+            try:
+                requests.post(url, json={'jsonrpc': '2.0', 'method': 'notifications/initialized',
+                                         'params': {}},
+                              headers={'Content-Type': 'application/json',
+                                       'Accept': 'application/json, text/event-stream',
+                                       'Mcp-Session-Id': sid}, timeout=30)
+            except Exception:
+                pass
+        result, sid = _mcp_once(url, {'jsonrpc': '2.0', 'id': 2,
+                                      'method': 'tools/list', 'params': {}}, sid)
+        tools = result.get('tools') if isinstance(result, dict) else None
+        if tools is None:
+            return jsonify({'error': '连上了但没拿到工具列表', 'raw': str(result)[:300]}), 502
+        slim = [{'name': t.get('name'),
+                 'description': (t.get('description') or '')[:300],
+                 'input_schema': t.get('inputSchema') or t.get('input_schema')
+                                 or {'type': 'object', 'properties': {}}}
+                for t in tools if t.get('name')]
+        return jsonify({'ok': True, 'session_id': sid, 'tools': slim})
+    except Exception as e:
+        return jsonify({'error': f'连接失败：{e}'}), 502
+
+
 @app.route('/api/mcp', methods=['POST'])
 def mcp():
     data = request.json
     sid = request.headers.get('Mcp-Session-Id')
     if not sid:
         sid = data.pop('_sid', None)
+    target = data.pop('_server', None) or MCP_URL
     headers = {'Content-Type': 'application/json',
                'Accept': 'application/json, text/event-stream'}
     if sid:
         headers['Mcp-Session-Id'] = sid
-    r = requests.post(MCP_URL, json=data, headers=headers, stream=True, timeout=120)
+    r = requests.post(target, json=data, headers=headers, stream=True, timeout=120)
     content_type = r.headers.get('Content-Type', 'application/json')
     if 'text/event-stream' in content_type:
         def generate():
@@ -494,6 +555,37 @@ def chat_v2():
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG = '2cdvnKJ5TZi631y5PN1s'
 
+
+@app.route('/api/stt', methods=['POST'])
+def stt():
+    """语音转文字：前端按住说话，录音传上来，转成文字返回"""
+    if not EL_KEY:
+        return jsonify({'error': '语音识别未配置'}), 500
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    f = request.files['file']
+    audio = f.read()
+    if not audio:
+        return jsonify({'error': '录音是空的'}), 400
+    last_err = ''
+    for model_id in ('scribe_v2', 'scribe_v1'):
+        try:
+            r = requests.post(
+                'https://api.elevenlabs.io/v1/speech-to-text',
+                headers={'xi-api-key': EL_KEY},
+                files={'file': (f.filename or 'audio.webm', audio,
+                                f.mimetype or 'audio/webm')},
+                data={'model_id': model_id},
+                timeout=90)
+            if r.status_code == 200:
+                return jsonify({'text': (r.json() or {}).get('text', '').strip()})
+            last_err = f'{r.status_code} {r.text[:200]}'
+        except Exception as e:
+            last_err = str(e)
+    print(f'[stt] 失败: {last_err}', flush=True)
+    return jsonify({'error': f'识别失败：{last_err}'}), 502
+
+
 @app.route('/api/tts', methods=['POST'])
 def tts():
     if not EL_KEY:
@@ -503,7 +595,9 @@ def tts():
     voice = data.get('voice', 'calm')
     if not text:
         return jsonify({'error': 'no text'}), 400
-    voice_id = VOICE_DOG if voice == 'dog' else VOICE_CALM
+    # 前端可以直接指定音色 ID（设置里填的），没填才用默认的
+    voice_id = (data.get('voice_id') or '').strip() or \
+               (VOICE_DOG if voice == 'dog' else VOICE_CALM)
     if len(text) > 500:
         text = text[:500]
     r = requests.post(
