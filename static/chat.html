@@ -221,6 +221,72 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .reader-size{display:flex;gap:6px;align-items:center;}
 .reader-size span{font-size:15px;color:var(--ink-soft);cursor:pointer;padding:2px 7px;font-family:"Songti SC",STSong,serif;}
 @media (prefers-reduced-motion:reduce){.spine,.study.open,.reader.open{transition:none;animation:none;}}
+
+/* ============ 放映室 ============ */
+.cinema{display:none;position:fixed;inset:0;z-index:215;background:#0a0a0d;flex-direction:column;}
+.cinema.open{display:flex;animation:slideUpFull 0.3s cubic-bezier(0.32,0.72,0,1);}
+.cinema-head{display:flex;align-items:baseline;justify-content:space-between;padding:max(20px,env(safe-area-inset-top)) 22px 14px;flex-shrink:0;}
+.cinema-title{font-family:"Songti SC",STSong,serif;font-size:24px;font-weight:600;color:#e8e4dc;letter-spacing:6px;}
+.cinema-sub{font-size:11px;color:#7a7570;letter-spacing:1px;margin-top:4px;}
+.cinema-list{flex:1;overflow-y:auto;padding:4px 16px 40px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;}
+.cinema-list::-webkit-scrollbar{display:none;}
+.reel{display:flex;align-items:center;gap:14px;background:#141419;border:1px solid #23232b;border-radius:3px;padding:14px 16px;cursor:pointer;position:relative;overflow:hidden;}
+.reel:active{background:#1b1b22;}
+/* 左边一条胶片孔，标记这是一卷片子 */
+.reel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:9px;background:repeating-linear-gradient(180deg,#23232b 0 5px,transparent 5px 11px);}
+.reel-play{width:34px;height:34px;border-radius:50%;border:1px solid #3a3a45;color:#c8c2b8;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-left:8px;}
+.reel-info{flex:1;min-width:0;}
+.reel-name{font-family:"Songti SC",STSong,serif;font-size:14px;color:#ddd8ce;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.reel-meta{font-size:11px;color:#6e6963;margin-top:3px;}
+.cinema-empty{color:#6e6963;font-family:"Songti SC",STSong,serif;text-align:center;padding:70px 20px;line-height:2.2;letter-spacing:1px;font-size:14px;}
+.screen{display:none;position:fixed;inset:0;z-index:225;background:#000;flex-direction:column;}
+.screen.open{display:flex;}
+.screen-top{display:flex;align-items:center;justify-content:space-between;padding:max(14px,env(safe-area-inset-top)) 18px 8px;flex-shrink:0;}
+.screen-name{font-family:"Songti SC",STSong,serif;font-size:13px;color:#8b867e;letter-spacing:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.screen-x{background:transparent;border:none;color:#8b867e;font-size:16px;cursor:pointer;padding:4px 8px;}
+.screen-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;background:#000;}
+.screen-stage video{width:100%;max-height:100%;background:#000;}
+.screen-acts{flex-shrink:0;padding:14px 18px max(18px,env(safe-area-inset-bottom));background:#0a0a0d;border-top:1px solid #1c1c23;display:flex;flex-direction:column;gap:8px;}
+.cine-btn{width:100%;padding:12px;border-radius:3px;border:1px solid #3a3a45;background:transparent;color:#ddd8ce;font-family:"Songti SC",STSong,serif;font-size:14px;letter-spacing:3px;cursor:pointer;}
+.cine-btn.solid{background:var(--accent);border-color:var(--accent);color:#fff;}
+.cine-btn:disabled{opacity:0.4;}
+.cine-note{font-size:11px;color:#6e6963;text-align:center;letter-spacing:0.5px;}
+
+/* ============ 信箱 ============ */
+.mailbox{display:none;position:fixed;inset:0;z-index:212;background:var(--room);flex-direction:column;}
+.mailbox.open{display:flex;animation:slideUpFull 0.3s cubic-bezier(0.32,0.72,0,1);}
+.mail-list{flex:1;overflow-y:auto;padding:4px 16px 30px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch;}
+.mail-list::-webkit-scrollbar{display:none;}
+/* 信封：右上角一枚邮戳，左侧一道折痕 */
+.letter{background:var(--paper);border:1px solid var(--room-deep);border-radius:2px;padding:16px 18px 14px;position:relative;box-shadow:0 2px 10px rgba(0,0,0,0.07);}
+.letter::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--room-deep);}
+.letter-from{font-family:"Songti SC",STSong,serif;font-size:12px;color:var(--ink-soft);letter-spacing:2px;margin-bottom:8px;}
+.letter-body{font-family:"Songti SC","Source Han Serif SC",STSong,serif;font-size:15px;line-height:2;color:var(--ink);white-space:pre-wrap;text-align:justify;}
+.letter-date{font-family:"Songti SC",STSong,serif;font-size:11px;color:var(--ink-soft);margin-top:10px;text-align:right;letter-spacing:1px;}
+.stamp{position:absolute;top:12px;right:14px;width:26px;height:30px;border:1px dashed var(--ink-soft);opacity:0.5;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ink-soft);}
+.mail-empty{font-family:"Songti SC",STSong,serif;color:var(--ink-soft);text-align:center;padding:70px 20px;line-height:2.2;letter-spacing:1px;font-size:14px;}
+/* ============ 纪念日 ============ */
+.day-card{display:flex;align-items:center;gap:14px;background:var(--bubble-ai);border:1px solid var(--border);border-radius:14px;padding:13px 15px;position:relative;}
+.day-num{font-family:"Songti SC",STSong,serif;font-size:26px;font-weight:600;color:var(--accent);line-height:1;min-width:52px;text-align:center;}
+.day-unit{font-size:10px;color:var(--text-muted);text-align:center;margin-top:3px;letter-spacing:1px;}
+.day-name{font-size:14px;color:var(--text);}
+.day-date{font-size:11px;color:var(--text-muted);margin-top:3px;}
+.day-del{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.25);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.mood-chip{padding:7px 15px;border-radius:20px;border:1.5px solid var(--border);font-size:14px;cursor:pointer;background:var(--input-bg);color:var(--text);}
+.mood-chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+/* ============ 语音条 ============ */
+.voice-bubble{display:inline-flex;align-items:center;gap:9px;padding:9px 15px;border-radius:18px;cursor:pointer;user-select:none;box-shadow:0 2px 8px var(--shadow);border:1.5px solid var(--bubble-border-ai);background:var(--bubble-ai);min-width:96px;}
+.voice-bubble.playing{border-color:var(--accent);}
+.vb-play{font-size:11px;color:var(--accent);flex-shrink:0;width:12px;text-align:center;}
+.vb-wave{flex:1;height:14px;display:flex;align-items:center;gap:2px;overflow:hidden;}
+.vb-wave i{display:block;width:2px;border-radius:1px;background:var(--accent);opacity:0.45;}
+.voice-bubble.playing .vb-wave i{animation:vw 0.9s ease-in-out infinite;}
+@keyframes vw{0%,100%{transform:scaleY(0.45);}50%{transform:scaleY(1);}}
+.vb-dur{font-size:11px;color:var(--text-muted);flex-shrink:0;}
+.vb-text-btn{font-size:10px;color:var(--text-muted);opacity:0.6;cursor:pointer;padding:2px 5px;border:1px solid var(--border);border-radius:8px;align-self:flex-start;}
+.vb-transcript{font-size:12px;color:var(--text-muted);line-height:1.7;padding:2px 6px;max-width:100%;white-space:pre-wrap;}
+@media (prefers-reduced-motion:reduce){.voice-bubble.playing .vb-wave i{animation:none;}}
 </style>
 </head>
 <body>
@@ -246,6 +312,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   <div class="topbar-right">
     <div class="theme-btn" onclick="openConvPanel()" title="对话列表" style="font-size:12px;">☰</div>
     <div class="theme-btn" onclick="openStudy()" title="书房" style="font-size:13px;">❏</div>
+    <div class="theme-btn" onclick="openCinema()" title="放映室" style="font-size:12px;">▷</div>
+    <div class="theme-btn" onclick="openMailbox()" title="信箱" style="font-size:12px;">✉</div>
     <div class="theme-btn" onclick="openMemoryWall()" title="时光墙">✦</div>
     <div class="theme-btn" onclick="toggleThemeMenu()" title="切换主题">✦</div>
     <div class="theme-btn" onclick="openSettings()" title="设置" style="font-size:13px;">≡</div>
@@ -255,6 +323,9 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   <div class="avatar-menu-item" onclick="triggerAvatarUpload('ai')">•͈ ₃ •͈ 凛的头像</div>
   <div class="avatar-menu-item" onclick="triggerAvatarUpload('user')">⦁֊⦁꧞ 宝宝的头像</div>
   <div class="avatar-menu-item" onclick="openStatusPicker()">◉ 设置状态</div>
+  <div class="avatar-menu-item" onclick="openMoodPicker()">◐ 今天心情</div>
+  <div class="avatar-menu-item" onclick="openDays()">✧ 纪念日</div>
+  <div class="avatar-menu-item" onclick="rememberSomething()">↺ 想起一件事</div>
   <div class="avatar-menu-item" onclick="triggerBgUpload()">☾ 换背景</div>
   <div class="avatar-menu-item" onclick="clearBackground()" id="clear-bg-btn" style="display:none">✕ 清除背景</div>
 </div>
@@ -270,13 +341,13 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   <div class="img-preview-remove" onclick="removeImgPreview()">✕</div>
 </div>
 <div class="inputbar">
-  <div class="input-btn" id="mic-btn" title="按住说话" style="font-size:16px;">◎</div>
+  <div class="input-btn" id="mic-btn" title="按住说话，松开发出去" style="font-size:16px;">◎</div>
   <textarea id="input" placeholder="说点什么..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
   <div class="input-btn" onclick="toggleEmojiPanel()" title="表情" style="font-size:17px;">♡</div>
   <div class="input-btn" onclick="triggerChatImgUpload()" title="发图片" style="font-size:16px;">⊡</div>
   <button class="send-btn" id="send-btn" onclick="isTyping?stopGeneration():sendMsg()">↑</button>
 </div>
-<div class="rec-hint" id="rec-hint">● 正在录音，松开发送</div>
+<div class="rec-hint" id="rec-hint">● 正在录音，松开发出去</div>
 <div class="emoji-panel" id="emoji-panel">
   <div class="emoji-panel-bg" onclick="closeEmojiPanel()"></div>
   <div class="emoji-panel-inner">
@@ -338,6 +409,10 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
         <div class="ctx-option" data-voice="dog" onclick="setVoice('dog')">小狗</div>
       </div>
       <div class="settings-sub" id="voice-sub" style="margin-top:6px;"></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--text);">
+        <input type="checkbox" id="auto-voice-toggle" onchange="setAutoVoice(this.checked)"> 凛用语音回我
+      </label>
+      <div class="settings-sub" style="margin-top:4px;">打开后他每句话都会附一条语音（会消耗 ElevenLabs 额度）</div>
       <div class="settings-label" style="margin-top:12px;">沉静 音色 ID</div>
       <input id="voice-id-calm" class="mini-input" placeholder="留空用默认音色" oninput="saveVoiceId('calm',this.value)">
       <div class="settings-label" style="margin-top:10px;">小狗 音色 ID</div>
@@ -476,6 +551,97 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 </div>
 <input type="file" id="book-file" accept=".txt,.epub,text/plain,application/epub+zip" style="display:none" onchange="handleBookFile(event)">
 
+
+<!-- 放映室 -->
+<div class="cinema" id="cinema">
+  <div class="cinema-head">
+    <div>
+      <div class="cinema-title">放映室</div>
+      <div class="cinema-sub" id="cinema-sub">—</div>
+    </div>
+    <div class="study-acts">
+      <button class="study-btn" style="color:#ddd8ce;border-color:#3a3a45;" onclick="document.getElementById('video-file').click()">上 片</button>
+      <button class="study-x" style="color:#7a7570;" onclick="closeCinema()">✕</button>
+    </div>
+  </div>
+  <div class="cinema-list" id="cinema-list"></div>
+</div>
+
+<!-- 银幕 -->
+<div class="screen" id="screen">
+  <div class="screen-top">
+    <div class="screen-name" id="screen-name">—</div>
+    <button class="screen-x" onclick="closeScreen()">✕</button>
+  </div>
+  <div class="screen-stage"><video id="screen-video" playsinline controls preload="metadata"></video></div>
+  <div class="screen-acts">
+    <button class="cine-btn solid" id="btn-this-frame" onclick="showFrameToLin()">这一幕给凛看</button>
+    <button class="cine-btn" id="btn-whole" onclick="showWholeToLin()">让凛看完整段</button>
+    <div class="cine-note" id="cine-note">暂停在想给他看的地方，点上面那个</div>
+  </div>
+</div>
+<input type="file" id="video-file" accept="video/*" style="display:none" onchange="handleVideoFile(event)">
+
+
+<!-- 信箱 -->
+<div class="mailbox" id="mailbox">
+  <div class="study-head">
+    <div>
+      <div class="study-title">信 箱</div>
+      <div class="study-sub" id="mail-sub">—</div>
+    </div>
+    <div class="study-acts">
+      <button class="study-btn" onclick="openWriteLetter()">写 信</button>
+      <button class="study-btn" onclick="askLinToWrite()">讨一封</button>
+      <button class="study-x" onclick="closeMailbox()">✕</button>
+    </div>
+  </div>
+  <div class="mail-list" id="mail-list"></div>
+</div>
+
+<!-- 写信 -->
+<div class="note-modal" id="write-letter-modal">
+  <div class="note-modal-inner">
+    <div class="note-modal-title">写给凛</div>
+    <textarea class="note-input" id="letter-input" placeholder="想说什么就写什么…" style="height:180px;font-family:'Songti SC',STSong,serif;line-height:1.9;"></textarea>
+    <div class="note-modal-btns">
+      <button class="note-cancel-btn" onclick="closeWriteLetter()">先不写</button>
+      <button class="note-confirm-btn" onclick="sendLetter()">寄出去</button>
+    </div>
+  </div>
+</div>
+
+<!-- 纪念日 -->
+<div class="note-modal" id="days-modal">
+  <div class="note-modal-inner">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="note-modal-title" style="margin:0;">纪念日</div>
+      <div class="emoji-close-btn" onclick="closeDays()">✕</div>
+    </div>
+    <div id="days-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div class="settings-label" style="margin-top:16px;">添一个</div>
+    <input id="day-name-input" class="mini-input" placeholder="叫什么，比如 她的生日" style="margin-top:6px;">
+    <input id="day-date-input" type="date" class="mini-input" style="margin-top:8px;">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--text-muted);">
+      <input type="checkbox" id="day-yearly" checked> 每年都过
+    </label>
+    <button onclick="addDay()" style="width:100%;margin-top:10px;padding:11px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:14px;font-family:inherit;cursor:pointer;">记下来</button>
+  </div>
+</div>
+
+<!-- 心情 -->
+<div class="note-modal" id="mood-modal">
+  <div class="note-modal-inner">
+    <div class="note-modal-title">今天心情怎么样</div>
+    <div id="mood-grid" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    <textarea class="note-input" id="mood-note" placeholder="想多说两句？（可留空）" style="height:60px;margin-top:12px;"></textarea>
+    <div class="note-modal-btns">
+      <button class="note-cancel-btn" onclick="closeMoodPicker()">算了</button>
+      <button class="note-confirm-btn" onclick="saveMood()">记下</button>
+    </div>
+  </div>
+</div>
+
 <!-- 对话列表面板 -->
 <div class="memory-wall" id="conv-panel">
   <div class="memory-header">
@@ -568,6 +734,9 @@ const DEFAULT_MCP_SERVERS=[{
     {name:'grow',description:'日记归档。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'}}}},
     {name:'dream',description:'读取最近新增的记忆桶。',input_schema:{type:'object',properties:{}}},
     {name:'pulse',description:'系统状态+记忆桶列表。',input_schema:{type:'object',properties:{include_archive:{type:'boolean'}}}},
+    {name:'letter_write',description:'写入一封信。author 必填："user"=宝宝写的，"ai"=凛写的。',input_schema:{type:'object',required:['author','content'],properties:{author:{type:'string'},content:{type:'string'},title:{type:'string'}}}},
+    {name:'letter_read',description:'读信箱里的信。可选 query 语义检索、author 过滤。',input_schema:{type:'object',properties:{query:{type:'string'},author:{type:'string'},limit:{type:'number'}}}},
+    {name:'plan',description:'登记一个约定/待办。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'},status:{type:'string'}}}},
     {name:'trace',description:'修改记忆元数据或内容。',input_schema:{type:'object',required:['bucket_id'],properties:{bucket_id:{type:'string'},resolved:{type:'number'},pinned:{type:'number'},content:{type:'string'}}}}
   ]
 }];
@@ -585,6 +754,23 @@ function loadMcpServers(){
     mcpServers=raw?JSON.parse(raw):JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));
   }catch(e){mcpServers=JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));}
   if(!Array.isArray(mcpServers)||!mcpServers.length)mcpServers=JSON.parse(JSON.stringify(DEFAULT_MCP_SERVERS));
+}
+const OB_EXTRA_TOOLS=[
+  {name:'letter_write',description:'写入一封信。author 必填："user"=宝宝写的，"ai"=凛写的。',input_schema:{type:'object',required:['author','content'],properties:{author:{type:'string'},content:{type:'string'},title:{type:'string'}}}},
+  {name:'letter_read',description:'读信箱里的信。可选 query 语义检索、author 过滤。',input_schema:{type:'object',properties:{query:{type:'string'},author:{type:'string'},limit:{type:'number'}}}},
+  {name:'plan',description:'登记一个约定/待办。status=active/resolved/abandoned。',input_schema:{type:'object',required:['content'],properties:{content:{type:'string'},status:{type:'string'},related_bucket:{type:'string'}}}}
+];
+// 老版本存的 OB 工具列表里没有信箱和约定，自动补上，不用手动重连
+function migrateObTools(){
+  let changed=false;
+  for(const s of mcpServers){
+    if(!/jwhjwh|ombre/i.test(s.url||''))continue;
+    if(!Array.isArray(s.tools))s.tools=[];
+    for(const t of OB_EXTRA_TOOLS){
+      if(!s.tools.some(x=>x&&x.name===t.name)){s.tools.push(t);changed=true;}
+    }
+  }
+  if(changed)localStorage.setItem('mcp-servers',JSON.stringify(mcpServers));
 }
 function saveMcpServers(){localStorage.setItem('mcp-servers',JSON.stringify(mcpServers));updateMcpSub();}
 function enabledServers(){return mcpServers.filter(s=>s.enabled&&Array.isArray(s.tools)&&s.tools.length);}
@@ -748,7 +934,7 @@ function initCtxWindow(){const s=localStorage.getItem('ctx-window');ctxWindow=s!
 
 const CONTEXT_LIMIT=200000;let totalTokens=0;
 let lastCacheRead=0,lastCacheWrite=0;
-function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();initVoiceIds();updateMcpSub();fetchBalance();initMaxTokens();}
+function openSettings(){document.getElementById('settings-modal').classList.add('open');updateTokenDisplay();updateCtxDisplay();updateModelDisplay();updateVoiceDisplay();initVoiceIds();initAutoVoice();updateMcpSub();fetchBalance();initMaxTokens();}
 function closeSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function updateTokenDisplay(){
   const pct=Math.min((totalTokens/CONTEXT_LIMIT)*100,100);
@@ -810,13 +996,14 @@ function loadConversation(id){
     if(msg.role==='user'){
       const text=typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?msg.content.find(c=>c.type==='text')?.text||'':'');
       const imgPart=Array.isArray(msg.content)?msg.content.find(c=>c.type==='image_url'):null;
-      appendUserBubble(text,imgPart?.image_url?.url||null,i);
+      appendUserBubble(text,imgPart?.image_url?.url||null,i,msg._audio?{url:msg._audio,dur:msg._dur}:null);
     } else if(msg.role==='assistant'){
       const text=typeof msg.content==='string'?msg.content:(Array.isArray(msg.content)?msg.content.filter(c=>c&&c.type==='text').map(c=>c.text).join(''):'');
       if(!text&&!msg._thinking)return;
       const wrap=startAiBubble(i);
       // 【思考持久化】重新进入时把当时的思考原样还原出来，默认折叠
       if(msg._thinking)renderSavedThinking(wrap,msg._thinking);
+      if(msg._audio)wrap.appendChild(makeVoiceBubble(msg._audio,msg._dur,''));
       if(text)addOrUpdateBubble(wrap,text,true,text,currentAiRow);
       currentBubble=null;currentAiRow=null;
     }
@@ -913,8 +1100,9 @@ async function startRecording(){
     mediaRecorder.onstop=async()=>{
       stream.getTracks().forEach(t=>t.stop());
       const blob=new Blob(recChunks,{type:mediaRecorder.mimeType||'audio/webm'});
-      if(Date.now()-recStartAt<400||blob.size<1200){showToast('太短了，没听清');return;}
-      await sendAudioForSTT(blob);
+      const dur=(Date.now()-recStartAt)/1000;
+      if(dur<0.4||blob.size<1200){showToast('太短了，没听清');return;}
+      await sendAudioForSTT(blob,dur);
     };
     recStartAt=Date.now();recActive=true;
     mediaRecorder.start();
@@ -930,24 +1118,85 @@ function stopRecording(){
   document.getElementById('rec-hint').classList.remove('show');
   try{if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
 }
-async function sendAudioForSTT(blob){
-  const input=document.getElementById('input');
+async function sendAudioForSTT(blob,dur){
   const micBtn=document.getElementById('mic-btn');
   micBtn.textContent='…';
+  let audioUrl='',text='';
   try{
-    const form=new FormData();
     const ext=(blob.type||'').includes('mp4')?'mp4':'webm';
-    form.append('file',blob,'voice.'+ext);
-    const r=await fetch('/api/stt',{method:'POST',body:form});
-    const d=await r.json();
-    if(!r.ok||d.error){showToast(d.error||'识别失败');return;}
-    const txt=(d.text||'').trim();
-    if(!txt){showToast('没听清，再说一次');return;}
-    input.value=input.value?input.value+txt:txt;
-    autoResize(input);input.focus();
-  }catch(e){showToast('识别出错：'+e.message);}
+    // 先把语音本身存起来，聊天记录里才留得住，退出再进还能听
+    try{
+      const f1=new FormData();f1.append('file',blob,'voice.'+ext);
+      const r1=await fetch('/api/voice',{method:'POST',body:f1});
+      const d1=await r1.json();
+      if(d1.url)audioUrl=d1.url;
+    }catch(e){}
+    // 再转成文字，凛要靠这个听懂
+    const f2=new FormData();f2.append('file',blob,'voice.'+ext);
+    const r2=await fetch('/api/stt',{method:'POST',body:f2});
+    const d2=await r2.json();
+    if(!r2.ok||d2.error){showToast(d2.error||'没听清');return;}
+    text=(d2.text||'').trim();
+    if(!text){showToast('没听清，再说一次');return;}
+  }catch(e){showToast('出错了：'+e.message);return;}
   finally{micBtn.textContent='◎';}
+  sendComposed(text,[],{audio:audioUrl,dur:dur,isVoice:true});
 }
+
+// ── 语音条 ──
+let voicePlayingEl=null;
+function makeVoiceBubble(url,dur,transcript){
+  const wrapEl=document.createElement('div');
+  wrapEl.style.cssText='display:flex;flex-direction:column;gap:3px;align-items:inherit;';
+  const d=document.createElement('div');
+  d.className='voice-bubble';
+  const secs=Math.max(1,Math.round(dur||1));
+  d.style.width=Math.min(210,92+secs*5)+'px';
+  let bars='';
+  for(let i=0;i<14;i++)bars+=`<i style="height:${4+((i*7)%11)}px;animation-delay:${(i%5)*0.1}s"></i>`;
+  d.innerHTML=`<span class="vb-play">▶</span><span class="vb-wave">${bars}</span><span class="vb-dur">${secs}"</span>`;
+  d.onclick=()=>toggleVoice(url,d);
+  wrapEl.appendChild(d);
+  if(transcript){
+    const tb=document.createElement('div');tb.className='vb-text-btn';tb.textContent='看文字';
+    const tx=document.createElement('div');tx.className='vb-transcript';tx.textContent=transcript;tx.style.display='none';
+    tb.onclick=()=>{const on=tx.style.display==='none';tx.style.display=on?'block':'none';tb.textContent=on?'收起':'看文字';};
+    wrapEl.appendChild(tb);wrapEl.appendChild(tx);
+  }
+  return wrapEl;
+}
+function toggleVoice(url,el){
+  if(voicePlayingEl===el&&currentAudio){currentAudio.pause();currentAudio=null;el.classList.remove('playing');el.querySelector('.vb-play').textContent='▶';voicePlayingEl=null;return;}
+  if(currentAudio){try{currentAudio.pause();}catch(e){}}
+  if(voicePlayingEl){voicePlayingEl.classList.remove('playing');const p=voicePlayingEl.querySelector('.vb-play');if(p)p.textContent='▶';}
+  currentAudio=new Audio(url);voicePlayingEl=el;
+  el.classList.add('playing');el.querySelector('.vb-play').textContent='◼';
+  const done=()=>{el.classList.remove('playing');el.querySelector('.vb-play').textContent='▶';currentAudio=null;voicePlayingEl=null;};
+  currentAudio.onended=done;
+  currentAudio.onerror=()=>{done();showToast('这条语音听不了了');};
+  currentAudio.play().catch(()=>{done();showToast('播放被挡住了，再点一下');});
+}
+function setAutoVoice(on){localStorage.setItem('auto-voice',on?'1':'');showToast(on?'凛以后用语音回你':'关掉了');}
+function autoVoiceOn(){return localStorage.getItem('auto-voice')==='1';}
+function initAutoVoice(){const t=document.getElementById('auto-voice-toggle');if(t)t.checked=autoVoiceOn();}
+// 给凛的最后一句话配一条语音
+async function attachVoiceReply(wrap,text){
+  if(!autoVoiceOn()||!text||!text.trim())return;
+  try{
+    const voice=localStorage.getItem('tts-voice')||'calm';
+    const r=await fetch('/api/tts-save',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:text.slice(0,600),voice,voice_id:localStorage.getItem('voice-id-'+voice)||''})});
+    const d=await r.json();
+    if(!r.ok||!d.url)return;
+    const secs=Math.max(2,Math.round(text.length/4.5));
+    if(wrap)wrap.insertBefore(makeVoiceBubble(d.url,secs,''),wrap.firstChild);
+    for(let i=messages.length-1;i>=0;i--){
+      if(messages[i].role==='assistant'&&messages[i].content){messages[i]._audio=d.url;messages[i]._dur=secs;break;}
+    }
+    saveCurrentConversation();
+  }catch(e){}
+}
+
 function initMic(){
   const btn=document.getElementById('mic-btn');
   if(!btn)return;
@@ -991,7 +1240,7 @@ function handleKey(e){}
 function nowStr(){return new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
 function escHtml(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',1900);}
-function updateAnniversary(){const start=new Date('2026-06-06T00:00:00+08:00'),today=new Date();today.setHours(0,0,0,0);const s=new Date(start);s.setHours(0,0,0,0);document.getElementById('anniversary').textContent=`在一起第 ${Math.floor((today-s)/86400000)+1} 天`;}
+function updateAnniversary(){const start=new Date('2026-06-06T00:00:00+08:00'),today=new Date();today.setHours(0,0,0,0);const s=new Date(start);s.setHours(0,0,0,0);document.getElementById('anniversary').textContent=`在一起第 ${Math.floor((today-s)/86400000)+1} 天`+(typeof nearestDayHint==='function'?nearestDayHint():'');}
 function scrollBottom(){const m=document.getElementById('messages');m.scrollTop=m.scrollHeight;}
 
 function triggerChatImgUpload(){document.getElementById('chat-img-input').click();}
@@ -1039,15 +1288,20 @@ function renderBubbleContent(text){
   return html;
 }
 
-function appendUserBubble(text,imgData,msgIdx){
+function appendUserBubble(text,imgData,msgIdx,audio){
   const row=document.createElement('div');row.className='msg-row user';
   if(msgIdx!==undefined){row.dataset.msgIdx=msgIdx;row.dataset.msgRole='user';}
   const uav=localStorage.getItem('chat-avatar-user');
   const avatarHtml=uav?`<div class="msg-avatar msg-avatar-user has-img"><img src="${uav}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`:'';
   let content='';
   if(imgData)content+=`<div class="bubble-img"><img src="${imgData}" onclick="openLightboxDirect('${imgData}')"></div>`;
-  if(text)content+=`<div class="bubble user">${escHtml(text)}</div>`;
+  // 语音消息只显示语音条，文字收在"看文字"里
+  if(text&&!(audio&&audio.url))content+=`<div class="bubble user">${escHtml(text)}</div>`;
   row.innerHTML=`${avatarHtml}<div class="bubble-wrap">${content}<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;"><span class="msg-action-btn" onclick="editMsgAt(this.closest('.msg-row'))" title="编辑">ฅ</span><span class="msg-action-btn" onclick="copyUserMsg(this.closest('.msg-row'))" title="复制">✎</span><span class="msg-time">${nowStr()}</span></div></div>`;
+  if(audio&&audio.url){
+    const w=row.querySelector('.bubble-wrap');
+    w.insertBefore(makeVoiceBubble(audio.url,audio.dur,(text||'').replace(/^\[[^\]]*\]\n/,'')),w.firstChild);
+  }
   document.getElementById('messages').appendChild(row);scrollBottom();
 }
 
@@ -1275,7 +1529,7 @@ function buildMsgs(msgs){
   for(const m of windowed){
     if(m.role==='assistant'&&!m.content&&!m.tool_calls)continue;
     // 【思考持久化】_thinking 只用于本地显示，绝不发出去，所以一个 token 都不多花
-    const{_internal,_thinking,...rest}=m;
+    const{_internal,_thinking,_audio,_dur,...rest}=m;
     rest.content=toAnthropicContent(rest.content);
     result.push(rest);
   }
@@ -1499,8 +1753,10 @@ async function regenAt(row){
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;turnThinking='';
   isTyping=true;const sendBtn2=document.getElementById('send-btn');sendBtn2.textContent='■';sendBtn2.style.fontSize='14px';
   const origLen=messages.length;
-  try{await runToolLoop(wrap,origLen);}
+  let replyText='';
+  try{replyText=await runToolLoop(wrap,origLen);}
   catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
+  await attachVoiceReply(wrap,replyText);
   isTyping=false;const btn2=document.getElementById('send-btn');btn2.textContent='↑';btn2.style.fontSize='';btn2.disabled=false;
 }
 
@@ -1530,7 +1786,7 @@ async function sendMsg(){
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const beijing = new Date(utc + 8 * 3600000);
   const ts = `${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
-  const finalText = text ? `[${ts}]` + '\n' + text : '';
+  const finalText = text ? `[${ts}${nearestDayHint()}${moodHint()}]` + '\n' + text : '';
 
   input.value='';input.style.height='auto';
   const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
@@ -1547,8 +1803,10 @@ async function sendMsg(){
   const wrap=startAiBubble(messages.length);
   currentBubble=null;currentThinkWrap=null;currentThinkContent=null;turnThinking='';
   const origLen=messages.length;
-  try{await runToolLoop(wrap,origLen);}
+  let replyText='';
+  try{replyText=await runToolLoop(wrap,origLen);}
   catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
+  await attachVoiceReply(wrap,replyText);
   isTyping=false;const btn=document.getElementById('send-btn');btn.textContent='↑';btn.style.fontSize='';document.getElementById('input').focus();
 }
 
@@ -1760,6 +2018,326 @@ async function addPastedBook(){
     await loadBooks();showToast(`《${d.title}》上架了`);
   }catch(e){showToast('装订失败：'+e.message);}
 }
+// ============================================================
+// 信箱：直接调 OB 的 letter_write / letter_read
+// ============================================================
+async function callOB(name,args){
+  const server=findServerForTool(name)||mcpServers.find(s=>s.enabled&&/jwhjwh|ombre/i.test(s.url));
+  if(!server)return{error:'没有连着记忆库'};
+  const h={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
+  if(server.sid)h['Mcp-Session-Id']=server.sid;
+  try{
+    const r=await fetch(MCP_PROXY,{method:'POST',headers:h,
+      body:JSON.stringify({_server:server.url,jsonrpc:'2.0',method:'tools/call',params:{name,arguments:args||{}},id:Date.now()})});
+    return await parseMcpResponse(r,server);
+  }catch(e){return{error:e.message};}
+}
+async function openMailbox(){document.getElementById('mailbox').classList.add('open');await loadLetters();}
+function closeMailbox(){document.getElementById('mailbox').classList.remove('open');}
+async function loadLetters(){
+  const el=document.getElementById('mail-list');
+  el.innerHTML='<div class="mail-empty">正在开箱…</div>';
+  const res=await callOB('letter_read',{});
+  if(res&&res.error){el.innerHTML='<div class="mail-empty">开不了箱<br>'+escHtml(res.error)+'</div>';return;}
+  const text=(res&&res.content&&res.content[0]&&res.content[0].text)||'';
+  if(!text.trim()){el.innerHTML='<div class="mail-empty">信箱是空的<br>写第一封吧</div>';return;}
+  el.innerHTML='';
+  const blocks=text.split(/\n\s*\n(?=[-—【\[]|第|\d{4})/).filter(b=>b.trim());
+  const shown=blocks.length?blocks:[text];
+  shown.forEach(b=>{
+    const d=document.createElement('div');d.className='letter';
+    const mine=/user|宝宝|慧/.test(b.slice(0,40));
+    d.innerHTML='<div class="stamp">✉</div><div class="letter-from">'+(mine?'宝宝 写':'凛 写')+'</div><div class="letter-body">'+escHtml(b.trim())+'</div>';
+    el.appendChild(d);
+  });
+  const sub=document.getElementById('mail-sub');
+  if(sub)sub.textContent=shown.length+' 封';
+}
+function openWriteLetter(){document.getElementById('letter-input').value='';document.getElementById('write-letter-modal').classList.add('open');}
+function closeWriteLetter(){document.getElementById('write-letter-modal').classList.remove('open');}
+async function sendLetter(){
+  const t=document.getElementById('letter-input').value.trim();
+  if(!t){showToast('还什么都没写');return;}
+  closeWriteLetter();showToast('寄出去了…');
+  const res=await callOB('letter_write',{author:'user',content:t});
+  if(res&&res.error){showToast('没寄成：'+res.error);return;}
+  showToast('已经放进信箱');
+  await loadLetters();
+}
+function askLinToWrite(){
+  closeMailbox();
+  sendComposed('我想收一封你写的信。慢慢写，写完用 letter_write 放进信箱，署名你自己。',[]);
+}
+
+// ============================================================
+// 纪念日
+// ============================================================
+function getDays(){try{return JSON.parse(localStorage.getItem('anniv-days')||'[]');}catch(e){return[];}}
+function saveDays(l){localStorage.setItem('anniv-days',JSON.stringify(l));}
+function daysUntil(dateStr,yearly){
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=new Date(dateStr+'T00:00:00');
+  if(isNaN(d))return null;
+  if(yearly){
+    let next=new Date(today.getFullYear(),d.getMonth(),d.getDate());
+    if(next<today)next=new Date(today.getFullYear()+1,d.getMonth(),d.getDate());
+    return Math.round((next-today)/86400000);
+  }
+  return Math.round((d-today)/86400000);
+}
+function openDays(){closeAvatarMenu();renderDays();document.getElementById('days-modal').classList.add('open');}
+function closeDays(){document.getElementById('days-modal').classList.remove('open');}
+function renderDays(){
+  const el=document.getElementById('days-list');
+  const list=getDays().map(function(d){return Object.assign({},d,{left:daysUntil(d.date,d.yearly)});})
+    .filter(function(d){return d.left!==null;}).sort(function(a,b){return a.left-b.left;});
+  if(!list.length){el.innerHTML='<div class="settings-sub">还没有记过日子</div>';return;}
+  el.innerHTML='';
+  list.forEach(function(d){
+    const c=document.createElement('div');c.className='day-card';
+    const label=d.left===0?'就是今天':(d.left<0?'已经过了':'天后');
+    const num=d.left===0?'今':(d.left<0?Math.abs(d.left):d.left);
+    c.innerHTML='<div><div class="day-num">'+num+'</div><div class="day-unit">'+label+'</div></div>'+
+      '<div style="flex:1;min-width:0;"><div class="day-name">'+escHtml(d.name)+'</div><div class="day-date">'+escHtml(d.date)+(d.yearly?' · 每年':'')+'</div></div>'+
+      '<div class="day-del" onclick="delDay(\''+d.id+'\')">✕</div>';
+    el.appendChild(c);
+  });
+}
+function addDay(){
+  const name=document.getElementById('day-name-input').value.trim();
+  const date=document.getElementById('day-date-input').value;
+  if(!name||!date){showToast('名字和日子都要填');return;}
+  const list=getDays();
+  list.push({id:genId(),name:name,date:date,yearly:document.getElementById('day-yearly').checked});
+  saveDays(list);
+  document.getElementById('day-name-input').value='';
+  document.getElementById('day-date-input').value='';
+  renderDays();updateAnniversary();showToast('记下了');
+}
+function delDay(id){saveDays(getDays().filter(function(d){return d.id!==id;}));renderDays();updateAnniversary();}
+function nearestDayHint(){
+  const list=getDays().map(function(d){return Object.assign({},d,{left:daysUntil(d.date,d.yearly)});})
+    .filter(function(d){return d.left!==null&&d.left>=0&&d.left<=7;}).sort(function(a,b){return a.left-b.left;});
+  if(!list.length)return '';
+  const d=list[0];
+  return d.left===0?(' · 今天是'+d.name):(' · 还有'+d.left+'天'+d.name);
+}
+
+// ============================================================
+// 心情
+// ============================================================
+const MOODS=['很好','平静','有点累','闷','难过','烦','想他','兴奋'];
+function openMoodPicker(){
+  closeAvatarMenu();
+  const g=document.getElementById('mood-grid');g.innerHTML='';
+  const cur=localStorage.getItem('mood-today')||'';
+  MOODS.forEach(function(m){
+    const d=document.createElement('div');
+    d.className='mood-chip'+(m===cur?' on':'');
+    d.textContent=m;
+    d.onclick=function(){document.querySelectorAll('#mood-grid .mood-chip').forEach(function(x){x.classList.remove('on');});d.classList.add('on');};
+    g.appendChild(d);
+  });
+  document.getElementById('mood-note').value='';
+  document.getElementById('mood-modal').classList.add('open');
+}
+function closeMoodPicker(){document.getElementById('mood-modal').classList.remove('open');}
+function saveMood(){
+  const sel=document.querySelector('#mood-grid .mood-chip.on');
+  if(!sel){showToast('先选一个');return;}
+  const mood=sel.textContent;
+  const note=document.getElementById('mood-note').value.trim();
+  localStorage.setItem('mood-today',mood);
+  localStorage.setItem('mood-date',new Date().toDateString());
+  closeMoodPicker();showToast('记下了');
+  const d=new Date();
+  const day=d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+  callOB('hold',{content:day+' 宝宝今天心情：'+mood+(note?'。'+note:''),tags:'心情',importance:3,feel:true});
+}
+function moodHint(){
+  if(localStorage.getItem('mood-date')!==new Date().toDateString())return '';
+  const m=localStorage.getItem('mood-today');
+  return m?(' · 心情'+m):'';
+}
+
+// ============================================================
+// 想起一件事：随机翻一张老照片，让凛起个话题
+// ============================================================
+async function rememberSomething(){
+  closeAvatarMenu();
+  if(isTyping){showToast('等他说完这句');return;}
+  showToast('翻翻看…');
+  try{
+    const r=await fetch('/api/memories');
+    const items=await r.json();
+    if(!items.length){showToast('时光墙还是空的');return;}
+    const pool=items.length>3?items.slice(Math.floor(items.length/2)):items;
+    const pick=pool[Math.floor(Math.random()*pool.length)];
+    const ir=await fetch('/api/memories/'+pick.filename+'/image');
+    const data=await ir.json();
+    if(data.error){showToast('这张翻不开');return;}
+    const url='data:'+data.mime+';base64,'+data.data;
+    sendComposed('【今天忽然想起这张】'+(pick.note?'\n备注：'+pick.note:'')+'\n你还记得吗，跟我说说这天',[url]);
+  }catch(e){showToast('翻不动：'+e.message);}
+}
+
+// ============================================================
+// 放映室：一起看 / 抽帧给凛看（全部在浏览器里做，服务器不用装 ffmpeg）
+// ============================================================
+let videos=[],currentVideo=null;
+function fmtSize(b){return b>1048576?(b/1048576).toFixed(0)+'MB':(b/1024).toFixed(0)+'KB';}
+function fmtTime(s){s=Math.max(0,Math.floor(s||0));const m=Math.floor(s/60);return `${m}:${String(s%60).padStart(2,'0')}`;}
+async function openCinema(){document.getElementById('cinema').classList.add('open');await loadVideos();}
+function closeCinema(){document.getElementById('cinema').classList.remove('open');}
+async function loadVideos(){
+  const el=document.getElementById('cinema-list');
+  el.innerHTML='<div class="cinema-empty">正在放片…</div>';
+  try{const r=await fetch('/api/videos');videos=await r.json();}
+  catch(e){el.innerHTML='<div class="cinema-empty">片子拿不到，检查一下网络</div>';return;}
+  const sub=document.getElementById('cinema-sub');
+  if(sub)sub.textContent=videos.length?`${videos.length} 卷`:'空着';
+  if(!videos.length){el.innerHTML='<div class="cinema-empty">还没有片子<br>上一卷，我们一起看</div>';return;}
+  el.innerHTML='';
+  videos.forEach(v=>{
+    const d=document.createElement('div');d.className='reel';
+    const dt=new Date(parseInt(v.ts)||Date.now());
+    const when=dt.toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})+' '+dt.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    d.innerHTML=`<div class="reel-play">▶</div><div class="reel-info"><div class="reel-name">${escHtml(v.note||v.filename)}</div><div class="reel-meta">${when} · ${fmtSize(v.size)}${v.transcribed?' · 已转录':''}</div></div>`;
+    d.onclick=()=>playVideo(v);
+    let t=null;
+    d.addEventListener('touchstart',()=>{t=setTimeout(()=>{t=null;askDeleteVideo(v);},750);});
+    d.addEventListener('touchend',()=>{if(t){clearTimeout(t);t=null;}});
+    d.addEventListener('touchmove',()=>{if(t){clearTimeout(t);t=null;}});
+    el.appendChild(d);
+  });
+}
+async function askDeleteVideo(v){
+  if(!confirm(`删掉「${v.note||v.filename}」？`))return;
+  try{await fetch('/api/videos/'+v.filename,{method:'DELETE'});await loadVideos();showToast('已删掉');}
+  catch(e){showToast('删不掉，再试一次');}
+}
+async function handleVideoFile(e){
+  const file=e.target.files[0];e.target.value='';
+  if(!file)return;
+  const note=prompt('给这卷片子起个名字（可留空）','')||'';
+  showToast('正在上片，大文件慢一点…');
+  try{
+    const form=new FormData();form.append('file',file);if(note)form.append('note',note);
+    const r=await fetch('/api/videos',{method:'POST',body:form});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'上片失败');return;}
+    await loadVideos();showToast('上片了');
+  }catch(e){showToast('上片失败：'+e.message);}
+}
+function playVideo(v){
+  currentVideo=v;
+  document.getElementById('screen-name').textContent=v.note||v.filename;
+  const vid=document.getElementById('screen-video');
+  vid.src=v.url;vid.currentTime=0;
+  document.getElementById('cine-note').textContent='暂停在想给他看的地方，点上面那个';
+  document.getElementById('screen').classList.add('open');
+}
+function closeScreen(){
+  const vid=document.getElementById('screen-video');
+  try{vid.pause();}catch(e){}
+  document.getElementById('screen').classList.remove('open');
+}
+// 把 video 拖到某一秒，等真的画面出来再截
+function seekTo(v,t){
+  return new Promise(res=>{
+    const done=()=>{v.removeEventListener('seeked',done);setTimeout(res,60);};
+    v.addEventListener('seeked',done);
+    try{v.currentTime=Math.min(t,Math.max(0,(v.duration||1)-0.1));}catch(e){res();}
+  });
+}
+function grabFrame(v,maxW){
+  const w=v.videoWidth||640,h=v.videoHeight||360;
+  const scale=Math.min(1,(maxW||560)/w);
+  const c=document.createElement('canvas');
+  c.width=Math.round(w*scale);c.height=Math.round(h*scale);
+  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.7);
+}
+// 当前这一帧
+async function showFrameToLin(){
+  const v=document.getElementById('screen-video');
+  if(!v.videoWidth){showToast('先让画面出来');return;}
+  try{v.pause();}catch(e){}
+  const img=grabFrame(v,600);
+  const t=fmtTime(v.currentTime);
+  closeScreen();closeCinema();
+  sendComposed(`【一起看《${currentVideo.note||currentVideo.filename}》${t} 这一幕】\n你看这里`,[img]);
+}
+// 整段：均匀抽 6 帧 + 把台词转成文字
+async function showWholeToLin(){
+  const v=document.getElementById('screen-video');
+  const btn=document.getElementById('btn-whole');
+  const note=document.getElementById('cine-note');
+  if(!v.duration||!isFinite(v.duration)){showToast('片子还没读好，等一下');return;}
+  btn.disabled=true;
+  const wasTime=v.currentTime;
+  try{v.pause();}catch(e){}
+  const frames=[];
+  const N=6;
+  for(let i=0;i<N;i++){
+    note.textContent=`正在看第 ${i+1}/${N} 帧…`;
+    await seekTo(v,v.duration*(i+0.5)/N);
+    if(v.videoWidth)frames.push(grabFrame(v,520));
+  }
+  note.textContent='正在听里面说了什么…';
+  let transcript='';
+  try{
+    const r=await fetch(`/api/videos/${currentVideo.filename}/transcribe`,{method:'POST'});
+    const d=await r.json();
+    if(d.text)transcript=d.text.slice(0,3000);
+  }catch(e){}
+  await seekTo(v,wasTime);
+  btn.disabled=false;note.textContent='暂停在想给他看的地方，点上面那个';
+  if(!frames.length){showToast('一帧都没截到');return;}
+  const name=currentVideo.note||currentVideo.filename;
+  let text=`【一起看《${name}》，${fmtTime(v.duration)}】\n这是从头到尾均匀取的 ${frames.length} 个画面`;
+  if(transcript)text+=`\n\n里面说的话：\n${transcript}`;
+  text+='\n\n（你看看，跟我说说）';
+  closeScreen();closeCinema();
+  sendComposed(text,frames);
+}
+
+// 带多张图片发一条消息（书房、放映室共用）
+async function sendComposed(text,imgs,opts){
+  if(isTyping)return;
+  imgs=imgs||[];opts=opts||{};
+  const now=new Date();
+  const beijing=new Date(now.getTime()+now.getTimezoneOffset()*60000+8*3600000);
+  const ts=`${beijing.getFullYear()}.${String(beijing.getMonth()+1).padStart(2,'0')}.${String(beijing.getDate()).padStart(2,'0')} ${String(beijing.getHours()).padStart(2,'0')}:${String(beijing.getMinutes()).padStart(2,'0')}`;
+  const finalText=`[${ts}]\n`+text;
+  let content=finalText;
+  if(imgs.length){
+    content=[{type:'text',text:finalText}];
+    imgs.forEach(u=>content.push({type:'image_url',image_url:{url:u}}));
+  }
+  const sendBtn=document.getElementById('send-btn');sendBtn.textContent='■';sendBtn.style.fontSize='14px';isTyping=true;
+  const msg={role:'user',content:content};
+  if(opts.audio){msg._audio=opts.audio;msg._dur=opts.dur;}
+  messages.push(msg);
+  const myIdx=messages.length-1;
+  appendUserBubble(finalText,imgs[0]||null,myIdx,opts.audio?{url:opts.audio,dur:opts.dur}:null);
+  saveCurrentConversation();
+  const wrap=startAiBubble(messages.length);
+  currentBubble=null;currentThinkWrap=null;currentThinkContent=null;turnThinking='';
+  let replyText='';
+  try{replyText=await runToolLoop(wrap,messages.length);}
+  catch(e){console.error(e);addOrUpdateBubble(wrap,'连接出错，请重试。',true);}
+  await attachVoiceReply(wrap,replyText);
+  // 画面已经给凛看过了，不必长期留在记录里：
+  // base64 很占地方，留着还会每轮重复上传，白花钱
+  if(imgs.length&&Array.isArray(messages[myIdx]?.content)){
+    messages[myIdx].content=messages[myIdx].content.map(c=>
+      c&&c.type==='image_url'?{type:'text',text:'（这里是一张一起看过的画面）'}:c);
+    saveCurrentConversation();
+  }
+  isTyping=false;const b=document.getElementById('send-btn');b.textContent='↑';b.style.fontSize='';
+}
+
 // ── 网上找书 ──
 async function searchBooks(){
   const q=document.getElementById('book-search-input').value.trim();
@@ -1859,8 +2437,8 @@ function readTogether(){
 
 (async function(){
   const saved=localStorage.getItem('theme')||'';setTheme(saved,themeLabel);
-  loadMcpServers();
-  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();initMic();
+  loadMcpServers();migrateObTools();
+  initBackground();initAvatar();initStatus();initCtxWindow();initModel();initEmoji();initMaxTokens();initMic();initAutoVoice();
   updateAnniversary();
   document.getElementById('status-text').textContent='今天 '+nowStr();
   initConversations();
