@@ -336,17 +336,26 @@ def chat_v2():
 # if data.get('tool_choice'):
 #     payload['tool_choice'] = data['tool_choice']
 
-
     def gen():
         with requests.post(
-            api_url,
-            headers={'Authorization': auth_header, 'Content-Type': 'application/json'},
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={'Authorization': f'Bearer {OR_KEY}', 'Content-Type': 'application/json'},
             json=payload, stream=True, timeout=180
         ) as r:
+            print(f"[chat-v2] 状态码 {r.status_code}", flush=True)
+            if r.status_code != 200:
+                print(f"[chat-v2] 报错内容: {r.text[:500]}", flush=True)
+                yield 'data: {"error": "upstream error"}\n\n'
+                return
+            n = 0
             for line in r.iter_lines():
                 if line:
+                    if n < 5:
+                        print(f"[chat-v2] 收到{n}: {line.decode()[:200]}", flush=True)
+                        n += 1
                     yield line.decode() + '\n\n'
 
+    
     return Response(gen(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
