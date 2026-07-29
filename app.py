@@ -1155,6 +1155,60 @@ def stt():
     return jsonify({'error': f'识别失败：{last_err}'}), 502
 
 
+VOICES_DIR = os.path.join(os.path.dirname(__file__), 'static', 'voices')
+os.makedirs(VOICES_DIR, exist_ok=True)
+
+
+@app.route('/voices/<filename>')
+def serve_voice(filename):
+    return send_from_directory(VOICES_DIR, filename, conditional=True)
+
+
+@app.route('/api/voice', methods=['POST'])
+def upload_voice():
+    """宝宝录的语音条，存下来，以后还能听"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    f = request.files['file']
+    ext = 'webm'
+    if f.filename and '.' in f.filename:
+        ext = f.filename.rsplit('.', 1)[-1].lower()[:5]
+    fn = f'u{int(time.time()*1000)}.{ext}'
+    f.save(os.path.join(VOICES_DIR, fn))
+    return jsonify({'url': f'/voices/{fn}', 'filename': fn})
+
+
+@app.route('/api/tts-save', methods=['POST'])
+def tts_save():
+    """凛的语音条：生成后存成文件，聊天记录里才留得住"""
+    if not EL_KEY:
+        return jsonify({'error': 'ElevenLabs key not set'}), 500
+    data = request.json or {}
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'no text'}), 400
+    voice = data.get('voice', 'calm')
+    voice_id = (data.get('voice_id') or '').strip() or \
+               (VOICE_DOG if voice == 'dog' else VOICE_CALM)
+    if len(text) > 600:
+        text = text[:600]
+    try:
+        r = requests.post(
+            f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+            headers={'xi-api-key': EL_KEY, 'Content-Type': 'application/json'},
+            json={'text': text, 'model_id': 'eleven_multilingual_v2',
+                  'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
+            timeout=90)
+    except Exception as e:
+        return jsonify({'error': f'生成失败：{e}'}), 502
+    if r.status_code != 200:
+        return jsonify({'error': f'生成失败 {r.status_code}: {r.text[:150]}'}), 502
+    fn = f'l{int(time.time()*1000)}.mp3'
+    with open(os.path.join(VOICES_DIR, fn), 'wb') as f:
+        f.write(r.content)
+    return jsonify({'url': f'/voices/{fn}', 'filename': fn})
+
+
 @app.route('/api/tts', methods=['POST'])
 def tts():
     if not EL_KEY:
