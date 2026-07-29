@@ -353,7 +353,6 @@ def chat_v2():
                     if line.startswith(b':'):
                         continue
                     if n < 5:
-
                         print(f"[chat-v2] 收到{n}: {line.decode()[:200]}", flush=True)
                         n += 1
                     yield line.decode() + '\n\n'
