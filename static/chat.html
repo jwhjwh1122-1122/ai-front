@@ -166,6 +166,61 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .mini-input:focus{border-color:var(--accent);}
 .rec-hint{display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;z-index:500;white-space:nowrap;box-shadow:0 4px 20px var(--shadow);}
 .rec-hint.show{display:block;}
+
+/* ============ 书房 ============ */
+/* 聊天是无衬线的玻璃质感；书房换成衬线体和实体书架，让它感觉像另一个房间 */
+:root{--wood:#6b5545;--wood-edge:#4e3d31;--wood-face:#836a57;--room:#e8e0d6;--room-deep:#d8ccbe;--paper:#f7f3ec;--ink:#33302c;--ink-soft:#7a736a;--lamp:rgba(255,226,170,0.5);}
+.theme-star{--wood:#2a2438;--wood-edge:#17131f;--wood-face:#3a3350;--room:#14121f;--room-deep:#0e0c16;--paper:#1c1a28;--ink:#ddd8ea;--ink-soft:#8e88a8;--lamp:rgba(150,140,255,0.28);}
+.theme-snow{--wood:#5d6a75;--wood-edge:#44505a;--wood-face:#77848f;--room:#e6ebf0;--room-deep:#d5dde4;--paper:#f8fafc;--ink:#2f3742;--ink-soft:#78838f;--lamp:rgba(200,225,255,0.45);}
+.theme-sakura{--wood:#7a5560;--wood-edge:#5c3d47;--wood-face:#946a76;--room:#f3e3e8;--room-deep:#e6d0d8;--paper:#fdf7f9;--ink:#3d2c33;--ink-soft:#8b7178;--lamp:rgba(255,205,220,0.5);}
+.study{display:none;position:fixed;inset:0;z-index:210;background:var(--room);flex-direction:column;}
+.study.open{display:flex;animation:slideUpFull 0.3s cubic-bezier(0.32,0.72,0,1);}
+.study-head{display:flex;align-items:baseline;justify-content:space-between;padding:max(20px,env(safe-area-inset-top)) 22px 14px;flex-shrink:0;}
+.study-title{font-family:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",STSong,serif;font-size:26px;font-weight:600;color:var(--ink);letter-spacing:6px;}
+.study-sub{font-size:11px;color:var(--ink-soft);letter-spacing:1px;margin-top:4px;}
+.study-acts{display:flex;gap:10px;align-items:center;}
+.study-btn{font-family:"Songti SC",STSong,serif;font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--ink-soft);border-radius:2px;padding:6px 14px;cursor:pointer;letter-spacing:1px;}
+.study-btn:active{background:var(--room-deep);}
+.study-x{width:28px;height:28px;border:none;background:transparent;color:var(--ink-soft);font-size:16px;cursor:pointer;}
+.shelves{flex:1;overflow-y:auto;padding:0 16px 40px;-webkit-overflow-scrolling:touch;}
+.shelves::-webkit-scrollbar{display:none;}
+.shelf{margin-bottom:26px;position:relative;}
+.shelf-books{display:flex;align-items:flex-end;gap:5px;min-height:150px;padding:0 10px;position:relative;z-index:1;}
+/* 书架板：一条厚木板，前沿有高光，下面拖一道阴影 */
+.shelf-board{height:12px;border-radius:1px;background:linear-gradient(180deg,var(--wood-face) 0%,var(--wood) 45%,var(--wood-edge) 100%);box-shadow:0 7px 14px -6px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);}
+.shelf-board::after{content:'';display:block;height:16px;background:linear-gradient(180deg,rgba(0,0,0,0.10),transparent);}
+/* 书脊：这一页的主角 */
+.spine{width:34px;border-radius:2px 2px 1px 1px;cursor:pointer;position:relative;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;flex-shrink:0;transition:transform 0.22s cubic-bezier(0.34,1.4,0.64,1),box-shadow 0.22s;box-shadow:2px 0 4px rgba(0,0,0,0.22),inset -3px 0 6px rgba(0,0,0,0.22),inset 2px 0 0 rgba(255,255,255,0.14);}
+.spine:active{transform:translateY(-8px);}
+.spine.reading{transform:translateY(-14px);box-shadow:3px 0 10px rgba(0,0,0,0.3),inset -3px 0 6px rgba(0,0,0,0.22),inset 2px 0 0 rgba(255,255,255,0.14);}
+/* 正在读的那本，书签带垂下来 */
+.spine.reading::after{content:'';position:absolute;bottom:-13px;left:50%;margin-left:-3px;width:6px;height:22px;background:var(--accent);clip-path:polygon(0 0,100% 0,100% 100%,50% 76%,0 100%);opacity:0.95;}
+.spine-title{writing-mode:vertical-rl;font-family:"Songti SC","Source Han Serif SC",STSong,serif;font-size:13px;letter-spacing:3px;color:rgba(255,255,255,0.94);text-shadow:0 1px 2px rgba(0,0,0,0.4);max-height:calc(100% - 30px);overflow:hidden;}
+.spine-rule{position:absolute;left:5px;right:5px;height:1px;background:rgba(255,255,255,0.3);}
+.shelf-empty{font-family:"Songti SC",STSong,serif;color:var(--ink-soft);font-size:14px;text-align:center;padding:60px 20px 40px;line-height:2.2;letter-spacing:1px;}
+/* 台灯的光，落在最上层书架上 */
+.lamp{position:absolute;top:-30px;left:50%;transform:translateX(-50%);width:78%;height:120px;background:radial-gradient(ellipse at center top,var(--lamp),transparent 70%);pointer-events:none;z-index:0;}
+/* 阅读页：一张纸 */
+.reader{display:none;position:fixed;inset:0;z-index:220;background:var(--paper);flex-direction:column;}
+.reader.open{display:flex;animation:fadeIn 0.25s ease;}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.reader-head{display:flex;align-items:center;justify-content:space-between;padding:max(16px,env(safe-area-inset-top)) 20px 10px;flex-shrink:0;}
+.reader-book{font-family:"Songti SC",STSong,serif;font-size:13px;color:var(--ink-soft);letter-spacing:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.reader-body{flex:1;overflow-y:auto;padding:10px 26px 20px;-webkit-overflow-scrolling:touch;}
+.reader-body::-webkit-scrollbar{display:none;}
+.reader-text{font-family:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",STSong,serif;font-size:17px;line-height:2.05;color:var(--ink);text-align:justify;white-space:pre-wrap;letter-spacing:0.5px;max-width:36em;margin:0 auto;}
+.reader-foot{flex-shrink:0;padding:12px 20px max(18px,env(safe-area-inset-bottom));border-top:1px solid var(--room-deep);background:var(--paper);}
+.reader-prog{height:2px;background:var(--room-deep);margin-bottom:12px;}
+.reader-prog-fill{height:100%;background:var(--accent);transition:width 0.3s;}
+.reader-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.reader-page{font-family:"Songti SC",STSong,serif;font-size:12px;color:var(--ink-soft);letter-spacing:1px;flex-shrink:0;}
+.reader-arrow{font-family:"Songti SC",STSong,serif;font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--ink-soft);border-radius:2px;padding:7px 16px;cursor:pointer;letter-spacing:2px;}
+.reader-arrow:disabled{opacity:0.3;}
+.read-together{width:100%;margin-top:10px;padding:11px;border:none;border-radius:2px;background:var(--accent);color:#fff;font-family:"Songti SC",STSong,serif;font-size:14px;letter-spacing:3px;cursor:pointer;}
+.read-together:active{opacity:0.85;}
+.reader-size{display:flex;gap:6px;align-items:center;}
+.reader-size span{font-size:15px;color:var(--ink-soft);cursor:pointer;padding:2px 7px;font-family:"Songti SC",STSong,serif;}
+@media (prefers-reduced-motion:reduce){.spine,.study.open,.reader.open{transition:none;animation:none;}}
 </style>
 </head>
 <body>
@@ -190,6 +245,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   </div>
   <div class="topbar-right">
     <div class="theme-btn" onclick="openConvPanel()" title="对话列表" style="font-size:12px;">☰</div>
+    <div class="theme-btn" onclick="openStudy()" title="书房" style="font-size:13px;">❏</div>
     <div class="theme-btn" onclick="openMemoryWall()" title="时光墙">✦</div>
     <div class="theme-btn" onclick="toggleThemeMenu()" title="切换主题">✦</div>
     <div class="theme-btn" onclick="openSettings()" title="设置" style="font-size:13px;">≡</div>
@@ -348,6 +404,77 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   </div>
   <div id="mcp-list" style="flex:1;overflow-y:auto;padding:0 12px 20px;display:flex;flex-direction:column;gap:8px;"></div>
 </div>
+
+
+<!-- 书房 -->
+<div class="study" id="study">
+  <div class="study-head">
+    <div>
+      <div class="study-title">书房</div>
+      <div class="study-sub" id="study-sub">—</div>
+    </div>
+    <div class="study-acts">
+      <button class="study-btn" onclick="openAddBook()">添 书</button>
+      <button class="study-x" onclick="closeStudy()">✕</button>
+    </div>
+  </div>
+  <div class="shelves" id="shelves"></div>
+</div>
+
+<!-- 读书页 -->
+<div class="reader" id="reader">
+  <div class="reader-head">
+    <div class="reader-book" id="reader-book">—</div>
+    <div class="reader-size">
+      <span onclick="adjustReaderFont(-1)">小</span>
+      <span onclick="adjustReaderFont(1)">大</span>
+      <span onclick="closeReader()" style="margin-left:6px;">✕</span>
+    </div>
+  </div>
+  <div class="reader-body" id="reader-body"><div class="reader-text" id="reader-text"></div></div>
+  <div class="reader-foot">
+    <div class="reader-prog"><div class="reader-prog-fill" id="reader-prog-fill"></div></div>
+    <div class="reader-nav">
+      <button class="reader-arrow" id="prev-page" onclick="turnPage(-1)">上一页</button>
+      <div class="reader-page" id="reader-page">— / —</div>
+      <button class="reader-arrow" id="next-page" onclick="turnPage(1)">下一页</button>
+    </div>
+    <button class="read-together" onclick="readTogether()">念给凛听</button>
+  </div>
+</div>
+
+<!-- 添书 -->
+<div class="note-modal" id="addbook-modal">
+  <div class="note-modal-inner">
+    <div class="note-modal-title">添一本书</div>
+
+    <div class="settings-label">在网上找</div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <input id="book-search-input" class="mini-input" placeholder="书名或作者，比如 红楼梦" onkeydown="if(event.key==='Enter')searchBooks()">
+      <button onclick="searchBooks()" style="flex-shrink:0;padding:8px 16px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:13px;font-family:inherit;cursor:pointer;">找</button>
+    </div>
+    <div class="settings-sub" style="margin-top:6px;">中文古籍找维基文库，外文名著找古腾堡，都是公版书</div>
+    <div id="book-results" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
+
+    <div class="settings-label" style="margin-top:16px;">贴个网址</div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <input id="book-url-input" class="mini-input" placeholder="txt / epub / 网页链接都行" autocapitalize="off" autocorrect="off">
+      <button onclick="addFromUrl()" style="flex-shrink:0;padding:8px 16px;border-radius:12px;border:1.5px solid var(--accent);background:transparent;color:var(--accent);font-size:13px;font-family:inherit;cursor:pointer;">取</button>
+    </div>
+
+    <div class="settings-label" style="margin-top:16px;">从手机里选</div>
+    <button onclick="document.getElementById('book-file').click()" style="width:100%;margin-top:6px;padding:10px;border-radius:12px;border:1.5px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-family:inherit;cursor:pointer;">选 txt 或 epub 文件</button>
+
+    <div class="settings-label" style="margin-top:16px;">或者直接贴文字</div>
+    <input id="book-title-input" class="mini-input" placeholder="书名" style="margin:6px 0 8px;">
+    <textarea class="note-input" id="book-text-input" placeholder="粘贴正文…" style="height:90px;"></textarea>
+    <div class="note-modal-btns">
+      <button class="note-cancel-btn" onclick="closeAddBook()">关掉</button>
+      <button class="note-confirm-btn" onclick="addPastedBook()">放上书架</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="book-file" accept=".txt,.epub,text/plain,application/epub+zip" style="display:none" onchange="handleBookFile(event)">
 
 <!-- 对话列表面板 -->
 <div class="memory-wall" id="conv-panel">
@@ -1526,6 +1653,208 @@ async function confirmEmojiName(){
   renderEmojiGrid();
   showToast('表情已上传');
   pendingEmojiFile = null;
+}
+
+
+// ============================================================
+// 书房：书架 / 读书 / 念给凛听
+// ============================================================
+let books=[],currentBook=null,currentPage=0,readerFont=17;
+// 书脊配色：低饱和的一组，四个主题下都压得住
+const SPINE_COLORS=['#7d6a8f','#5f7285','#8a6f5c','#5f7f6e','#8a6472','#4f5a7d','#7a7359','#6d5a72'];
+function spineStyleFor(book,i){
+  let h=0;const s=(book.title||'')+book.id;
+  for(let k=0;k<s.length;k++)h=(h*31+s.charCodeAt(k))>>>0;
+  const c=SPINE_COLORS[h%SPINE_COLORS.length];
+  const w=30+(h>>>3)%12;                // 30～41，宽窄不一才像真的
+  const ht=124+(h>>>7)%34;              // 124～157，高矮不一
+  return{color:c,width:w,height:ht};
+}
+function studyBtnLabel(){
+  const el=document.getElementById('study-sub');
+  if(!el)return;
+  if(!books.length){el.textContent='空着';return;}
+  const reading=books.filter(b=>b.progress>0&&b.progress<b.pages-1).length;
+  el.textContent=`${books.length} 本 · 在读 ${reading} 本`;
+}
+async function openStudy(){
+  document.getElementById('study').classList.add('open');
+  await loadBooks();
+}
+function closeStudy(){document.getElementById('study').classList.remove('open');}
+async function loadBooks(){
+  const el=document.getElementById('shelves');
+  el.innerHTML='<div class="shelf-empty">正在开灯…</div>';
+  try{
+    const r=await fetch('/api/books');
+    books=await r.json();
+  }catch(e){el.innerHTML='<div class="shelf-empty">书架没打开，检查一下网络</div>';return;}
+  renderShelves();
+  studyBtnLabel();
+}
+function renderShelves(){
+  const el=document.getElementById('shelves');
+  el.innerHTML='';
+  if(!books.length){
+    el.innerHTML='<div class="shelf-empty">书架是空的<br>添一本，我们一起读</div>';
+    return;
+  }
+  const PER=8;   // 一层放 8 本
+  for(let s=0;s<books.length;s+=PER){
+    const row=books.slice(s,s+PER);
+    const shelf=document.createElement('div');shelf.className='shelf';
+    if(s===0)shelf.innerHTML='<div class="lamp"></div>';
+    const holder=document.createElement('div');holder.className='shelf-books';
+    row.forEach((b,i)=>{
+      const st=spineStyleFor(b,s+i);
+      const d=document.createElement('div');
+      d.className='spine'+(b.progress>0&&b.progress<b.pages-1?' reading':'');
+      d.style.background=`linear-gradient(90deg,${st.color} 0%,${st.color} 62%,rgba(0,0,0,0.22) 100%)`;
+      d.style.width=st.width+'px';
+      d.style.height=st.height+'px';
+      d.innerHTML=`<div class="spine-rule" style="top:7px"></div><div class="spine-rule" style="bottom:9px"></div><div class="spine-title">${escHtml(b.title||'无名')}</div>`;
+      d.onclick=()=>openBook(b.id);
+      let t=null;
+      d.addEventListener('touchstart',()=>{t=setTimeout(()=>{t=null;askDeleteBook(b);},750);});
+      d.addEventListener('touchend',()=>{if(t){clearTimeout(t);t=null;}});
+      d.addEventListener('touchmove',()=>{if(t){clearTimeout(t);t=null;}});
+      holder.appendChild(d);
+    });
+    const board=document.createElement('div');board.className='shelf-board';
+    shelf.appendChild(holder);shelf.appendChild(board);
+    el.appendChild(shelf);
+  }
+}
+async function askDeleteBook(b){
+  if(!confirm(`把《${b.title}》从书架拿走？`))return;
+  try{await fetch('/api/books/'+b.id,{method:'DELETE'});await loadBooks();showToast('已拿走');}
+  catch(e){showToast('拿不动，再试一次');}
+}
+function openAddBook(){
+  document.getElementById('book-title-input').value='';
+  document.getElementById('book-text-input').value='';
+  document.getElementById('addbook-modal').classList.add('open');
+}
+function closeAddBook(){document.getElementById('addbook-modal').classList.remove('open');}
+async function handleBookFile(e){
+  const file=e.target.files[0];e.target.value='';
+  if(!file)return;
+  closeAddBook();showToast('正在拆封…');
+  try{
+    const form=new FormData();form.append('file',file);
+    const r=await fetch('/api/books',{method:'POST',body:form});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'这本书读不出来');return;}
+    await loadBooks();showToast(`《${d.title}》上架了`);
+  }catch(e){showToast('上架失败：'+e.message);}
+}
+async function addPastedBook(){
+  const title=document.getElementById('book-title-input').value.trim();
+  const text=document.getElementById('book-text-input').value.trim();
+  if(!text){showToast('还没有正文');return;}
+  closeAddBook();showToast('正在装订…');
+  try{
+    const r=await fetch('/api/books',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title||'无名',text})});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'装订失败');return;}
+    await loadBooks();showToast(`《${d.title}》上架了`);
+  }catch(e){showToast('装订失败：'+e.message);}
+}
+// ── 网上找书 ──
+async function searchBooks(){
+  const q=document.getElementById('book-search-input').value.trim();
+  const box=document.getElementById('book-results');
+  if(!q){showToast('先写个书名');return;}
+  box.innerHTML='<div class="settings-sub">正在翻…</div>';
+  try{
+    const r=await fetch('/api/books/search?q='+encodeURIComponent(q));
+    const d=await r.json();
+    if(d.error||!Array.isArray(d)||!d.length){box.innerHTML=`<div class="settings-sub">${escHtml(d.error||'没找到，换个说法试试')}</div>`;return;}
+    box.innerHTML='';
+    d.forEach(item=>{
+      const el=document.createElement('div');
+      el.style.cssText='display:flex;align-items:center;gap:8px;background:var(--bubble-ai);border:1px solid var(--border);border-radius:12px;padding:9px 12px;';
+      el.innerHTML=`<div style="flex:1;min-width:0;"><div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(item.title)}</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${escHtml(item.author||'')}</div></div>`;
+      const b=document.createElement('button');
+      b.textContent='上架';
+      b.style.cssText='flex-shrink:0;padding:6px 14px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:12px;font-family:inherit;cursor:pointer;';
+      b.onclick=()=>fetchBookInto(item,b);
+      el.appendChild(b);
+      box.appendChild(el);
+    });
+  }catch(e){box.innerHTML='<div class="settings-sub">没连上，稍后再找</div>';}
+}
+async function fetchBookInto(item,btn){
+  btn.textContent='取书中…';btn.disabled=true;
+  try{
+    const r=await fetch('/api/books/fetch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source:item.source,ref:item.ref,title:item.title})});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'取不下来');btn.textContent='上架';btn.disabled=false;return;}
+    btn.textContent='已上架';
+    await loadBooks();
+    showToast(`《${d.title}》共 ${d.pages} 页`);
+  }catch(e){showToast('取书失败：'+e.message);btn.textContent='上架';btn.disabled=false;}
+}
+async function addFromUrl(){
+  const url=document.getElementById('book-url-input').value.trim();
+  if(!url){showToast('先贴个网址');return;}
+  showToast('正在取…');
+  try{
+    const r=await fetch('/api/books/fetch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'url',ref:url})});
+    const d=await r.json();
+    if(!r.ok||d.error){showToast(d.error||'这个地址读不出书');return;}
+    document.getElementById('book-url-input').value='';
+    closeAddBook();await loadBooks();
+    showToast(`《${d.title}》上架了`);
+  }catch(e){showToast('取失败：'+e.message);}
+}
+async function openBook(id){
+  const b=books.find(x=>x.id===id);if(!b)return;
+  currentBook=b;currentPage=b.progress||0;
+  document.getElementById('reader-book').textContent=b.title;
+  document.getElementById('reader').classList.add('open');
+  const saved=parseInt(localStorage.getItem('reader-font'));
+  readerFont=saved||17;
+  document.getElementById('reader-text').style.fontSize=readerFont+'px';
+  await showPage(currentPage);
+}
+function closeReader(){document.getElementById('reader').classList.remove('open');loadBooks();}
+async function showPage(i){
+  if(!currentBook)return;
+  const textEl=document.getElementById('reader-text');
+  textEl.textContent='……';
+  try{
+    const r=await fetch(`/api/books/${currentBook.id}/page?i=${i}`);
+    const d=await r.json();
+    if(d.error){textEl.textContent='这一页翻不开';return;}
+    currentPage=d.index;
+    textEl.textContent=d.text;
+    document.getElementById('reader-body').scrollTop=0;
+    document.getElementById('reader-page').textContent=`${d.index+1} / ${d.total}`;
+    document.getElementById('reader-prog-fill').style.width=((d.index+1)/d.total*100)+'%';
+    document.getElementById('prev-page').disabled=d.index<=0;
+    document.getElementById('next-page').disabled=d.index>=d.total-1;
+    currentBook.progress=d.index;currentBook.pages=d.total;
+    fetch(`/api/books/${currentBook.id}/progress`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:d.index})}).catch(()=>{});
+  }catch(e){textEl.textContent='翻页出错，退出去再进来试试';}
+}
+function turnPage(step){showPage(currentPage+step);}
+function adjustReaderFont(step){
+  readerFont=Math.max(14,Math.min(24,readerFont+step));
+  localStorage.setItem('reader-font',readerFont);
+  document.getElementById('reader-text').style.fontSize=readerFont+'px';
+}
+// 把当前这页递给凛，两个人读同一页
+function readTogether(){
+  if(!currentBook)return;
+  const text=document.getElementById('reader-text').textContent||'';
+  if(!text.trim()){showToast('这页是空的');return;}
+  const input=document.getElementById('input');
+  input.value=`【一起读《${currentBook.title}》第 ${currentPage+1} 页】\n${text}\n\n（我读到这儿了，你也看看）`;
+  closeReader();closeStudy();
+  autoResize(input);
+  sendMsg();
 }
 
 (async function(){
