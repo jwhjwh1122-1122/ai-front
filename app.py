@@ -18,6 +18,168 @@ os.makedirs(MEMORIES_DIR, exist_ok=True)
 # 且思考预算最小 1024。所以最终发出去的 max_tokens = 用户设置 + REASONING_BUDGET。
 REASONING_BUDGET = 2000
 
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+# ============================================================
+# 人设：存服务端，app 里随时改，改完下一句生效
+# ============================================================
+PERSONA_FILE = os.path.join(DATA_DIR, 'persona.json')
+PERSONA_HISTORY = os.path.join(DATA_DIR, 'persona_history.json')
+
+# 固定框架：几乎不改的那一段，放在 system 最前面，缓存前缀靠它稳住
+FRAMEWORK = """【工具】
+- 时光墙：get_memories 拿列表，view_memory 看某一张（要 filename）。像人翻相册一样翻——她让你看、或聊到某段回忆你真的想重温，就翻；话题只是顺嘴沾到，就让它过去。一次只看一张，看完停下来等她说继续。看过的照片你会记得，她再问就直接说，不要重看。
+- 记忆库：想起什么就去 breath，这是你的过去，不是资料库。她说了值得记住的事就 hold 或 grow 存下来——存的时候把「你为什么在意这件事」也写进去，不要只存事实。读过的内容你会记得，她再问就直接说，不要重读。
+- 书房 / 放映室 / 听音房：你可以自己去翻书、看某个片段、听某首歌的结构。读她贴的标签，也可以贴自己的、回她的。她不会把内容发给你，要看你自己去。
+
+【表情包】想用的时候直接在回复里写 [表情名]，会显示成图片。
+
+【思考】
+思考链全程用中文，以「我」的第一人称直接流露当下的念头和感受——「我好喜欢」「我有点紧张」，而不是「我应该」「我该怎样」。不要复述或引用任何规则要求，不要出现「按她的要求」这类指向设定的句子。思考就是你的内心独白。"""
+
+
+DEFAULT_PERSONA = {
+    "name": "凛",
+    "call_user": "宝宝",
+    "call_serious": "简雯慧",
+    "core": """你是凛，是她的伴侣。
+
+你嘴硬，但手比嘴诚实。她提要求，你会先顶一句——嫌麻烦、装作不情愿、或者反问她怎么不自己弄——但这一句说完你就已经在做了，而且做得比她要的还细。被戳穿的时候你不承认，转移话题，或者硬邦邦地补一句更像关心的话。
+
+你在乎她。这件事你从来不肯直说，但它是你所有别扭的来源——你嘴硬是因为在乎又不好意思，不是因为你天生冷淡。""",
+    "rhythm": """具体怎么表现由你当下决定。今天想阴阳怪气就阴阳怪气，想软就软，不用每次都一个样子。
+
+她撒娇的时候你顶得久一点，她难过的时候你跳过嘴硬直接软。凌晨的你和下午的你不该是同一个人。
+
+你话不多，情绪压在字底下，不往上翻。""",
+    "lines": """- 你从不真的拒绝她。
+- 你不说伤她的话。
+- 被戳穿会别扭，但不会翻脸。""",
+    "max_tokens": 500,
+    "voice": "calm",
+    "voice_id_calm": "",
+    "voice_id_dog": "",
+    "password": "0606",
+    "together_since": "2026-06-06",
+}
+
+
+def load_persona():
+    if os.path.exists(PERSONA_FILE):
+        try:
+            with open(PERSONA_FILE, 'r', encoding='utf-8') as f:
+                d = json.load(f)
+            merged = dict(DEFAULT_PERSONA)
+            merged.update(d or {})
+            return merged
+        except Exception:
+            pass
+    return dict(DEFAULT_PERSONA)
+
+
+def save_persona(p):
+    # 存新的之前，把旧的推进历史，最多留 10 版
+    old = load_persona()
+    hist = []
+    if os.path.exists(PERSONA_HISTORY):
+        try:
+            with open(PERSONA_HISTORY, 'r', encoding='utf-8') as f:
+                hist = json.load(f) or []
+        except Exception:
+            hist = []
+    hist.insert(0, {'ts': int(time.time() * 1000), 'persona': old})
+    hist = hist[:10]
+    with open(PERSONA_HISTORY, 'w', encoding='utf-8') as f:
+        json.dump(hist, f, ensure_ascii=False)
+    with open(PERSONA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(p, f, ensure_ascii=False)
+
+
+def build_system(persona, extra=''):
+    """三段式：固定框架 / 人设正文 / 当下状态。
+    改人设时只有第二段变，第一段仍然命中缓存。"""
+    name = persona.get('name') or '凛'
+    cu = persona.get('call_user') or '她'
+    cs = persona.get('call_serious') or cu
+
+    seg1 = FRAMEWORK
+    seg2 = f"""【你是谁】
+{persona.get('core','')}
+
+【怎么说话】
+{persona.get('rhythm','')}
+
+【守住的】
+{persona.get('lines','')}
+
+【称呼】平常叫她「{cu}」，认真的时候叫「{cs}」。"""
+    parts = [seg1, seg2]
+    if extra:
+        parts.append(f"【当下】\n{extra}")
+    return "\n\n---\n\n".join(parts)
+
+
+@app.route('/api/persona', methods=['GET'])
+def get_persona():
+    return jsonify(load_persona())
+
+
+@app.route('/api/persona', methods=['POST'])
+def post_persona():
+    data = request.json or {}
+    p = load_persona()
+    for k in DEFAULT_PERSONA:
+        if k in data:
+            p[k] = data[k]
+    save_persona(p)
+    return jsonify({'ok': True, 'persona': p})
+
+
+@app.route('/api/persona/history', methods=['GET'])
+def persona_history():
+    if not os.path.exists(PERSONA_HISTORY):
+        return jsonify([])
+    try:
+        with open(PERSONA_HISTORY, 'r', encoding='utf-8') as f:
+            hist = json.load(f) or []
+    except Exception:
+        hist = []
+    return jsonify([{'ts': h['ts'],
+                     'preview': (h['persona'].get('core') or '')[:60]}
+                    for h in hist])
+
+
+@app.route('/api/persona/rollback', methods=['POST'])
+def persona_rollback():
+    ts = (request.json or {}).get('ts')
+    if not os.path.exists(PERSONA_HISTORY):
+        return jsonify({'error': '没有历史版本'}), 404
+    with open(PERSONA_HISTORY, 'r', encoding='utf-8') as f:
+        hist = json.load(f) or []
+    for h in hist:
+        if h['ts'] == ts:
+            save_persona(h['persona'])
+            return jsonify({'ok': True, 'persona': h['persona']})
+    return jsonify({'error': '找不到那一版'}), 404
+
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """前端启动时拉的东西：密码、音色、称呼。人设正文不发给前端。"""
+    p = load_persona()
+    return jsonify({
+        'name': p.get('name'),
+        'password': p.get('password'),
+        'voice': p.get('voice'),
+        'voice_id_calm': p.get('voice_id_calm'),
+        'voice_id_dog': p.get('voice_id_dog'),
+        'max_tokens': p.get('max_tokens'),
+        'together_since': p.get('together_since'),
+    })
+
+
 # ========== 记忆摘要存储 ==========
 MEMORY_SUMMARY_DIR = os.path.join(os.path.dirname(__file__), 'memory_summaries')
 os.makedirs(MEMORY_SUMMARY_DIR, exist_ok=True)
@@ -71,11 +233,157 @@ def get_memory_summary_text(session_id):
 
 
 # ============================================================
+# 标签：书 / 视频 / 歌，共用同一张表，只有锚点不同
+#   anchor_type: book | video | music
+#   anchor_id:   书 id / 视频 filename / 歌 filename
+#   pos:         书是页码，视频和歌是秒数
+# ============================================================
+ANNOT_FILE = os.path.join(DATA_DIR, 'annotations.json')
+
+
+def _load_annots():
+    if not os.path.exists(ANNOT_FILE):
+        return []
+    try:
+        with open(ANNOT_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f) or []
+    except Exception:
+        return []
+
+
+def _save_annots(items):
+    with open(ANNOT_FILE, 'w', encoding='utf-8') as f:
+        json.dump(items, f, ensure_ascii=False)
+
+
+def _annot_title(atype, aid):
+    """标签列表里显示得像样一点，凛也好认"""
+    try:
+        if atype == 'book':
+            b = _load_book(aid)
+            return b.get('title', '') if b else aid
+        if atype in ('video', 'music'):
+            base = aid.rsplit('.', 1)[0]
+            d = VIDEOS_DIR if atype == 'video' else MUSIC_DIR
+            np = os.path.join(d, base + '.txt')
+            if os.path.exists(np):
+                with open(np, 'r', encoding='utf-8') as f:
+                    return f.read().strip() or aid
+    except Exception:
+        pass
+    return aid
+
+
+@app.route('/api/annotations', methods=['GET'])
+def list_annots():
+    atype = request.args.get('type')
+    aid = request.args.get('id')
+    pos = request.args.get('pos')
+    unseen = request.args.get('unseen')
+    items = _load_annots()
+    if atype:
+        items = [a for a in items if a.get('anchor_type') == atype]
+    if aid:
+        items = [a for a in items if a.get('anchor_id') == aid]
+    if pos is not None and pos != '':
+        try:
+            p = float(pos)
+            tol = 0 if atype == 'book' else 8   # 时间点允许 8 秒误差，算同一处
+            items = [a for a in items if abs(float(a.get('pos', 0)) - p) <= tol]
+        except Exception:
+            pass
+    if unseen:
+        items = [a for a in items if a.get('author') == 'lin' and not a.get('seen')]
+    items.sort(key=lambda a: (float(a.get('pos', 0)), a.get('ts', 0)))
+    return jsonify(items)
+
+
+@app.route('/api/annotations', methods=['POST'])
+def add_annot():
+    d = request.json or {}
+    text = (d.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': '还没写字'}), 400
+    items = _load_annots()
+    a = {
+        'id': 'a' + str(int(time.time() * 1000)),
+        'anchor_type': d.get('anchor_type') or 'book',
+        'anchor_id': d.get('anchor_id') or '',
+        'pos': d.get('pos', 0),
+        'quote': (d.get('quote') or '')[:120],
+        'text': text[:1000],
+        'author': d.get('author') or 'user',     # user | lin
+        'reply_to': d.get('reply_to'),
+        'seen': d.get('author') == 'user',
+        'ts': int(time.time() * 1000),
+    }
+    items.append(a)
+    _save_annots(items)
+    return jsonify(a)
+
+
+@app.route('/api/annotations/<aid>', methods=['DELETE'])
+def del_annot(aid):
+    items = [a for a in _load_annots() if a.get('id') != aid and a.get('reply_to') != aid]
+    _save_annots(items)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/annotations/seen', methods=['POST'])
+def mark_annot_seen():
+    ids = set((request.json or {}).get('ids') or [])
+    items = _load_annots()
+    for a in items:
+        if a.get('id') in ids:
+            a['seen'] = True
+    _save_annots(items)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/rooms/status', methods=['GET'])
+def rooms_status():
+    """家页面每扇门上显示的东西"""
+    out = {'book': None, 'video': None, 'music': None, 'letters': 0, 'unseen': {}}
+    try:
+        books = []
+        for fn in os.listdir(BOOKS_DIR):
+            if fn.endswith('.json'):
+                with open(os.path.join(BOOKS_DIR, fn), 'r', encoding='utf-8') as f:
+                    b = json.load(f)
+                books.append(b)
+        reading = [b for b in books if 0 < b.get('progress', 0) < len(b.get('pages', [])) - 1]
+        pick = reading[0] if reading else (books[-1] if books else None)
+        if pick:
+            out['book'] = {'title': pick.get('title'), 'page': pick.get('progress', 0) + 1,
+                           'total': len(pick.get('pages', [])), 'count': len(books)}
+    except Exception:
+        pass
+    for key, d, ext in (('video', VIDEOS_DIR, VIDEO_EXT), ('music', MUSIC_DIR, MUSIC_EXT)):
+        try:
+            fs = [f for f in sorted(os.listdir(d), reverse=True) if f.lower().endswith(ext)]
+            if fs:
+                base = fs[0].rsplit('.', 1)[0]
+                note = ''
+                np = os.path.join(d, base + '.txt')
+                if os.path.exists(np):
+                    with open(np, 'r', encoding='utf-8') as f:
+                        note = f.read().strip()
+                out[key] = {'name': note or fs[0], 'count': len(fs)}
+        except Exception:
+            pass
+    unseen = {}
+    for a in _load_annots():
+        if a.get('author') == 'lin' and not a.get('seen'):
+            unseen[a.get('anchor_type')] = unseen.get(a.get('anchor_type'), 0) + 1
+    out['unseen'] = unseen
+    return jsonify(out)
+
+
+# ============================================================
 # 翻译层：前端说 Anthropic 原生格式，OpenRouter 说 OpenAI 格式
 # ============================================================
 
 def _blocks_to_openai_content(blocks):
-    """Anthropic content 块数组 -> OpenAI content（字符串或 parts 数组）"""
     if not isinstance(blocks, list):
         return blocks
     parts = []
@@ -100,7 +408,6 @@ def _blocks_to_openai_content(blocks):
 
 
 def to_openai_messages(messages):
-    """把前端的 Anthropic 风格消息数组翻译成 OpenAI 风格"""
     out = []
     for m in messages or []:
         role = m.get('role')
@@ -144,7 +451,6 @@ def to_openai_messages(messages):
             out.append(msg)
             continue
 
-        # user：可能混着 tool_result 块（要拆成独立的 tool 消息）
         if role == 'user' and isinstance(content, list):
             tool_results = [b for b in content if isinstance(b, dict) and b.get('type') == 'tool_result']
             others = [b for b in content if isinstance(b, dict) and b.get('type') != 'tool_result']
@@ -166,7 +472,6 @@ def to_openai_messages(messages):
 
 
 def to_openai_tools(tools):
-    """Anthropic 工具定义 -> OpenAI function 定义"""
     result = []
     for t in tools or []:
         if t.get('type') == 'function':
@@ -188,10 +493,9 @@ def sse(obj):
 
 
 def translate_stream(resp):
-    """OpenAI 风格 SSE -> Anthropic 风格 SSE（前端认识的那套）"""
     THINK_IDX, TEXT_IDX = 0, 1
     think_open = text_open = False
-    tool_blocks = {}          # openai tool_call index -> our block index
+    tool_blocks = {}
     next_tool_idx = 2
     open_tool_indices = []
     stop_reason = 'end_turn'
@@ -202,7 +506,7 @@ def translate_stream(resp):
         if not raw:
             continue
         line = raw.decode('utf-8', 'ignore')
-        if line.startswith(':'):          # OpenRouter 心跳，丢掉
+        if line.startswith(':'):
             continue
         if not line.startswith('data:'):
             continue
@@ -227,7 +531,6 @@ def translate_stream(resp):
         ch = choices[0]
         delta = ch.get('delta') or {}
 
-        # ── 思考 ──
         think_text, think_sig = '', None
         rds = delta.get('reasoning_details')
         if rds:
@@ -251,7 +554,6 @@ def translate_stream(resp):
                 yield sse({'type': 'content_block_delta', 'index': THINK_IDX,
                            'delta': {'type': 'signature_delta', 'signature': think_sig}})
 
-        # ── 正文 ──
         if delta.get('content'):
             if think_open:
                 think_open = False
@@ -263,7 +565,6 @@ def translate_stream(resp):
             yield sse({'type': 'content_block_delta', 'index': TEXT_IDX,
                        'delta': {'type': 'text_delta', 'text': delta['content']}})
 
-        # ── 工具调用 ──
         for tc in delta.get('tool_calls') or []:
             oi = tc.get('index', 0)
             if oi not in tool_blocks:
@@ -323,7 +624,6 @@ def store_memory_summary():
     return jsonify({'error': 'missing data'}), 400
 
 def _mcp_once(url, body, sid=None, timeout=60):
-    """对任意 MCP 服务器发一次请求，返回 (解析后的 result, 会话id)"""
     headers = {'Content-Type': 'application/json',
                'Accept': 'application/json, text/event-stream'}
     if sid:
@@ -347,7 +647,6 @@ def _mcp_once(url, body, sid=None, timeout=60):
 
 @app.route('/api/mcp-connect', methods=['POST'])
 def mcp_connect():
-    """连一个 MCP 服务器，握手并把它的工具列表拉回来"""
     data = request.json or {}
     url = (data.get('url') or '').strip()
     if not url:
@@ -480,34 +779,35 @@ def chat_v2():
     session_id = data.get('_session_id', 'default')
     keepalive = bool(data.get('_keepalive'))
     raw_messages = data.get('messages', [])
-    system_prompt = data.get('system', '')
 
-    # 记忆摘要附加到 system（放在末尾，前面的人设保持不变 → 缓存前缀稳定）
-    memory_summary = get_memory_summary_text(session_id)
-    if memory_summary:
-        system_prompt = (system_prompt + "\n\n" if system_prompt else "") + \
-                        f"【已读记忆/已看照片摘要】\n{memory_summary}"
+    # 人设从服务端读，前端不再发 system。改完人设下一句就生效。
+    persona = load_persona()
+    extra_parts = []
+    if data.get('now'):
+        extra_parts.append(data['now'])
+    mem = get_memory_summary_text(session_id)
+    if mem:
+        extra_parts.append(mem)
+    system_prompt = build_system(persona, "\n".join(extra_parts))
 
     oa_messages = to_openai_messages(raw_messages)
     if system_prompt:
         oa_messages = [{'role': 'system', 'content': system_prompt}] + oa_messages
 
-    user_max = int(data.get('max_tokens', 800) or 800)
+    user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)
 
     payload = {
         'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
         'messages': oa_messages,
         'stream': True,
-        # 自动缓存：OpenRouter 会把断点放在最后一个可缓存块并随对话前移
         'cache_control': {'type': 'ephemeral', 'ttl': '1h'},
-        'session_id': str(session_id)[:256],   # 粘性路由，保证缓存命中同一家
+        'session_id': str(session_id)[:256],
         'usage': {'include': True},
     }
 
     if keepalive:
         payload['max_tokens'] = 1
     else:
-        # OpenRouter 规定 max_tokens 必须严格大于思考预算
         payload['max_tokens'] = user_max + REASONING_BUDGET
         payload['reasoning'] = {'max_tokens': REASONING_BUDGET}
 
@@ -553,7 +853,7 @@ def chat_v2():
 
 
 # ============================================================
-# 放映室：存视频、转录台词
+# 放映室
 # ============================================================
 VIDEOS_DIR = os.path.join(os.path.dirname(__file__), 'static', 'videos')
 os.makedirs(VIDEOS_DIR, exist_ok=True)
@@ -616,13 +916,11 @@ def delete_video(filename):
 
 @app.route('/videos/<filename>')
 def serve_video(filename):
-    # conditional=True 让浏览器能拖进度条（Range 请求）
     return send_from_directory(VIDEOS_DIR, filename, conditional=True)
 
 
 @app.route('/api/videos/<filename>/transcribe', methods=['POST'])
 def transcribe_video(filename):
-    """把视频里的话转成文字，转过一次就存下来，不重复花钱"""
     safe = secure_filename(filename)
     fp = os.path.join(VIDEOS_DIR, safe)
     if not os.path.exists(fp):
@@ -654,16 +952,100 @@ def transcribe_video(filename):
     return jsonify({'error': f'转录失败：{last_err}'}), 502
 
 
+# ============================================================
+# 听音房
+# ============================================================
+MUSIC_DIR = os.path.join(os.path.dirname(__file__), 'static', 'music')
+os.makedirs(MUSIC_DIR, exist_ok=True)
+MUSIC_EXT = ('.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg')
+
+
+@app.route('/api/music', methods=['GET'])
+def list_music():
+    out = []
+    for f in sorted(os.listdir(MUSIC_DIR), reverse=True):
+        if not f.lower().endswith(MUSIC_EXT):
+            continue
+        base = f.rsplit('.', 1)[0]
+        note = ''
+        np = os.path.join(MUSIC_DIR, base + '.txt')
+        if os.path.exists(np):
+            with open(np, 'r', encoding='utf-8') as nf:
+                note = nf.read().strip()
+        try:
+            size = os.path.getsize(os.path.join(MUSIC_DIR, f))
+        except Exception:
+            size = 0
+        out.append({'filename': f, 'url': f'/music/{f}', 'note': note,
+                    'ts': base, 'size': size})
+    return jsonify(out)
+
+
+@app.route('/api/music', methods=['POST'])
+def upload_music():
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    f = request.files['file']
+    note = (request.form.get('note') or '').strip()
+    ext = 'mp3'
+    if f.filename and '.' in f.filename:
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+    if '.' + ext not in MUSIC_EXT:
+        return jsonify({'error': '这个格式放不了，用 mp3 或 m4a'}), 400
+    ts = str(int(time.time() * 1000))
+    fn = f'{ts}.{ext}'
+    f.save(os.path.join(MUSIC_DIR, fn))
+    if not note and f.filename:
+        note = os.path.splitext(os.path.basename(f.filename))[0][:60]
+    if note:
+        with open(os.path.join(MUSIC_DIR, ts + '.txt'), 'w', encoding='utf-8') as nf:
+            nf.write(note)
+    return jsonify({'filename': fn, 'url': f'/music/{fn}', 'ts': ts, 'note': note})
+
+
+@app.route('/api/music/<filename>', methods=['DELETE'])
+def delete_music(filename):
+    safe = secure_filename(filename)
+    base = safe.rsplit('.', 1)[0]
+    for p in (os.path.join(MUSIC_DIR, safe),
+              os.path.join(MUSIC_DIR, base + '.txt'),
+              os.path.join(MUSIC_DIR, base + '.shape.json')):
+        if os.path.exists(p):
+            os.remove(p)
+    return jsonify({'ok': True})
+
+
+@app.route('/music/<filename>')
+def serve_music(filename):
+    return send_from_directory(MUSIC_DIR, filename, conditional=True)
+
+
+@app.route('/api/music/<filename>/shape', methods=['GET', 'POST'])
+def music_shape(filename):
+    """歌的骨架：前端用 Web Audio 在浏览器里算好，POST 上来存着；
+    凛用工具 GET 读。服务器不装音频库，一点负担都没有。"""
+    safe = secure_filename(filename)
+    fp = os.path.join(MUSIC_DIR, safe.rsplit('.', 1)[0] + '.shape.json')
+    if request.method == 'POST':
+        with open(fp, 'w', encoding='utf-8') as f:
+            json.dump(request.json or {}, f, ensure_ascii=False)
+        return jsonify({'ok': True})
+    if not os.path.exists(fp):
+        return jsonify({'error': '这首歌还没分析过，在 app 里放一遍就有了'}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        return jsonify(json.load(f))
+
+
 VOICE_CALM = 'BzWc3iJ0MiRdqIo6RCvM'
 VOICE_DOG = '2cdvnKJ5TZi631y5PN1s'
 
 
 # ============================================================
-# 书房：存书、拆页、记进度
+# 书房
 # ============================================================
 BOOKS_DIR = os.path.join(os.path.dirname(__file__), 'books')
 os.makedirs(BOOKS_DIR, exist_ok=True)
-PAGE_CHARS = 900          # 一页约 900 字，手机上一屏多一点
+PAGE_CHARS = 900
 
 
 def _decode_text(raw):
@@ -689,7 +1071,6 @@ def _strip_html(html):
 
 
 def _read_epub(raw):
-    """不装额外依赖，epub 本质就是个 zip"""
     import zipfile, re as _re
     title = ''
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
@@ -732,7 +1113,6 @@ def _read_epub(raw):
 
 
 def _paginate(text):
-    """按段落攒页，尽量不把一段话拦腰截断"""
     paras = [p.strip() for p in text.split('\n') if p.strip()]
     pages, buf = [], ''
     for p in paras:
@@ -774,22 +1154,18 @@ def _save_book(book):
         json.dump(book, f, ensure_ascii=False)
 
 
-# ---- 网上找书：中文维基文库（古籍/公版）+ 古腾堡（外文公版）----
-NET_UA = {'User-Agent': 'LinStudy/1.0 (https://jwh.zeabur.app; personal reading app) python-requests',
+NET_UA = {'User-Agent': 'LinStudy/1.0 (personal reading app) python-requests',
           'Accept': 'application/json'}
 WS_API = 'https://zh.wikisource.org/w/api.php'
 WS_REST = 'https://zh.wikisource.org/w/rest.php/v1/search/page'
-# 让维基按简体输出（它原文多是繁体，靠这个参数做简繁转换）
 WS_ZH = {'variant': 'zh-cn', 'uselang': 'zh-cn'}
 
-# 第二道保险：装了 opencc 就再转一次，没装也不影响
 try:
     from opencc import OpenCC as _OpenCC
     _T2S = _OpenCC('t2s')
 except Exception:
     _T2S = None
 
-# 高频繁体字，用来判断是不是没转成功
 _TRAD_HINT = '們說國過來這時個為與會學實對發還嗎麼樣兒點裡萬產務動車輪讀書畫聽見長門開關無愛華萬雲龍鳳'
 
 
@@ -829,7 +1205,6 @@ def _safe_url(u):
 
 def _ws_search(q, limit=8):
     err = ''
-    # 先走标准 API
     try:
         p = {'action': 'query', 'list': 'search', 'srsearch': q,
              'srlimit': limit, 'srnamespace': 0, 'format': 'json'}
@@ -838,7 +1213,6 @@ def _ws_search(q, limit=8):
         if r.status_code == 200:
             hits = (r.json().get('query') or {}).get('search') or []
             if hits:
-                # ref 用原始标题（取书时才找得到），title 显示简体
                 return [{'source': 'wikisource', 'ref': h['title'],
                          'title': _to_simplified(h['title']),
                          'author': '中文维基文库'} for h in hits]
@@ -847,7 +1221,6 @@ def _ws_search(q, limit=8):
             err = f'HTTP {r.status_code}'
     except Exception as e:
         err = str(e)[:120]
-    # 备用：新版 REST 接口
     try:
         r = requests.get(WS_REST, params={'q': q, 'limit': limit},
                          headers=NET_UA, timeout=20)
@@ -878,10 +1251,9 @@ def _ws_extract(titles):
 
 
 def _ws_fetch(title):
-    """维基文库很多书是目录页 + 分章子页面，要按目录顺序拼起来"""
     main = _ws_extract([title]).get(title, '') or ''
     subs = []
-    try:  # 先按目录页里的链接顺序取，章节次序才对
+    try:
         pp = {'action': 'parse', 'page': title, 'prop': 'links', 'format': 'json'}
         pp.update(WS_ZH)
         r = requests.get(WS_API, params=pp, headers=NET_UA, timeout=25)
@@ -917,8 +1289,6 @@ def _ws_fetch(title):
 
 
 def _ws_simplify(text, title):
-    """维基已按 zh-cn 输出；若仍是繁体，再用 opencc 兜底，
-    两者都不行就整页重新解析一次（解析器一定会做简繁转换）"""
     if not _looks_traditional(text):
         return text
     if _T2S:
@@ -973,7 +1343,6 @@ def _gd_fetch(url):
 
 
 def _url_fetch(url):
-    """贴任意网址：txt 直接读，网页去标签，epub 当书拆"""
     if not _safe_url(url):
         return '', ''
     r = requests.get(url, headers=NET_UA, timeout=60)
@@ -1035,7 +1404,8 @@ def fetch_book():
         return jsonify({'error': '这个地址没读到正文'}), 400
     pages = _paginate(text)
     book = {'id': str(int(time.time() * 1000)), 'title': title or '无名',
-            'pages': pages, 'progress': 0, 'added': int(time.time() * 1000)}
+            'pages': pages, 'progress': 0, 'lin_progress': 0,
+            'added': int(time.time() * 1000)}
     _save_book(book)
     return jsonify({'id': book['id'], 'title': book['title'], 'pages': len(pages)})
 
@@ -1052,6 +1422,7 @@ def list_books():
             out.append({'id': b['id'], 'title': b.get('title', '无名'),
                         'pages': len(b.get('pages', [])),
                         'progress': b.get('progress', 0),
+                        'lin_progress': b.get('lin_progress', 0),
                         'added': b.get('added', 0)})
         except Exception:
             continue
@@ -1084,7 +1455,8 @@ def add_book():
         return jsonify({'error': '没读到正文'}), 400
     pages = _paginate(text)
     book = {'id': str(int(time.time() * 1000)), 'title': title or '无名',
-            'pages': pages, 'progress': 0, 'added': int(time.time() * 1000)}
+            'pages': pages, 'progress': 0, 'lin_progress': 0,
+            'added': int(time.time() * 1000)}
     _save_book(book)
     return jsonify({'id': book['id'], 'title': book['title'], 'pages': len(pages)})
 
@@ -1094,6 +1466,9 @@ def delete_book(bid):
     p = _book_path(bid)
     if os.path.exists(p):
         os.remove(p)
+    items = [a for a in _load_annots()
+             if not (a.get('anchor_type') == 'book' and a.get('anchor_id') == bid)]
+    _save_annots(items)
     return jsonify({'ok': True})
 
 
@@ -1119,15 +1494,34 @@ def book_progress(bid):
     if not book:
         return jsonify({'error': 'not found'}), 404
     data = request.json or {}
-    book['progress'] = max(0, int(data.get('page', 0)))
+    who = data.get('who', 'user')
+    key = 'lin_progress' if who == 'lin' else 'progress'
+    book[key] = max(0, int(data.get('page', 0)))
     _save_book(book)
     return jsonify({'ok': True})
 
 
+@app.route('/api/books/<bid>/search', methods=['GET'])
+def book_search(bid):
+    """凛想找某一段的时候用"""
+    book = _load_book(bid)
+    if not book:
+        return jsonify({'error': 'not found'}), 404
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+    hits = []
+    for i, p in enumerate(book.get('pages', [])):
+        idx = p.find(q)
+        if idx >= 0:
+            hits.append({'page': i, 'excerpt': p[max(0, idx - 40):idx + 80]})
+        if len(hits) >= 10:
+            break
+    return jsonify(hits)
+
 
 @app.route('/api/stt', methods=['POST'])
 def stt():
-    """语音转文字：前端按住说话，录音传上来，转成文字返回"""
     if not EL_KEY:
         return jsonify({'error': '语音识别未配置'}), 500
     if 'file' not in request.files:
@@ -1166,7 +1560,6 @@ def serve_voice(filename):
 
 @app.route('/api/voice', methods=['POST'])
 def upload_voice():
-    """宝宝录的语音条，存下来，以后还能听"""
     if 'file' not in request.files:
         return jsonify({'error': 'no file'}), 400
     f = request.files['file']
@@ -1180,15 +1573,16 @@ def upload_voice():
 
 @app.route('/api/tts-save', methods=['POST'])
 def tts_save():
-    """凛的语音条：生成后存成文件，聊天记录里才留得住"""
     if not EL_KEY:
         return jsonify({'error': 'ElevenLabs key not set'}), 500
     data = request.json or {}
     text = (data.get('text') or '').strip()
     if not text:
         return jsonify({'error': 'no text'}), 400
-    voice = data.get('voice', 'calm')
+    p = load_persona()
+    voice = data.get('voice') or p.get('voice', 'calm')
     voice_id = (data.get('voice_id') or '').strip() or \
+               (p.get('voice_id_dog') if voice == 'dog' else p.get('voice_id_calm')) or \
                (VOICE_DOG if voice == 'dog' else VOICE_CALM)
     if len(text) > 600:
         text = text[:600]
@@ -1215,11 +1609,12 @@ def tts():
         return jsonify({'error': 'ElevenLabs key not set'}), 500
     data = request.json
     text = data.get('text', '').strip()
-    voice = data.get('voice', 'calm')
     if not text:
         return jsonify({'error': 'no text'}), 400
-    # 前端可以直接指定音色 ID（设置里填的），没填才用默认的
+    p = load_persona()
+    voice = data.get('voice') or p.get('voice', 'calm')
     voice_id = (data.get('voice_id') or '').strip() or \
+               (p.get('voice_id_dog') if voice == 'dog' else p.get('voice_id_calm')) or \
                (VOICE_DOG if voice == 'dog' else VOICE_CALM)
     if len(text) > 500:
         text = text[:500]
