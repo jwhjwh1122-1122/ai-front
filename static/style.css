@@ -21,8 +21,8 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .avatar.has-img{opacity:1;}.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .name{font-size:16px;font-weight:600;letter-spacing:.5px;}
 .sub{font-size:11px;color:var(--text-muted);margin-top:1px;}
-.lin-state{font-size:11px;color:var(--accent);margin-top:2px;opacity:.9;}
-.user-status{font-size:10px;color:var(--text-muted);margin-top:1px;}
+.lin-state{font-size:12px;color:var(--accent);font-weight:400;letter-spacing:0;margin-left:1px;opacity:.85;}
+.user-status{font-size:11px;color:var(--accent);margin-top:2px;opacity:.9;}
 .topbar-right{display:flex;gap:10px;align-items:center;}
 .theme-btn{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);cursor:pointer;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:14px;}
 .theme-btn:active{transform:scale(.9);}
@@ -97,7 +97,7 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .bubble-img img{width:100%;display:block;border-radius:14px;}
 .msg-time{font-size:10px;color:var(--text-muted);padding:0 3px;}
 /* 图标：比原来大一圈，好点 */
-.msg-action-btn{font-size:13px;color:var(--text-muted);cursor:pointer;opacity:.6;padding:3px 5px;border-radius:5px;line-height:1;}
+.msg-action-btn{font-size:17px;color:var(--text-muted);cursor:pointer;opacity:.62;padding:3px 5px;border-radius:5px;line-height:1;}
 .msg-action-btn:active{opacity:1;background:var(--border);}
 .thinking-wrap{margin-bottom:4px;background:var(--bubble-ai);border-radius:12px;border:1px solid var(--border);overflow:hidden;}
 .thinking-header{display:flex;align-items:center;gap:6px;padding:7px 12px;cursor:pointer;font-size:12px;color:var(--text-muted);user-select:none;}
