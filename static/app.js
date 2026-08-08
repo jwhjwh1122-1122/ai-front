@@ -395,7 +395,7 @@ function addUserBubble(text, imgData, idx, audio) {
   if (imgData) c += `<div class="bubble-img"><img src="${imgData}"></div>`;
   if (text && !(audio && audio.url)) c += `<div class="bubble user">${esc(text)}</div>`;
   row.innerHTML = `${av}<div class="bubble-wrap">${c}<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
-    <span class="msg-action-btn" data-edit="1" title="编辑">ฅ</span><span class="msg-action-btn" data-copy="1" title="复制">✎</span>
+    <span class="msg-action-btn" data-edit="1" title="编辑" style="font-size:21px">ฅ</span><span class="msg-action-btn" data-copy="1" title="复制" style="font-size:21px">✎</span>
     <span class="msg-time">${nowStr()}</span></div></div>`;
   if (audio && audio.url) {
     const w = row.querySelector('.bubble-wrap');
@@ -452,7 +452,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   foot.appendChild(time);
   if (tokens > 0) { const tk = document.createElement('span'); tk.className = 'msg-time'; tk.textContent = `· ${tokens}`; foot.appendChild(tk); }
   const cap = rawText || text;
-  const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 20, 'ฅ': 21, '⊞': 20, '♡': 20 };
+  const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 25, 'ฅ': 21, '⊞': 20, '♡': 21 };
   const mk = (label, title, fn) => {
     const s = document.createElement('span'); s.className = 'msg-action-btn';
     s.textContent = label; s.title = title;
