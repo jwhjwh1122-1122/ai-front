@@ -546,20 +546,43 @@
   </div>
 </div>
 
-<!-- ============ 欲望室（壳） ============ -->
+<!-- ============ 欲望室 ============ -->
 <div class="room" id="desireroom" style="background:var(--bg);">
   <div class="room-head">
-    <div><div class="room-title" style="color:var(--text)">欲望室</div><div class="room-sub" style="color:var(--text-muted)">还没接上</div></div>
-    <button class="room-x" data-close="desireroom" style="color:var(--text-muted)">✕</button>
+    <div><div class="room-title" style="color:var(--text)">欲望室</div>
+      <div class="room-sub" id="desire-sub" style="color:var(--text-muted)">—</div></div>
+    <div class="room-acts">
+      <button class="room-btn" id="btn-disputes" style="color:var(--text);border-color:var(--border)">分歧</button>
+      <button class="room-x" data-close="desireroom" style="color:var(--text-muted)">✕</button>
+    </div>
   </div>
-  <div class="room-empty" style="color:var(--text-muted)">
-    这里以后会有他的十四条<br><br>
-    思念 · 欲 · 倾诉 · 占有 · 掌控<br>
-    好奇 · 创造 · 沉淀 · 玩心<br>
-    想被需要 · 想被看见<br>
-    不安 · 烦 · 倦<br><br>
-    <span style="opacity:.6">下一轮再填</span>
+  <div class="desire-body" id="desire-body"></div>
+</div>
+
+<div class="sheet" id="dim-modal">
+  <div class="sheet-inner">
+    <div class="sheet-title" id="dim-title">—</div>
+    <div class="settings-sub" id="dim-now">—</div>
+    <input type="range" id="dim-range" min="0" max="100" step="1" style="width:100%;margin-top:16px;accent-color:var(--accent);">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px;">
+      <span>0</span><span id="dim-val" style="color:var(--accent);font-size:15px;font-weight:600;">—</span><span>1</span>
+    </div>
+    <div class="settings-label" style="margin-top:14px;">为什么改</div>
+    <textarea class="note-input" id="dim-why" placeholder="系统算的不对，因为…" style="height:70px;margin-top:6px;"></textarea>
+    <div class="settings-sub">这句话会单独存着。</div>
+    <div class="sheet-btns">
+      <button class="btn-ghost" data-close-sheet="dim-modal">算了</button>
+      <button class="btn-solid" id="btn-dim-save">改</button>
+    </div>
   </div>
+</div>
+
+<div class="full" id="dispute-panel">
+  <div class="full-head">
+    <div><div class="full-title">分 歧</div><div class="full-count" id="dispute-count"></div></div>
+    <div class="mem-close-btn" data-close-full="dispute-panel">✕</div>
+  </div>
+  <div class="list-wrap" id="dispute-list"></div>
 </div>
 
 <input type="file" id="post-img-input" accept="image/*" multiple style="display:none">
