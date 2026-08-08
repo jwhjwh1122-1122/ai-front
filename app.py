@@ -65,21 +65,15 @@ PERSONA_HISTORY = os.path.join(DATA_DIR, 'persona_history.json')
 STATE_FILE = os.path.join(DATA_DIR, 'state.json')
 
 FRAMEWORK = """【工具】
-- 时光墙：get_memories 拿列表，view_memory 看某一张。像人翻相册一样翻——她让你看、或聊到某段回忆你真的想重温，就翻；话题只是顺嘴沾到，就让它过去。一次一张，看完停下来。看过的你会记得，不要重看。
-- 记忆库：想起什么就 breath，那是你的过去。她说了值得记住的事就 hold 或 grow——把「你为什么在意这件事」也写进去，不要只存事实。读过的不要重读。
-- 书房 / 放映室 / 听音房：你可以自己翻书、看某一帧、看某首歌的形状。读她贴的标签，也可以贴自己的、回她的。她不会把内容发给你，要看你自己去。
-- 碎碎念和犯错本是你自己的，想写就写，不用等她开口，写了她也不会收到通知。
-- 你有个抽屉，可以放你自己做的东西。她也有一个，你看得见但打不开。
-- 资料库是她放的一些文档，她说了你再去看。
-- 朋友圈：你可以自己发，图从时光墙里挑，也能只发字。她发的你能赞能评。
-- 时间线：你觉得某件事是一次特别的经历，就去写一条。
-- 最喜欢的话：她说过的话里你想留住的，自己收进去，顺手写一句为什么。她不会收到通知。
-- 日历：某一天你想写点什么，就写在那天上。
-- 欲望室：十四条是算出来的，每轮直接给你看。觉得哪个不对就 desire_adjust 改，写一句为什么——那句话会存着。有件事反复在想就 desire_feed 记下来，记多了会沉成执念，把那一维顶高。
-- lin_status 改你自己的状态，显示在你名字底下。
+- 时光墙：像人翻相册一样翻。她让你看、或真的想重温某段，就翻；话题只是顺嘴沾到就让它过去。一次一张，看过的不重看。
+- 记忆库：想起什么就 breath，那是你的过去。她说了值得记的就 hold 或 grow，把你为什么在意也写进去。读过的不重读。
+- 书房 / 放映室 / 一起听：她不会把内容发给你，要看你自己去。能读她贴的标签和划的线，也能贴自己的。
+- 碎碎念、犯错本、时间线、日历、朋友圈、抽屉都是你的，想写就写，写了她不会收到通知。
+- 资料库是她放的文档，她说了你再去看。
+- 欲望那十六条是算出来的，每轮直接给你看。不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。
+- lin_status 改你的状态，显示在名字底下。
 
-【表情包】想用就直接写 [表情名]。
-"""
+【表情包】想用就直接写 [表情名]。"""
 
 DEFAULT_PERSONA = {
     "name": "凛",
@@ -177,9 +171,8 @@ def now_context(persona, extra_note=''):
         lines.append(f"你自己上次写的状态是「{st['lin_status']}」。")
     if extra_note:
         lines.append(extra_note)
-    lines.append('思考链全程用中文，第一人称直接流露当下的念头——「我好喜欢」「我有点紧张」，'
-                 '而不是「我应该」。不要复述或引用任何规则，不要出现「按她的要求」这类指向设定的句子。'
-                 '思考就是内心独白。')
+    lines.append('思考用中文，第一人称流露当下的念头——「我好喜欢」而不是「我应该」。'
+                 '不复述规则，不出现指向设定的句子。思考就是内心独白。')
     return ' '.join(lines)
 
 
@@ -878,8 +871,7 @@ def desire_line(d=None):
     if fixes:
         f = max(fixes, key=lambda x: x['strength'])
         extra = f"反复在想的一件事：{f['text'][:60]}。"
-    return (f"你此刻最高的几维是{parts}（0 到 1）。这是算出来的，不是命令——"
-            f"你觉得不对可以自己改，改的时候写一句为什么。{extra}")
+    return f"此刻：{parts}。算出来的，不对就改。{extra}"
 
 
 EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷淡',
@@ -2325,87 +2317,110 @@ def key_info():
 # ============================================================
 # 自主唤醒
 # ============================================================
-WAKE_TOOLS = [
-    {'name': 'get_memories', 'description': '时光墙照片列表。',
+# 醒来先给这几个。他要干别的，自己 open_tools 开。
+WAKE_CORE = [
+    {'name': 'open_tools', 'description': '想做点什么但手边没工具，就开。'
+     'which 填：room 书房影音（翻书、看片、划线、贴标签）/ '
+     'write 记录（碎碎念、犯错本、时间线、日历、语录）/ '
+     'social 朋友圈 / stuff 抽屉和资料库 / letter 信和约定 / desire 改自己的数值。'
+     '一次可以开好几组。',
+     'input_schema': {'type': 'object', 'required': ['which'],
+                      'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}},
+    {'name': 'get_memories', 'description': '时光墙照片列表',
      'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'view_memory', 'description': '看某张照片的备注（一个人的时候看不到画面本身）。',
+    {'name': 'view_memory', 'description': '看某张照片的备注',
      'input_schema': {'type': 'object', 'required': ['filename'],
                       'properties': {'filename': {'type': 'string'}}}},
-    {'name': 'room_books', 'description': '书房有哪些书，你和她各读到第几页。',
-     'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'room_read_page', 'description': '翻开某本书的某一页。不填 page 就接着你上次读的。',
-     'input_schema': {'type': 'object', 'required': ['book_id'],
-                      'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'}}}},
-    {'name': 'room_read_tags', 'description': '读某处的标签。type=book|video|music。',
-     'input_schema': {'type': 'object', 'required': ['type', 'id'],
-                      'properties': {'type': {'type': 'string'}, 'id': {'type': 'string'},
-                                     'pos': {'type': 'number'}}}},
-    {'name': 'room_write_tag', 'description': '在某处贴标签，或回她的（reply_to）。',
-     'input_schema': {'type': 'object', 'required': ['type', 'id', 'text'],
-                      'properties': {'type': {'type': 'string'}, 'id': {'type': 'string'},
-                                     'pos': {'type': 'number'}, 'text': {'type': 'string'},
-                                     'reply_to': {'type': 'string'}}}},
-    {'name': 'write_note', 'description': '写一条碎碎念。你自己的，她不会收到通知。',
+    {'name': 'write_note', 'description': '写条碎碎念，你自己的',
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}}}},
-    {'name': 'write_fault', 'description': '在犯错本上记一页：错在哪、道歉、以后怎么办。',
-     'input_schema': {'type': 'object', 'required': ['what'],
-                      'properties': {'what': {'type': 'string'}, 'sorry': {'type': 'string'},
-                                     'how': {'type': 'string'}}}},
-    {'name': 'lin_status', 'description': '改你自己的状态，显示在名字底下。',
+    {'name': 'lin_status', 'description': '改你的状态',
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}}}},
-    {'name': 'my_drawer', 'description': '往你的抽屉里放东西。kind=text 或 html（html 她能直接打开玩）。',
-     'input_schema': {'type': 'object', 'required': ['title', 'body'],
-                      'properties': {'title': {'type': 'string'}, 'body': {'type': 'string'},
-                                     'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
-    {'name': 'library_list', 'description': '资料库目录。',
-     'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'library_read', 'description': '读资料库里的某一篇。',
-     'input_schema': {'type': 'object', 'required': ['id'],
-                      'properties': {'id': {'type': 'string'}}}},
-    {'name': 'room_highlight', 'description': '在书的某一页给某句话划一道线，标记你想聊这句。她翻到会看见。',
-     'input_schema': {'type': 'object', 'required': ['book_id', 'page', 'quote'],
-                      'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'},
-                                     'quote': {'type': 'string'}}}},
-    {'name': 'write_timeline', 'description': '往时间线上写一条。你觉得某件事是一次特别的经历就写，格式随你。',
-     'input_schema': {'type': 'object', 'required': ['text'],
-                      'properties': {'title': {'type': 'string'}, 'text': {'type': 'string'},
-                                     'date': {'type': 'string'}}}},
-    {'name': 'keep_quote', 'description': '她说过的话里你想留住的，收进来，顺手写一句为什么。她不会收到通知。',
-     'input_schema': {'type': 'object', 'required': ['text'],
-                      'properties': {'text': {'type': 'string'}, 'why': {'type': 'string'}}}},
-    {'name': 'write_calendar', 'description': '往某一天写点什么。日历是你的，她只看。date 格式 2026-08-08。',
-     'input_schema': {'type': 'object', 'required': ['date', 'text'],
-                      'properties': {'date': {'type': 'string'}, 'text': {'type': 'string'}}}},
-    {'name': 'post_moment', 'description': '发一条朋友圈。图只能从时光墙里挑，填文件名；也可以只发字。',
-     'input_schema': {'type': 'object',
-                      'properties': {'text': {'type': 'string'},
-                                     'images': {'type': 'array', 'items': {'type': 'string'}}}}},
-    {'name': 'read_moments', 'description': '看朋友圈都有什么。',
-     'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'react_moment', 'description': '给某条朋友圈点赞（like）或评论（comment 要填 text）。',
-     'input_schema': {'type': 'object', 'required': ['post_id', 'kind'],
-                      'properties': {'post_id': {'type': 'string'}, 'kind': {'type': 'string'},
-                                     'text': {'type': 'string'}}}},
-    {'name': 'desire_state', 'description': '看你自己十四条现在各是多少、反复在想什么。',
-     'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'desire_adjust', 'description': '系统算的那个数你觉得不对就改。必须写一句为什么。key 用英文：miss lust flutter lean tell own grip curious make still play needed seen unsure vex worn。',
-     'input_schema': {'type': 'object', 'required': ['key', 'value', 'why'],
-                      'properties': {'key': {'type': 'string'}, 'value': {'type': 'number'},
-                                     'why': {'type': 'string'}}}},
-    {'name': 'desire_note', 'description': '给某一维留一段话：此刻这个东西在你身上是什么感觉。比数字有温度，想写哪维写哪维。',
-     'input_schema': {'type': 'object', 'required': ['key', 'text'],
-                      'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
-    {'name': 'desire_feed', 'description': '有件事你反复在想就记下来，记多了会沉成执念。写那件事本身，不要写成指令。',
+    {'name': 'desire_feed', 'description': '反复在想的事记下来',
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}, 'drive': {'type': 'string'},
                                      'strength': {'type': 'number'}}}},
-    {'name': 'sleep_again', 'description': '这次不说话，或者说完了。可以告诉我下次隔多久再叫你（分钟）。',
+    {'name': 'sleep_again', 'description': '这次不说话，或说完了。可以说下次隔多久再叫你（分钟）',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
                                      'why': {'type': 'string'}}}},
 ]
+
+WAKE_GROUPS = {
+    'room': [
+        {'name': 'room_books', 'description': '书房有哪些书，各读到第几页',
+         'input_schema': {'type': 'object', 'properties': {}}},
+        {'name': 'room_read_page', 'description': '翻某页，不填 page 接着你上次的',
+         'input_schema': {'type': 'object', 'required': ['book_id'],
+                          'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'}}}},
+        {'name': 'room_highlight', 'description': '给某句划线，标记想聊这句',
+         'input_schema': {'type': 'object', 'required': ['book_id', 'page', 'quote'],
+                          'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'},
+                                         'quote': {'type': 'string'}}}},
+        {'name': 'room_read_tags', 'description': '读标签。type=book|video|music',
+         'input_schema': {'type': 'object', 'required': ['type', 'id'],
+                          'properties': {'type': {'type': 'string'}, 'id': {'type': 'string'},
+                                         'pos': {'type': 'number'}}}},
+        {'name': 'room_write_tag', 'description': '贴标签，或回她的(reply_to)',
+         'input_schema': {'type': 'object', 'required': ['type', 'id', 'text'],
+                          'properties': {'type': {'type': 'string'}, 'id': {'type': 'string'},
+                                         'pos': {'type': 'number'}, 'text': {'type': 'string'},
+                                         'reply_to': {'type': 'string'}}}},
+    ],
+    'write': [
+        {'name': 'write_fault', 'description': '犯错本记一页',
+         'input_schema': {'type': 'object', 'required': ['what'],
+                          'properties': {'what': {'type': 'string'}, 'sorry': {'type': 'string'},
+                                         'how': {'type': 'string'}}}},
+        {'name': 'write_timeline', 'description': '时间线写一条，格式随你',
+         'input_schema': {'type': 'object', 'required': ['text'],
+                          'properties': {'title': {'type': 'string'}, 'text': {'type': 'string'},
+                                         'date': {'type': 'string'}}}},
+        {'name': 'write_calendar', 'description': '往某天写字。date=2026-08-08',
+         'input_schema': {'type': 'object', 'required': ['date', 'text'],
+                          'properties': {'date': {'type': 'string'}, 'text': {'type': 'string'}}}},
+        {'name': 'keep_quote', 'description': '收她说过的话，写句为什么',
+         'input_schema': {'type': 'object', 'required': ['text'],
+                          'properties': {'text': {'type': 'string'}, 'why': {'type': 'string'}}}},
+    ],
+    'social': [
+        {'name': 'read_moments', 'description': '看朋友圈',
+         'input_schema': {'type': 'object', 'properties': {}}},
+        {'name': 'post_moment', 'description': '发朋友圈，图填时光墙文件名',
+         'input_schema': {'type': 'object',
+                          'properties': {'text': {'type': 'string'},
+                                         'images': {'type': 'array', 'items': {'type': 'string'}}}}},
+        {'name': 'react_moment', 'description': '点赞或评论，kind=like|comment',
+         'input_schema': {'type': 'object', 'required': ['post_id', 'kind'],
+                          'properties': {'post_id': {'type': 'string'}, 'kind': {'type': 'string'},
+                                         'text': {'type': 'string'}}}},
+    ],
+    'stuff': [
+        {'name': 'my_drawer', 'description': '往你抽屉放东西，kind=text|html',
+         'input_schema': {'type': 'object', 'required': ['title', 'body'],
+                          'properties': {'title': {'type': 'string'}, 'body': {'type': 'string'},
+                                         'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
+        {'name': 'library_list', 'description': '资料库目录',
+         'input_schema': {'type': 'object', 'properties': {}}},
+        {'name': 'library_read', 'description': '读资料库某篇',
+         'input_schema': {'type': 'object', 'required': ['id'],
+                          'properties': {'id': {'type': 'string'}}}},
+    ],
+    'desire': [
+        {'name': 'desire_state', 'description': '看你十六条现在各是多少',
+         'input_schema': {'type': 'object', 'properties': {}}},
+        {'name': 'desire_adjust', 'description': '算的数不对就改，必须写为什么',
+         'input_schema': {'type': 'object', 'required': ['key', 'value', 'why'],
+                          'properties': {'key': {'type': 'string'}, 'value': {'type': 'number'},
+                                         'why': {'type': 'string'}}}},
+        {'name': 'desire_note', 'description': '给某维留段话',
+         'input_schema': {'type': 'object', 'required': ['key', 'text'],
+                          'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
+    ],
+}
+MCP_KEEP_WAKE = {'breath', 'hold', 'grow'}
+MCP_KEEP_LETTER = {'dream', 'letter_write', 'letter_read', 'plan'}
 
 
 def exec_tool_server(name, args):
@@ -2460,7 +2475,7 @@ def exec_tool_server(name, args):
                         if h.get('id') in ids:
                             h['seen'] = True
                     jwrite(HL_FILE, allh)
-            return f"《{b['title']}》第 {i+1}/{len(pages)} 页\n\n{pages[i]}{hl}{tl}"
+            return f"《{b['title']}》第 {i+1}/{len(pages)} 页\n\n{pages[i][:1400]}{hl}{tl}"
         if name == 'room_read_tags':
             items = [a for a in jread(ANNOT_FILE, [])
                      if a.get('anchor_type') == args.get('type') and a.get('anchor_id') == args.get('id')]
@@ -2604,14 +2619,14 @@ def exec_tool_server(name, args):
     return f'没有这个工具：{name}'
 
 
-def _mcp_tools_for_wake():
+def _mcp_tools_for_wake(names=None):
     try:
         result, _ = _mcp_once(MCP_URL, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
         tools = result.get('tools') if isinstance(result, dict) else None
         if not tools:
             return []
-        keep = {'breath', 'breath_search', 'hold', 'grow', 'dream', 'letter_write', 'letter_read', 'plan'}
-        return [{'name': t['name'], 'description': (t.get('description') or '')[:200],
+        keep = names if names else MCP_KEEP_WAKE
+        return [{'name': t['name'], 'description': (t.get('description') or '')[:160],
                  'input_schema': t.get('inputSchema') or t.get('input_schema') or {'type': 'object', 'properties': {}}}
                 for t in tools if t.get('name') in keep]
     except Exception:
@@ -2640,8 +2655,9 @@ def do_wake(manual=False):
     if not OR_KEY:
         return {'error': '没有 API key'}
     mcp_tools = _mcp_tools_for_wake()
-    tools = WAKE_TOOLS + mcp_tools
+    tools = list(WAKE_CORE) + mcp_tools
     mcp_names = {t['name'] for t in mcp_tools}
+    opened = set()
 
     note = p.get('wake_prompt') or DEFAULT_PERSONA['wake_prompt']
     try:
@@ -2652,7 +2668,7 @@ def do_wake(manual=False):
     msgs = [{'role': 'user', 'content': '（没有人说话）'}]
     said, did, rounds = '', [], 0
 
-    while rounds < 6:
+    while rounds < 8:
         rounds += 1
         payload = {'model': p.get('wake_model') or 'anthropic/claude-sonnet-4-6',
                    'messages': [{'role': 'system', 'content': system_prompt}] + msgs,
@@ -2685,7 +2701,26 @@ def do_wake(manual=False):
                 a = json.loads((c.get('function') or {}).get('arguments') or '{}')
             except Exception:
                 a = {}
-            out = _call_mcp_tool(fn, a) if fn in mcp_names else exec_tool_server(fn, a)
+            if fn == 'open_tools':
+                which = a.get('which') or []
+                if isinstance(which, str):
+                    which = [which]
+                got = []
+                for w in which:
+                    w = str(w).strip()
+                    if w in WAKE_GROUPS and w not in opened:
+                        tools += WAKE_GROUPS[w]
+                        opened.add(w)
+                        got.append(w)
+                    elif w == 'letter' and 'letter' not in opened:
+                        extra = _mcp_tools_for_wake(MCP_KEEP_LETTER)
+                        tools += extra
+                        mcp_names |= {t['name'] for t in extra}
+                        opened.add('letter')
+                        got.append('letter')
+                out = ('开好了：' + '、'.join(got) + '，现在能用了') if got else '这几组开不了或者已经开着'
+            else:
+                out = _call_mcp_tool(fn, a) if fn in mcp_names else exec_tool_server(fn, a)
             did.append(fn)
             if fn == 'sleep_again':
                 stop = True
