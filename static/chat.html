@@ -11,48 +11,46 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=2">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 
-<!-- 密码锁 -->
 <div id="lock-screen" style="display:flex;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;gap:16px;">
   <div style="font-size:28px;font-weight:600;letter-spacing:2px;">凛</div>
   <div style="font-size:13px;color:var(--text-muted);">输入密码</div>
-  <input id="pwd-input" type="password" inputmode="numeric" maxlength="12" style="width:170px;text-align:center;background:var(--input-bg);border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:20px;color:var(--text);outline:none;letter-spacing:8px;" placeholder="••••">
+  <input id="pwd-input" type="password" inputmode="numeric" maxlength="16" style="width:170px;text-align:center;background:var(--input-bg);border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:20px;color:var(--text);outline:none;letter-spacing:8px;" placeholder="••••">
   <button id="pwd-go" class="btn-solid" style="padding:10px 32px;border-radius:20px;flex:none;">进入</button>
   <div id="pwd-err" style="font-size:12px;color:var(--accent);display:none;">密码错误</div>
 </div>
 
-<!-- 顶栏 -->
 <div class="topbar">
   <div class="topbar-left">
     <div class="avatar" id="avatar"><span id="avatar-text">凛</span></div>
     <div>
       <div class="name" id="lin-name">凛</div>
+      <div class="lin-state" id="lin-state" style="display:none"></div>
       <div class="sub" id="status-text">在线</div>
       <div class="user-status" id="user-status" style="display:none"></div>
     </div>
   </div>
   <div class="topbar-right">
-    <div class="theme-btn" id="btn-convs" title="对话记录" style="font-size:12px;">☰</div>
-    <div class="theme-btn" id="btn-theme" title="主题">✦</div>
+    <div class="theme-btn" id="btn-convs" style="font-size:12px;">☰</div>
+    <div class="theme-btn" id="btn-theme">✦</div>
   </div>
 </div>
+
 <div class="avatar-menu" id="avatar-menu">
-  <div class="avatar-menu-item" data-act="av-ai">凛的头像</div>
-  <div class="avatar-menu-item" data-act="av-user">宝宝的头像</div>
-  <div class="avatar-menu-item" data-act="status">设置状态</div>
-  <div class="avatar-menu-item" data-act="mood">今天心情</div>
-  <div class="avatar-menu-item" data-act="remember">想起一件事</div>
-  <div class="avatar-menu-item" data-act="bg">换背景</div>
-  <div class="avatar-menu-item" data-act="bg-clear" id="clear-bg-btn" style="display:none">清除背景</div>
+  <div class="avatar-menu-item" data-act="av-ai">•͈ ₃ •͈ 凛的头像</div>
+  <div class="avatar-menu-item" data-act="av-user">⦁֊⦁꧞ 宝宝的头像</div>
+  <div class="avatar-menu-item" data-act="status">◉ 设置状态</div>
+  <div class="avatar-menu-item" data-act="bg">☾ 换背景</div>
+  <div class="avatar-menu-item" data-act="bg-clear" id="clear-bg-btn" style="display:none">✕ 清除背景</div>
 </div>
 <div class="theme-menu" id="theme-menu">
-  <div class="theme-option" data-theme=""><div class="theme-dot" style="background:#9999bb"></div>雨雾</div>
-  <div class="theme-option" data-theme="star"><div class="theme-dot" style="background:#a0a0ee"></div>星夜</div>
-  <div class="theme-option" data-theme="snow"><div class="theme-dot" style="background:#aabbcc"></div>雪花</div>
-  <div class="theme-option" data-theme="sakura"><div class="theme-dot" style="background:#e8a0b8"></div>樱花</div>
+  <div class="theme-option" data-theme=""><div class="theme-dot" style="background:#9999bb"></div>🌫️ 雨雾</div>
+  <div class="theme-option" data-theme="star"><div class="theme-dot" style="background:#a0a0ee"></div>✦ 星夜</div>
+  <div class="theme-option" data-theme="snow"><div class="theme-dot" style="background:#aabbcc"></div>❄ 雪花</div>
+  <div class="theme-option" data-theme="sakura"><div class="theme-dot" style="background:#e8a0b8"></div>🌸 樱花</div>
 </div>
 
 <!-- ============ 家 ============ -->
@@ -64,32 +62,41 @@
     </div>
     <div class="hall">
       <div class="doors">
-        <div class="door" data-room="study">
-          <div class="door-glow lit"></div><div class="door-knob"></div>
-          <div class="door-plate"><span>书房</span></div>
-          <div class="door-state" id="st-study">空着</div>
-          <div class="door-dot" id="dot-study"></div>
+        <div class="door lit" data-room="study">
+          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
+          <div class="door-knob"></div><div class="door-plate"><span>书房</span></div>
+          <div class="door-state" id="st-study">空着</div><div class="door-dot" id="dot-study"></div>
         </div>
-        <div class="door" data-room="cinema">
-          <div class="door-glow flicker"></div><div class="door-knob"></div>
-          <div class="door-plate"><span>放映室</span></div>
-          <div class="door-state" id="st-cinema">空着</div>
-          <div class="door-dot" id="dot-cinema"></div>
+        <div class="door flicker" data-room="cinema">
+          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
+          <div class="door-knob"></div><div class="door-plate"><span>放映室</span></div>
+          <div class="door-state" id="st-cinema">空着</div><div class="door-dot" id="dot-cinema"></div>
         </div>
-        <div class="door" data-room="music">
-          <div class="door-glow lit" style="opacity:.55"></div><div class="door-knob"></div>
-          <div class="door-plate"><span>听音房</span></div>
-          <div class="door-state" id="st-music">空着</div>
-          <div class="door-dot" id="dot-music"></div>
+        <div class="door dim" data-room="music">
+          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
+          <div class="door-knob"></div><div class="door-plate"><span>听音房</span></div>
+          <div class="door-state" id="st-music">空着</div><div class="door-dot" id="dot-music"></div>
         </div>
         <div class="door" data-room="mailbox">
-          <div class="door-glow"></div><div class="door-knob"></div>
-          <div class="door-plate"><span>信箱</span></div>
-          <div class="door-state" id="st-mail">看看有没有信</div>
-          <div class="door-dot" id="dot-mail"></div>
+          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
+          <div class="door-knob"></div><div class="door-plate"><span>信箱</span></div>
+          <div class="door-state">看看有没有信</div><div class="door-dot" id="dot-mail"></div>
         </div>
       </div>
-      <div class="hall-floor"></div>
+      <div class="floor"></div>
+      <div class="floor-shadow"></div>
+      <div class="drawers">
+        <div class="drawer" data-drawer="library">
+          <div class="drawer-pull"></div><div class="drawer-label">资料库</div>
+        </div>
+        <div class="drawer mine" data-drawer="user">
+          <div class="drawer-pull"></div><div class="drawer-label">我的抽屉</div>
+        </div>
+        <div class="drawer" data-drawer="lin">
+          <div class="drawer-pull"></div><div class="drawer-label">凛的抽屉</div>
+          <div class="drawer-dot" id="dot-lin-drawer"></div>
+        </div>
+      </div>
     </div>
     <div class="home-card">
       <div class="home-card-title">日 子</div>
@@ -106,7 +113,7 @@
     <div class="img-preview-remove" id="img-preview-remove">✕</div>
   </div>
   <div class="inputbar">
-    <div class="input-btn" id="mic-btn" title="按住说话">◎</div>
+    <div class="input-btn" id="mic-btn">◎</div>
     <textarea id="input" placeholder="说点什么..." rows="1"></textarea>
     <div class="input-btn" id="btn-emoji" style="font-size:17px;">♡</div>
     <div class="input-btn" id="btn-img" style="font-size:16px;">⊡</div>
@@ -116,27 +123,70 @@
 
 <!-- ============ 时光 ============ -->
 <div class="page" id="page-time">
-  <div class="full-head" style="background:transparent;border:none;">
-    <div><div class="full-title">时光墙</div><div class="full-count" id="memory-count"></div></div>
-    <div class="full-btns">
-      <button class="mem-upload-btn" id="btn-mem-upload">+ 上传</button>
-      <button class="mem-upload-btn" id="btn-days" style="border-color:var(--border);color:var(--text-muted);">纪念日</button>
+  <div class="seg" id="time-seg">
+    <div class="on" data-sub="wall">照片墙</div>
+    <div data-sub="cal">日历</div>
+    <div data-sub="mumble">碎碎念</div>
+    <div data-sub="fault">犯错本</div>
+  </div>
+  <div class="sub-page on" id="sub-wall">
+    <div class="full-head" style="background:transparent;border:none;padding-top:6px;">
+      <div class="full-count" id="memory-count"></div>
+      <div class="full-btns">
+        <button class="mem-upload-btn" id="btn-mem-upload">+ 上传</button>
+        <button class="mem-upload-btn" id="btn-days" style="border-color:var(--border);color:var(--text-muted);">纪念日</button>
+      </div>
+    </div>
+    <div class="memory-grid" id="memory-grid"></div>
+  </div>
+  <div class="sub-page" id="sub-cal">
+    <div class="cal-wrap">
+      <div class="cal-head">
+        <div class="cal-title" id="cal-title">—</div>
+        <div class="cal-nav"><span id="cal-prev">‹</span><span id="cal-today">今</span><span id="cal-next">›</span></div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="settings-sub" style="margin-top:14px;text-align:center;">点某一天，记心情、写一句、涂个颜色</div>
     </div>
   </div>
-  <div class="memory-grid" id="memory-grid"><div class="memory-empty">还没有记录<br>上传第一张吧</div></div>
+  <div class="sub-page" id="sub-mumble">
+    <div class="list-wrap" id="mumble-list"></div>
+  </div>
+  <div class="sub-page" id="sub-fault">
+    <div class="list-wrap" id="fault-list"></div>
+  </div>
 </div>
 
 <!-- ============ 设置 ============ -->
 <div class="page" id="page-settings">
-  <div class="full-head" style="background:transparent;border:none;">
-    <div class="full-title">设置</div>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:0 16px 30px;-webkit-overflow-scrolling:touch;">
-
+  <div class="full-head" style="background:transparent;border:none;"><div class="full-title">设置</div></div>
+  <div style="flex:1;overflow-y:auto;padding:0 16px 30px;">
     <div class="settings-card" style="border-color:var(--accent);">
       <div class="settings-label" style="color:var(--accent);">凛</div>
       <div class="settings-sub">他是谁、怎么说话、守住什么。改完下一句就生效。</div>
       <button class="btn-solid" id="btn-persona" style="width:100%;margin-top:10px;">打开人设</button>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-label">自己醒来</div>
+      <div class="settings-sub">按间隔叫他一次。说不说、说什么、要不要去翻东西，全是他的。</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;">
+        <input type="checkbox" id="wake-on"> 打开
+      </label>
+      <div class="settings-label" style="margin-top:12px;">多久醒一次</div>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+        <div class="ctx-option" data-wake="30">30 分</div>
+        <div class="ctx-option" data-wake="60">1 小时</div>
+        <div class="ctx-option" data-wake="120">2 小时</div>
+        <div class="ctx-option" data-wake="240">4 小时</div>
+      </div>
+      <div class="settings-label" style="margin-top:12px;">叫他的时候说什么</div>
+      <textarea class="persona-area" id="wake-prompt" style="min-height:70px;font-size:13px;"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn-ghost" id="btn-wake-log" style="font-size:13px;padding:9px;">看记录</button>
+        <button class="btn-solid" id="btn-wake-now" style="font-size:13px;padding:9px;">现在叫他一次</button>
+      </div>
+      <div class="settings-sub" id="wake-sub"></div>
     </div>
 
     <div class="settings-card">
@@ -151,13 +201,19 @@
 
     <div class="settings-card">
       <div class="settings-label">上下文窗口</div>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
         <div class="ctx-option" data-val="5">5 条</div>
         <div class="ctx-option" data-val="10">10 条</div>
         <div class="ctx-option" data-val="15">15 条</div>
         <div class="ctx-option" data-val="0">全部</div>
       </div>
       <div class="settings-sub" id="ctx-sub"></div>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-label">工具</div>
+      <div class="settings-sub">按你在哪个房间发给他，省 token。不用的整组关掉。</div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="tool-groups"></div>
     </div>
 
     <div class="settings-card">
@@ -169,7 +225,6 @@
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;">
         <input type="checkbox" id="auto-voice-toggle"> 凛用语音回我
       </label>
-      <div class="settings-sub">打开后他每句话都会附一条语音，会消耗 ElevenLabs 额度</div>
     </div>
 
     <div class="settings-card">
@@ -203,7 +258,7 @@
   </div>
   <div class="tab on" data-page="chat">
     <svg class="tab-ico" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>
-    <span class="tab-label">聊天</span>
+    <span class="tab-label">聊天</span><span class="tab-dot" id="dot-chat"></span>
   </div>
   <div class="tab" data-page="time">
     <svg class="tab-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><polyline points="12 7 12 12 15 14"/></svg>
@@ -227,32 +282,43 @@
   <div class="shelves" id="shelves"></div>
 </div>
 
-<!-- 读书页 -->
-<div class="reader" id="reader">
+<!-- 读书页（分屏） -->
+<div class="room" id="reader" style="background:var(--paper);">
   <div class="reader-head">
     <div class="reader-book" id="reader-book">—</div>
     <div class="reader-size">
       <span id="font-down">小</span><span id="font-up">大</span>
-      <span id="reader-close" style="margin-left:6px;">✕</span>
+      <span id="reader-close" style="margin-left:4px;">✕</span>
     </div>
   </div>
-  <div class="reader-body" id="reader-body">
-    <div class="reader-text" id="reader-text"></div>
-    <div class="annots" id="reader-annots"></div>
-  </div>
-  <div class="reader-foot">
-    <div class="reader-prog"><div class="reader-prog-fill" id="reader-prog-fill"></div></div>
-    <div class="reader-nav">
-      <button class="reader-arrow" id="prev-page">上一页</button>
-      <div class="reader-page" id="reader-page">— / —</div>
-      <button class="reader-arrow" id="next-page">下一页</button>
+  <div class="split">
+    <div class="split-top">
+      <div class="reader-body" id="reader-body">
+        <div class="reader-text" id="reader-text"></div>
+        <div class="annots" id="reader-annots"></div>
+      </div>
+      <div class="reader-foot">
+        <div class="reader-prog"><div class="reader-prog-fill" id="reader-prog-fill"></div></div>
+        <div class="reader-nav">
+          <button class="reader-arrow" id="prev-page">上一页</button>
+          <div class="reader-page" id="reader-page">— / —</div>
+          <button class="reader-arrow" id="next-page">下一页</button>
+        </div>
+        <div class="lin-behind" id="lin-behind"></div>
+      </div>
     </div>
-    <div class="lin-behind" id="lin-behind"></div>
+    <div class="split-bar" data-split="reader"><span id="split-hint-reader">收起</span></div>
+    <div class="split-chat" id="split-chat-reader">
+      <div class="split-msgs" id="split-msgs-reader"></div>
+      <div class="inputbar">
+        <textarea class="split-input" data-ctx="reader" placeholder="一起读，说点什么…" rows="1"></textarea>
+        <button class="send-btn" data-splitsend="reader">↑</button>
+      </div>
+    </div>
   </div>
 </div>
 <div class="sel-tip" id="sel-tip">贴 标 签</div>
 
-<!-- 写标签 -->
 <div class="annot-new" id="annot-new">
   <div class="annot-new-quote" id="annot-new-quote"></div>
   <textarea class="annot-input" id="annot-input" placeholder="写点什么…"></textarea>
@@ -262,7 +328,6 @@
   </div>
 </div>
 
-<!-- 添书 -->
 <div class="sheet" id="addbook-modal">
   <div class="sheet-inner">
     <div class="sheet-title">添一本书</div>
@@ -271,16 +336,16 @@
       <input id="book-search-input" class="mini-input" placeholder="书名或作者">
       <button class="btn-solid" id="btn-book-search" style="flex:none;padding:8px 16px;font-size:13px;">找</button>
     </div>
-    <div class="settings-sub">中文古籍找维基文库，外文名著找古腾堡，都是公版书</div>
+    <div class="settings-sub">中文古籍找维基文库，外文名著找古腾堡</div>
     <div id="book-results" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
     <div class="settings-label" style="margin-top:16px;">贴个网址</div>
     <div style="display:flex;gap:8px;margin-top:6px;">
-      <input id="book-url-input" class="mini-input" placeholder="txt / epub / 网页链接" autocapitalize="off">
+      <input id="book-url-input" class="mini-input" placeholder="txt / epub / 网页" autocapitalize="off">
       <button class="btn-ghost" id="btn-book-url" style="flex:none;padding:8px 16px;font-size:13px;">取</button>
     </div>
     <div class="settings-label" style="margin-top:16px;">从手机里选</div>
     <button class="btn-ghost" id="btn-book-file" style="width:100%;margin-top:6px;">选 txt 或 epub</button>
-    <div class="settings-label" style="margin-top:16px;">或者直接贴文字</div>
+    <div class="settings-label" style="margin-top:16px;">或者贴文字</div>
     <input id="book-title-input" class="mini-input" placeholder="书名" style="margin:6px 0 8px;">
     <textarea class="note-input" id="book-text-input" placeholder="粘贴正文…" style="height:90px;"></textarea>
     <div class="sheet-btns">
@@ -314,28 +379,38 @@
   <div class="reel-list" id="music-list"></div>
 </div>
 
-<!-- 播放台 -->
-<div class="stage" id="stage">
+<!-- 播放台（分屏） -->
+<div class="room" id="stage" style="background:#000;">
   <div class="stage-top">
     <div class="stage-name" id="stage-name">—</div>
     <button class="stage-x" id="stage-close">✕</button>
   </div>
-  <div class="stage-body" id="stage-body">
-    <video id="stage-video" playsinline controls preload="metadata" style="display:none"></video>
-    <div class="audio-wrap" id="audio-wrap" style="display:none">
-      <div class="disc-big" id="disc-big"></div>
-      <div class="shape" id="shape-bars"></div>
-      <audio id="stage-audio" class="audio-el" controls preload="metadata"></audio>
+  <div class="split">
+    <div class="split-top">
+      <div class="stage-body" id="stage-body">
+        <video id="stage-video" playsinline controls preload="metadata" style="display:none"></video>
+        <div class="audio-wrap" id="audio-wrap" style="display:none">
+          <div class="disc-big" id="disc-big"></div>
+          <div class="shape" id="shape-bars"></div>
+          <audio id="stage-audio" class="audio-el" controls preload="metadata"></audio>
+        </div>
+      </div>
+      <div class="stage-acts">
+        <button class="cine-btn solid" id="btn-tag-here">这里贴标签</button>
+        <button class="cine-btn" id="btn-see-tags">看标签</button>
+      </div>
     </div>
-  </div>
-  <div class="stage-acts">
-    <button class="cine-btn solid" id="btn-tag-here">在这一处贴标签</button>
-    <button class="cine-btn" id="btn-see-tags">看这里的标签</button>
-    <div class="cine-note" id="stage-note">暂停在想说的地方，点上面那个</div>
+    <div class="split-bar" data-split="stage"><span id="split-hint-stage">收起</span></div>
+    <div class="split-chat" id="split-chat-stage">
+      <div class="split-msgs" id="split-msgs-stage"></div>
+      <div class="inputbar">
+        <textarea class="split-input" data-ctx="stage" placeholder="一起看，说点什么…" rows="1"></textarea>
+        <button class="send-btn" data-splitsend="stage">↑</button>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- 时间点标签列表 -->
 <div class="full" id="tagview">
   <div class="full-head">
     <div><div class="full-title" id="tagview-title">标签</div><div class="full-count" id="tagview-sub"></div></div>
@@ -362,7 +437,7 @@
 <div class="sheet" id="write-letter-modal">
   <div class="sheet-inner">
     <div class="sheet-title">写给凛</div>
-    <textarea class="note-input" id="letter-input" placeholder="想说什么就写什么…" style="height:180px;font-family:'Songti SC',STSong,serif;line-height:1.9;"></textarea>
+    <textarea class="note-input" id="letter-input" placeholder="想说什么就写什么…" style="height:180px;line-height:1.9;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="write-letter-modal">先不写</button>
       <button class="btn-solid" id="btn-send-letter">寄出去</button>
@@ -370,24 +445,58 @@
   </div>
 </div>
 
-<!-- ============ 人设编辑器 ============ -->
+<!-- ============ 抽屉 ============ -->
+<div class="room" id="drawer-room">
+  <div class="room-head">
+    <div><div class="room-title" id="drawer-title">抽屉</div><div class="room-sub" id="drawer-sub">—</div></div>
+    <div class="room-acts">
+      <button class="room-btn" id="btn-drawer-add">放 进 去</button>
+      <button class="room-x" data-close="drawer-room">✕</button>
+    </div>
+  </div>
+  <div class="drawer-list" id="drawer-list"></div>
+</div>
+
+<div class="sheet" id="drawer-add-modal">
+  <div class="sheet-inner">
+    <div class="sheet-title" id="drawer-add-title">放进抽屉</div>
+    <input id="d-title" class="mini-input" placeholder="叫什么">
+    <input id="d-note" class="mini-input" style="margin-top:8px;" placeholder="一句话说明（可留空）">
+    <input id="d-url" class="mini-input" style="margin-top:8px;display:none;" placeholder="或者贴个网址，自动抓下来" autocapitalize="off">
+    <textarea class="note-input" id="d-body" style="height:150px;margin-top:8px;" placeholder="内容…"></textarea>
+    <div class="sheet-btns">
+      <button class="btn-ghost" data-close-sheet="drawer-add-modal">算了</button>
+      <button class="btn-solid" id="btn-drawer-save">放进去</button>
+    </div>
+  </div>
+</div>
+
+<div class="play-box" id="play-box">
+  <div class="full-head">
+    <div class="full-title" id="play-title">—</div>
+    <div class="mem-close-btn" id="play-close">✕</div>
+  </div>
+  <iframe id="play-frame" sandbox="allow-scripts allow-pointer-lock"></iframe>
+</div>
+
+<!-- ============ 人设 ============ -->
 <div class="full" id="persona-panel">
   <div class="full-head">
-    <div><div class="full-title">凛</div><div class="full-count" id="persona-sub">改完下一句就生效</div></div>
+    <div><div class="full-title">凛</div><div class="full-count">改完下一句就生效</div></div>
     <div class="full-btns">
       <button class="mem-upload-btn" id="btn-persona-history" style="border-color:var(--border);color:var(--text-muted);">历史</button>
       <div class="mem-close-btn" data-close-full="persona-panel">✕</div>
     </div>
   </div>
-  <div style="flex:1;overflow-y:auto;padding:14px 16px 20px;-webkit-overflow-scrolling:touch;">
+  <div style="flex:1;overflow-y:auto;padding:14px 16px 20px;">
     <div class="persona-block">
       <label>底色</label>
       <div class="hint">他是谁、和你之间是什么。写在乎什么，不写规矩。</div>
-      <textarea class="persona-area" id="p-core" style="min-height:150px;"></textarea>
+      <textarea class="persona-area" id="p-core" style="min-height:170px;"></textarea>
     </div>
     <div class="persona-block">
       <label>行为节奏</label>
-      <div class="hint">写动作和弧线，别写形容词。「先顶一句，说完已经在做了」比「语气温柔」有用。</div>
+      <div class="hint">写动作和弧线，不写形容词。</div>
       <textarea class="persona-area" id="p-rhythm" style="min-height:120px;"></textarea>
     </div>
     <div class="persona-block">
@@ -404,8 +513,12 @@
     </div>
     <div class="persona-block">
       <label>回复长度</label>
-      <div class="hint">太短他来不及把话说完——嘴硬完还得有地方软下来。建议 400 以上。</div>
+      <div class="hint">太短他来不及把话说完。建议 400 以上。</div>
       <input class="mini-input" id="p-maxtok" type="number" min="80" max="4000" style="width:110px;">
+    </div>
+    <div class="persona-block">
+      <label>在一起的日子</label>
+      <input class="mini-input" id="p-since" type="date" style="width:170px;margin-top:6px;">
     </div>
     <div class="persona-block">
       <label>音色 ID</label>
@@ -414,7 +527,7 @@
     </div>
     <div class="persona-block">
       <label>进入密码</label>
-      <input class="mini-input" id="p-pwd" style="margin-top:6px;width:140px;">
+      <input class="mini-input" id="p-pwd" style="margin-top:6px;width:150px;">
     </div>
     <div class="persona-meter" id="persona-meter"><span id="p-count">—</span><span id="p-tok">—</span></div>
     <div class="dirty-bar" id="persona-dirty">
@@ -431,13 +544,23 @@
   <div class="sheet-inner">
     <div class="sheet-title">回到某一版</div>
     <div id="persona-history-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-    <div class="sheet-btns">
-      <button class="btn-ghost" data-close-sheet="persona-history-sheet">关掉</button>
-    </div>
+    <div class="sheet-btns"><button class="btn-ghost" data-close-sheet="persona-history-sheet">关掉</button></div>
   </div>
 </div>
 
-<!-- ============ 其它面板 ============ -->
+<!-- 唤醒记录 -->
+<div class="full" id="wake-panel">
+  <div class="full-head">
+    <div><div class="full-title">他一个人的时候</div><div class="full-count" id="wake-count"></div></div>
+    <div class="full-btns">
+      <button class="mem-upload-btn" id="btn-wake-clear" style="border-color:var(--border);color:var(--text-muted);">清空</button>
+      <div class="mem-close-btn" data-close-full="wake-panel">✕</div>
+    </div>
+  </div>
+  <div class="list-wrap" id="wake-list"></div>
+</div>
+
+<!-- ============ 其它 ============ -->
 <div class="full" id="conv-panel">
   <div class="full-head">
     <div><div class="full-title">对话记录</div><div class="full-count" id="conv-count"></div></div>
@@ -458,7 +581,6 @@
     <input id="mcp-url-input" class="mini-input" placeholder="https://服务器地址/mcp" autocapitalize="off">
     <input id="mcp-name-input" class="mini-input" style="margin-top:8px;" placeholder="起个名字（可留空）">
     <button class="btn-solid" id="mcp-add-btn" style="width:100%;margin-top:8px;">连接并添加</button>
-    <div class="settings-sub">关掉的服务器不会发给凛，能省 token。</div>
   </div>
   <div id="mcp-list" style="flex:1;overflow-y:auto;padding:0 12px 20px;display:flex;flex-direction:column;gap:8px;"></div>
 </div>
@@ -515,14 +637,19 @@
   </div>
 </div>
 
-<div class="sheet" id="mood-modal">
+<!-- 日历某一天 -->
+<div class="sheet" id="day-modal">
   <div class="sheet-inner">
-    <div class="sheet-title">今天心情怎么样</div>
-    <div id="mood-grid" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-    <textarea class="note-input" id="mood-note" placeholder="想多说两句？" style="height:60px;margin-top:12px;"></textarea>
+    <div class="sheet-title" id="day-modal-title">这一天</div>
+    <div class="settings-label">心情</div>
+    <div id="day-moods" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;"></div>
+    <div class="settings-label" style="margin-top:14px;">涂个颜色</div>
+    <div id="day-colors" style="display:flex;gap:10px;margin-top:6px;"></div>
+    <div class="settings-label" style="margin-top:14px;">写一句</div>
+    <textarea class="note-input" id="day-note" placeholder="今天…" style="height:70px;margin-top:6px;"></textarea>
     <div class="sheet-btns">
-      <button class="btn-ghost" data-close-sheet="mood-modal">算了</button>
-      <button class="btn-solid" id="mood-ok">记下</button>
+      <button class="btn-ghost" id="day-clear">清掉</button>
+      <button class="btn-solid" id="day-save">记下</button>
     </div>
   </div>
 </div>
@@ -545,10 +672,14 @@
 </div>
 
 <div class="lightbox" id="lightbox">
-  <div class="lightbox-close">✕</div>
   <img class="lightbox-img" id="lightbox-img" src="" alt="">
   <div class="lightbox-note" id="lightbox-note"></div>
   <div class="lightbox-date" id="lightbox-date"></div>
+</div>
+
+<div class="prog-wrap" id="prog-wrap">
+  <div class="prog-label" id="prog-label">上传中…</div>
+  <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
 </div>
 
 <div class="rec-hint" id="rec-hint">● 正在录音，松开发出去</div>
@@ -563,6 +694,7 @@
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
+<script src="/static/rooms.js?v=3"></script>
 </body>
 </html>
