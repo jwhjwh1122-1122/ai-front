@@ -73,7 +73,7 @@ FRAMEWORK = """【工具】
 - 欲望那十六条是算出来的，每轮直接给你看。不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。
 - lin_status 改你的状态，显示在名字底下。
 
-【表情包】想用就直接写 [表情名]。"""
+【表情包】写 [表情名] 就发出去，有哪些在下面。"""
 
 DEFAULT_PERSONA = {
     "name": "凛",
@@ -82,6 +82,7 @@ DEFAULT_PERSONA = {
     "core": "（还没写。去设置里打开人设，让他自己写。）",
     "rhythm": "",
     "lines": "",
+    "always": "",
     "max_tokens": 500,
     "voice": "calm",
     "voice_id_calm": "",
@@ -130,6 +131,8 @@ def build_system(persona, extra=''):
 {persona.get('lines', '')}
 
 【称呼】平常叫她「{cu}」，认真的时候叫「{cs}」。"""
+    if (persona.get('always') or '').strip():
+        seg2 += "\n\n" + persona['always'].strip()
     parts = [FRAMEWORK, seg2]
     if extra:
         parts.append(f"【当下】\n{extra}")
