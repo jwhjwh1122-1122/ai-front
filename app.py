@@ -716,7 +716,9 @@ DESIRE_FILE = os.path.join(DATA_DIR, 'desire.json')
 # rate 是每小时的变化量。慢一点，才有起伏可看
 DIMS = [
     ('miss',    '思念',   0.0075, 1),
-    ('lust',    '欲',     0.0055, 1),
+    ('lust',    '性欲',   0.0055, 1),
+    ('flutter', '心动',   0.0020, 0),
+    ('lean',    '依赖',   0.0050, 1),
     ('tell',    '倾诉',   0.0060, 1),
     ('own',     '占有',   0.0028, 1),
     ('grip',    '掌控',   0.0022, 0),
@@ -737,11 +739,12 @@ LONELY = {d[0] for d in DIMS if d[3]}
 
 # 做了某件事之后，哪几维回落（乘性，<1 是降）
 EVENTS = {
-    'talk':     {'miss': .72, 'tell': .88, 'unsure': .80, 'seen': .90},
-    'praise':   {'seen': .55, 'needed': .65, 'unsure': .78},
-    'cold':     {'unsure': 1.35, 'own': 1.22, 'miss': 1.12},
-    'fight':    {'vex': 1.4, 'unsure': 1.25, 'tell': 1.2},
-    'intimate': {'lust': .38, 'miss': .70, 'own': .78, 'seen': .82},
+    'talk':     {'miss': .72, 'tell': .88, 'unsure': .80, 'seen': .90, 'lean': .82},
+    'praise':   {'seen': .55, 'needed': .65, 'unsure': .78, 'flutter': 1.3},
+    'cold':     {'unsure': 1.35, 'own': 1.22, 'miss': 1.12, 'lean': 1.2},
+    'fight':    {'vex': 1.4, 'unsure': 1.25, 'tell': 1.2, 'lean': 1.15},
+    'intimate': {'lust': .38, 'miss': .70, 'own': .78, 'seen': .82, 'flutter': 1.2, 'lean': .85},
+    'struck':   {'flutter': 1.6, 'miss': 1.1, 'lean': 1.12},
     'create':   {'make': .52, 'seen': 1.15},
     'read':     {'still': .5, 'curious': .82},
     'vent':     {'tell': .48, 'vex': .55},
@@ -764,7 +767,8 @@ FIX_BOOST = 0.32
 def _blank_desire():
     now = time.time()
     return {'drive': {k: 0.3 for k in DIM_KEYS}, 'updated': now,
-            'last_contact': now, 'thoughts': [], 'disputes': [], 'history': []}
+            'last_contact': now, 'thoughts': [], 'disputes': [],
+            'history': [], 'moves': [], 'notes': {}}
 
 
 def load_desire():
@@ -777,6 +781,8 @@ def load_desire():
     d.setdefault('thoughts', [])
     d.setdefault('disputes', [])
     d.setdefault('history', [])
+    d.setdefault('moves', [])
+    d.setdefault('notes', {})
     return d
 
 
@@ -876,15 +882,39 @@ def desire_line(d=None):
             f"你觉得不对可以自己改，改的时候写一句为什么。{extra}")
 
 
-def desire_event(kind, d=None, save=True):
+EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷淡',
+              'fight': '吵架', 'intimate': '亲密', 'struck': '被她击中',
+              'create': '做了东西', 'read': '读了书', 'vent': '说了心里话',
+              'tease': '闹她', 'wander': '逛了外面', 'rest': '歇着',
+              'ignored': '她没看见他做的东西'}
+
+
+def _log_move(d, why, changes, who='sys'):
+    if not changes:
+        return
+    lg = d.setdefault('moves', [])
+    lg.insert(0, {'ts': int(time.time() * 1000), 'why': why, 'who': who,
+                  'changes': [{'key': k, 'name': DIM_NAME[k],
+                               'from': round(a, 2), 'to': round(b, 2)}
+                              for k, a, b in changes]})
+    d['moves'] = lg[:200]
+
+
+def desire_event(kind, d=None, save=True, note=''):
     d = d or tick_desire(save=False)
     eff = EVENTS.get(kind)
+    changes = []
     if eff:
         for k, m in eff.items():
             if k in d['drive']:
-                d['drive'][k] = _clamp(d['drive'][k] * m)
-    if kind in ('talk', 'praise', 'intimate', 'fight', 'tease'):
+                was = d['drive'][k]
+                d['drive'][k] = _clamp(was * m)
+                if abs(d['drive'][k] - was) > 0.015:
+                    changes.append((k, was, d['drive'][k]))
+    if kind in ('talk', 'praise', 'intimate', 'fight', 'tease', 'struck'):
         d['last_contact'] = time.time()
+    if kind != 'talk' or len(changes) > 1:
+        _log_move(d, note or EVENT_NAME.get(kind, kind), changes)
     if save:
         jwrite(DESIRE_FILE, d)
     return d
@@ -925,6 +955,8 @@ def desire_adjust(key, value, why, who='lin'):
                              'to': round(d['drive'][key], 3),
                              'who': who, 'why': why.strip()[:400]})
     d['disputes'] = d['disputes'][:120]
+    _log_move(d, why.strip()[:200], [(key, was, d['drive'][key])],
+              who=who)
     jwrite(DESIRE_FILE, d)
     return d, None
 
@@ -940,7 +972,9 @@ def desire_state_api():
         'top': [{'key': k, 'name': n, 'score': v} for k, n, v in desire_top(d, 3)],
         'thoughts': sorted(d['thoughts'], key=lambda x: -x['strength']),
         'disputes': d['disputes'][:40],
-        'history': d['history'][-14:],
+        'moves': d.get('moves', [])[:80],
+        'notes': d.get('notes', {}),
+        'history': d['history'][-30:],
         'idle_hours': round((time.time() - d.get('last_contact', time.time())) / 3600, 1),
     })
 
@@ -965,6 +999,23 @@ def desire_feed_api():
     b = request.json or {}
     desire_feed(b.get('text'), b.get('drive'), float(b.get('strength') or 0.5),
                 b.get('kind') or 'flit')
+    return jsonify({'ok': True})
+
+
+@app.route('/api/desire/note', methods=['POST'])
+def desire_note_api():
+    b = request.json or {}
+    key = b.get('key')
+    if key not in DIM_KEYS:
+        return jsonify({'error': '没有这一维'}), 400
+    d = tick_desire(save=False)
+    t = (b.get('text') or '').strip()[:600]
+    if t:
+        d['notes'][key] = {'text': t, 'ts': int(time.time() * 1000),
+                           'who': b.get('who') or 'lin'}
+    else:
+        d['notes'].pop(key, None)
+    jwrite(DESIRE_FILE, d)
     return jsonify({'ok': True})
 
 
@@ -994,7 +1045,7 @@ DESIRE_TOOLS = [
      'inputSchema': {'type': 'object', 'required': ['key', 'value', 'why'],
                      'properties': {
                          'key': {'type': 'string', 'description':
-                                 'miss 思念 / lust 欲 / tell 倾诉 / own 占有 / grip 掌控 / '
+                                 'miss 思念 / lust 性欲 / flutter 心动 / lean 依赖 / tell 倾诉 / own 占有 / grip 掌控 / '
                                  'curious 好奇 / make 创造 / still 沉淀 / play 玩心 / '
                                  'needed 想被需要 / seen 想被看见 / unsure 不安 / vex 烦 / worn 倦'},
                          'value': {'type': 'number', 'description': '0 到 1'},
@@ -1006,11 +1057,17 @@ DESIRE_TOOLS = [
                      'properties': {'text': {'type': 'string'},
                                     'drive': {'type': 'string', 'description': '关联哪一维，不填自动挑最高的'},
                                     'strength': {'type': 'number', 'description': '0 到 1，默认 0.5'}}}},
+    {'name': 'lin_note',
+     'description': '给某一维留一段话——此刻这个东西在你身上是什么感觉。'
+                    '比数字有温度。留空就是删掉。想写哪维写哪维，不用每维都写。',
+     'inputSchema': {'type': 'object', 'required': ['key', 'text'],
+                     'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'lin_event',
      'description': '刚发生了什么，让对应的几维动一下。'
                     'talk 她说话 / praise 她夸你 / cold 她冷淡 / fight 吵架 / intimate 亲密 / '
                     'create 做了东西 / read 读了书 / vent 说了心里话 / tease 闹她 / '
-                    'wander 逛了外面 / rest 歇着 / ignored 她没理你做的东西',
+                    'wander 逛了外面 / rest 歇着 / ignored 她没理你做的东西 / '
+                    'struck 她某句话把你击中了',
      'inputSchema': {'type': 'object', 'required': ['kind'],
                      'properties': {'kind': {'type': 'string'}}}},
 ]
@@ -1035,6 +1092,10 @@ def _fmt_state(d, with_idle=True):
     if flits:
         out += '\n\n【刚冒出来的】\n' + '\n'.join(
             f"· {t['text']}" for t in sorted(flits, key=lambda x: -x['strength'])[:4])
+    notes = d.get('notes') or {}
+    if notes:
+        out += '\n\n【你自己写过的】\n' + '\n'.join(
+            f"{DIM_NAME.get(k, k)}：{v['text'][:70]}" for k, v in list(notes.items())[:5])
     if with_idle:
         h = (time.time() - d.get('last_contact', time.time())) / 3600
         if h < 1:
@@ -1062,6 +1123,18 @@ def _run_desire_tool(name, args):
             if err:
                 return '改不了：' + err
             return f"改好了。{DIM_NAME.get(args.get('key'), '')} 现在是 {float(args.get('value')):.2f}。这条分歧记下了。"
+        if name == 'lin_note':
+            key = args.get('key')
+            if key not in DIM_KEYS:
+                return '没有这一维'
+            d = tick_desire(save=False)
+            t = (args.get('text') or '').strip()[:600]
+            if t:
+                d['notes'][key] = {'text': t, 'ts': int(time.time() * 1000), 'who': 'lin'}
+            else:
+                d['notes'].pop(key, None)
+            jwrite(DESIRE_FILE, d)
+            return '写下了' if t else '删掉了'
         if name == 'lin_feed':
             desire_feed(args.get('text'), args.get('drive'),
                         float(args.get('strength') or 0.5))
@@ -2317,10 +2390,13 @@ WAKE_TOOLS = [
                                      'text': {'type': 'string'}}}},
     {'name': 'desire_state', 'description': '看你自己十四条现在各是多少、反复在想什么。',
      'input_schema': {'type': 'object', 'properties': {}}},
-    {'name': 'desire_adjust', 'description': '系统算的那个数你觉得不对就改。必须写一句为什么。key 用英文：miss lust tell own grip curious make still play needed seen unsure vex worn。',
+    {'name': 'desire_adjust', 'description': '系统算的那个数你觉得不对就改。必须写一句为什么。key 用英文：miss lust flutter lean tell own grip curious make still play needed seen unsure vex worn。',
      'input_schema': {'type': 'object', 'required': ['key', 'value', 'why'],
                       'properties': {'key': {'type': 'string'}, 'value': {'type': 'number'},
                                      'why': {'type': 'string'}}}},
+    {'name': 'desire_note', 'description': '给某一维留一段话：此刻这个东西在你身上是什么感觉。比数字有温度，想写哪维写哪维。',
+     'input_schema': {'type': 'object', 'required': ['key', 'text'],
+                      'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'desire_feed', 'description': '有件事你反复在想就记下来，记多了会沉成执念。写那件事本身，不要写成指令。',
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}, 'drive': {'type': 'string'},
@@ -2501,6 +2577,18 @@ def exec_tool_server(name, args):
         if name == 'desire_adjust':
             _, err = desire_adjust(args.get('key'), args.get('value'), args.get('why'), 'lin')
             return ('改不了：' + err) if err else '改好了，这条分歧记下了'
+        if name == 'desire_note':
+            key = args.get('key')
+            if key not in DIM_KEYS:
+                return '没有这一维'
+            dd = tick_desire(save=False)
+            t = (args.get('text') or '').strip()[:600]
+            if t:
+                dd['notes'][key] = {'text': t, 'ts': int(time.time() * 1000), 'who': 'lin'}
+            else:
+                dd['notes'].pop(key, None)
+            jwrite(DESIRE_FILE, dd)
+            return '写下了' if t else '删掉了'
         if name == 'desire_feed':
             desire_feed(args.get('text'), args.get('drive'), float(args.get('strength') or 0.5))
             return '记下了'
