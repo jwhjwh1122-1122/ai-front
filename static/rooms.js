@@ -622,12 +622,47 @@ function openPlay(x) {
 
 // ============ 欲望室 ============
 const DGROUP = [
-  ['朝 她', ['miss', 'lust', 'tell', 'own', 'grip']],
+  ['朝 她', ['miss', 'lust', 'flutter', 'lean', 'tell', 'own', 'grip']],
   ['朝 自 己', ['curious', 'make', 'still', 'play']],
   ['关 于 她 怎 么 看 他', ['needed', 'seen']],
   ['消 耗 他 的', ['unsure', 'vex', 'worn']],
 ];
-let dimEditing = null, desireData = null;
+let dimEditing = null, desireData = null, dimViewing = null;
+
+function DIMNAME(k) {
+  const x = (desireData && desireData.dims || []).find(d => d.key === k);
+  return x ? x.name : k;
+}
+function radarSvg(dims, topKey) {
+  const n = dims.length, R = 96, cx = 132, cy = 118;
+  const pt = (i, r) => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+  };
+  let g = '';
+  [0.25, 0.5, 0.75, 1].forEach(f => {
+    const p = dims.map((_, i) => pt(i, R * f).map(v => v.toFixed(1)).join(',')).join(' ');
+    g += `<polygon class="rd-grid" points="${p}"/>`;
+  });
+  dims.forEach((_, i) => {
+    const [x, y] = pt(i, R);
+    g += `<line class="rd-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+  });
+  const area = dims.map((d, i) => pt(i, R * Math.max(0.02, d.value)).map(v => v.toFixed(1)).join(',')).join(' ');
+  g += `<polygon class="rd-area" points="${area}"/>`;
+  dims.forEach((d, i) => {
+    const [x, y] = pt(i, R * Math.max(0.02, d.value));
+    if (d.key === topKey) g += `<circle class="rd-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`;
+  });
+  dims.forEach((d, i) => {
+    const [x, y] = pt(i, R + 15);
+    const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+    const cos = Math.cos(a);
+    const anchor = Math.abs(cos) < 0.25 ? 'middle' : (cos > 0 ? 'start' : 'end');
+    g += `<text class="rd-lab${d.key === topKey ? ' hot' : ''}" x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="${anchor}">${d.name}</text>`;
+  });
+  return `<svg viewBox="0 0 264 236" width="100%" style="max-width:340px">${g}</svg>`;
+}
 
 async function openDesire() {
   $('desireroom').classList.add('open');
@@ -638,14 +673,17 @@ async function openDesire() {
     el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">连不上</div>'; return;
   }
   desireData = d;
-  const byKey = {};
-  d.dims.forEach(x => byKey[x.key] = x);
+  const byKey = {}; d.dims.forEach(x => byKey[x.key] = x);
   const topKey = (d.top[0] || {}).key;
-  const editedKeys = new Set((d.disputes || []).slice(0, 30).map(x => x.key));
-
+  const notes = d.notes || {};
+  const edited = new Set((d.disputes || []).slice(0, 40).map(x => x.key));
   $('desire-sub').textContent = d.top.map(t => `${t.name} ${t.score.toFixed(2)}`).join(' · ');
 
-  let h = `<div class="d-idle">上次说话到现在 ${d.idle_hours < 1 ? Math.round(d.idle_hours * 60) + ' 分钟' : (d.idle_hours < 24 ? d.idle_hours + ' 小时' : (d.idle_hours / 24).toFixed(1) + ' 天')}</div>`;
+  const idle = d.idle_hours < 1 ? Math.round(d.idle_hours * 60) + ' 分钟'
+    : (d.idle_hours < 24 ? d.idle_hours + ' 小时' : (d.idle_hours / 24).toFixed(1) + ' 天');
+  let h = `<div class="radar">${radarSvg(d.dims, topKey)}</div>
+    <div class="d-idle">上次说话到现在 ${idle}</div>`;
+
   DGROUP.forEach(([title, keys]) => {
     h += `<div class="d-sec">${title}</div>`;
     keys.forEach(k => {
@@ -653,7 +691,7 @@ async function openDesire() {
       const boost = Math.max(0, x.score - x.value);
       h += `<div class="dim${k === topKey ? ' hot' : ''}" data-dim="${k}">
         <div class="dim-top">
-          <span class="dim-name">${x.name}${editedKeys.has(k) ? '<span class="dim-edited">改过</span>' : ''}</span>
+          <span class="dim-name">${x.name}${edited.has(k) ? '<span class="dim-edited">改过</span>' : ''}${notes[k] ? '<span class="dim-edited">✎</span>' : ''}</span>
           <span class="dim-v">${x.value.toFixed(2)}${boost > .01 ? ` +${boost.toFixed(2)}` : ''}</span>
         </div>
         <div class="dim-track">
@@ -667,54 +705,70 @@ async function openDesire() {
   const flits = (d.thoughts || []).filter(t => t.kind === 'flit');
   if (fixes.length) {
     h += '<div class="d-sec">反 复 在 想</div>';
-    fixes.forEach(t => {
-      h += `<div class="d-thought fix"><div class="dt-text">${esc(t.text)}</div>
-        <div class="dt-meta"><span class="dt-kind">执念 · ${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`;
-    });
+    fixes.forEach(t => h += `<div class="d-thought fix"><div class="dt-text">${esc(t.text)}</div>
+      <div class="dt-meta"><span class="dt-kind">执念 · ${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`);
   }
   if (flits.length) {
     h += '<div class="d-sec">刚 冒 出 来 的</div>';
-    flits.slice(0, 6).forEach(t => {
-      h += `<div class="d-thought"><div class="dt-text">${esc(t.text)}</div>
-        <div class="dt-meta"><span>${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`;
-    });
-  }
-
-  if ((d.history || []).length > 1) {
-    h += '<div class="d-sec">最 近 几 天</div><div class="d-curve" id="d-curve"></div><div class="d-legend" id="d-legend"></div>';
+    flits.slice(0, 6).forEach(t => h += `<div class="d-thought"><div class="dt-text">${esc(t.text)}</div>
+      <div class="dt-meta"><span>${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`);
   }
   el.innerHTML = h;
-  el.querySelectorAll('[data-dim]').forEach(row => row.onclick = () => openDim(byKey[row.dataset.dim]));
-  if ((d.history || []).length > 1) drawCurve(d.history);
+  el.querySelectorAll('[data-dim]').forEach(row => row.onclick = () => openDimPanel(row.dataset.dim));
 }
-function DIMNAME(k) {
-  const x = (desireData && desireData.dims || []).find(d => d.key === k);
-  return x ? x.name : k;
-}
-function drawCurve(hist) {
-  const keys = (desireData.top || []).slice(0, 3).map(t => t.key);
-  const cols = ['var(--accent)', 'rgba(140,111,118,.8)', 'rgba(140,111,118,.4)'];
-  const w = 300, ht = 110, pad = 4;
-  const n = hist.length;
-  let svg = `<svg viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none">`;
+
+function curveSvg(hist, key, color) {
+  const w = 300, ht = 110, pad = 5, n = hist.length;
+  if (n < 2) return '<div class="settings-sub" style="text-align:center;padding:30px 0;">还没有几天的数据</div>';
+  let g = '';
   [0, .5, 1].forEach(v => {
     const y = pad + (1 - v) * (ht - pad * 2);
-    svg += `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    g += `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
   });
-  keys.forEach((k, i) => {
-    const pts = hist.map((h, j) => {
-      const x = n === 1 ? w / 2 : j / (n - 1) * w;
-      const y = pad + (1 - (h.drive[k] ?? 0)) * (ht - pad * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-    svg += `<polyline points="${pts}" fill="none" stroke="${cols[i]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const pts = hist.map((h, j) => {
+    const x = j / (n - 1) * w;
+    const y = pad + (1 - (h.drive[key] ?? 0)) * (ht - pad * 2);
+    return [x, y];
   });
-  svg += '</svg>';
-  $('d-curve').innerHTML = svg;
-  $('d-legend').innerHTML = keys.map((k, i) =>
-    `<span><i style="background:${cols[i]}"></i>${DIMNAME(k)}</span>`).join('')
-    + `<span style="margin-left:auto">${hist[0].date.slice(5)} — ${hist[hist.length - 1].date.slice(5)}</span>`;
+  g += `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const last = pts[pts.length - 1];
+  g += `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.2" fill="${color}"/>`;
+  return `<svg viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none">${g}</svg>`;
 }
+
+async function openDimPanel(key) {
+  dimViewing = key;
+  if (!desireData) { try { desireData = await jget('/api/desire/state'); } catch (e) { return; } }
+  const d = desireData;
+  const x = d.dims.find(v => v.key === key); if (!x) return;
+  $('dim-panel').classList.add('open');
+  $('dp-name').textContent = x.name;
+  const boost = Math.max(0, x.score - x.value);
+  $('dp-sub').textContent = boost > .01 ? `执念顶高了 ${boost.toFixed(2)}` : '';
+  $('dp-big').textContent = x.value.toFixed(2);
+
+  const hist = (d.history || []).filter(h => h.drive && h.drive[key] !== undefined);
+  $('dp-curve').innerHTML = curveSvg(hist, key, 'var(--accent)');
+  $('dp-range').innerHTML = hist.length > 1
+    ? `<span>${hist[0].date.slice(5)}</span><span style="margin-left:auto">${hist[hist.length - 1].date.slice(5)}</span>` : '';
+
+  const note = (d.notes || {})[key];
+  const nb = $('dp-note');
+  if (note) { nb.className = 'dp-note'; nb.textContent = note.text; }
+  else { nb.className = 'dp-note empty'; nb.textContent = '他还没给这一维写过话。\n他想写的时候会自己写。'; }
+
+  const mv = (d.moves || []).filter(m => (m.changes || []).some(c => c.key === key));
+  $('dp-moves').innerHTML = mv.length ? mv.slice(0, 30).map(m => {
+    const c = m.changes.find(c => c.key === key);
+    const t = new Date(m.ts);
+    const up = c.to > c.from;
+    return `<div class="mv">
+      <div class="mv-t">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="mv-b"><div class="mv-why">${esc(m.why)}${m.who !== 'sys' ? `<span class="mv-who">${m.who === 'lin' ? (CFG.name || '凛') : (CFG.call_user || '宝宝')}改的</span>` : ''}</div>
+        <div class="mv-d">${c.from.toFixed(2)} <b>${up ? '↑' : '↓'}</b> ${c.to.toFixed(2)}</div></div></div>`;
+  }).join('') : '<div class="settings-sub">还没有变过</div>';
+}
+
 function openDim(x) {
   if (!x) return;
   dimEditing = x.key;
@@ -725,22 +779,26 @@ function openDim(x) {
   $('dim-why').value = '';
   $('dim-modal').classList.add('open');
 }
-async function openDisputes() {
+
+async function openMoves() {
   $('dispute-panel').classList.add('open');
   const el = $('dispute-list');
   const d = desireData || await jget('/api/desire/state');
-  const list = d.disputes || [];
+  const list = d.moves || [];
   $('dispute-count').textContent = list.length ? `${list.length} 次` : '';
   if (!list.length) {
-    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有过分歧<br><br>系统算错他什么，<br>恰恰是他更懂自己的证据</div>';
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有动过</div>';
     return;
   }
-  el.innerHTML = list.map(x => {
-    const t = new Date(x.ts);
+  el.innerHTML = list.map(m => {
+    const t = new Date(m.ts);
+    const who = m.who === 'lin' ? (CFG.name || '凛') : (m.who === 'user' ? (CFG.call_user || '宝宝') : '');
     return `<div class="dispute">
-      <div class="dp-head">${x.who === 'lin' ? (CFG.name || '凛') : (CFG.call_user || '宝宝')} · ${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
-      <div class="dp-num">${esc(x.name)}　系统算 ${x.system.toFixed(2)}　→　<b>${x.to.toFixed(2)}</b></div>
-      <div class="dp-why">${esc(x.why)}</div></div>`;
+      <div class="dp-head">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}${who ? ` · ${who}改的` : ''}</div>
+      <div class="dp-why" style="border:none;padding:0;margin:0;">${esc(m.why)}</div>
+      <div class="mv-d" style="margin-top:7px;">${(m.changes || []).map(c =>
+        `${c.name} ${c.from.toFixed(2)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${c.to.toFixed(2)}`).join('　')}</div>
+    </div>`;
   }).join('');
 }
 
@@ -1369,9 +1427,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (r.error) { toast(r.error); return; }
     $('dim-modal').classList.remove('open');
-    openDesire(); toast('改了，记下来了');
+    desireData = null;
+    await openDesire();
+    if ($('dim-panel').classList.contains('open')) openDimPanel(dimEditing);
+    toast('改了，记下来了');
   };
-  $('btn-disputes').onclick = openDisputes;
+  $('btn-moves').onclick = openMoves;
+  $('btn-dp-edit').onclick = () => {
+    const x = (desireData.dims || []).find(v => v.key === dimViewing);
+    if (x) openDim(x);
+  };
 
   // 朋友圈
   $('btn-new-post').onclick = () => {
