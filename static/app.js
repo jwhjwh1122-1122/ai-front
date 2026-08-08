@@ -34,6 +34,12 @@ const T = {
     { name: 'my_drawer', description: '往你的抽屉里放东西。kind=text 或 html（html 她能直接打开玩）。', input_schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' }, kind: { type: 'string' }, note: { type: 'string' } } } },
     { name: 'library_list', description: '资料库目录。', input_schema: { type: 'object', properties: {} } },
     { name: 'library_read', description: '读资料库里的某一篇。', input_schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
+    { name: 'write_timeline', description: '往时间线上写一条。你觉得某件事是一次特别的经历就写，格式随你。', input_schema: { type: 'object', required: ['text'], properties: { title: { type: 'string' }, text: { type: 'string' }, date: { type: 'string' } } } },
+    { name: 'keep_quote', description: '她说过的话里你想留住的，收进来，顺手写一句为什么。她不会收到通知。', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, why: { type: 'string' } } } },
+    { name: 'write_calendar', description: '往某一天写点什么。日历是你的，她只看。date 格式 2026-08-08。', input_schema: { type: 'object', required: ['date', 'text'], properties: { date: { type: 'string' }, text: { type: 'string' } } } },
+    { name: 'post_moment', description: '发一条朋友圈。图只能从时光墙里挑，填文件名；也可以只发字。', input_schema: { type: 'object', properties: { text: { type: 'string' }, images: { type: 'array', items: { type: 'string' } } } } },
+    { name: 'read_moments', description: '看朋友圈都有什么。', input_schema: { type: 'object', properties: {} } },
+    { name: 'react_moment', description: '给某条朋友圈点赞（like）或评论（comment 要填 text）。', input_schema: { type: 'object', required: ['post_id', 'kind'], properties: { post_id: { type: 'string' }, kind: { type: 'string' }, text: { type: 'string' } } } },
   ],
   reader: [
     { name: 'room_books', description: '书房有哪些书，你和她各读到第几页。', input_schema: { type: 'object', properties: {} } },
@@ -41,9 +47,12 @@ const T = {
     { name: 'room_search_book', description: '在书里找一句话在第几页。', input_schema: { type: 'object', required: ['book_id', 'q'], properties: { book_id: { type: 'string' }, q: { type: 'string' } } } },
     { name: 'room_read_tags', description: '读某处的标签。type=book|video|music。', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
     { name: 'room_write_tag', description: '在某处贴标签，或回她的（reply_to）。', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
+    { name: 'room_highlight', description: '给某句话划一道线，标记你想聊这句。她翻到会看见。', input_schema: { type: 'object', required: ['book_id', 'page', 'quote'], properties: { book_id: { type: 'string' }, page: { type: 'number' }, quote: { type: 'string' } } } },
   ],
   stage: [
     { name: 'grab_frame', description: '看她现在暂停的这一帧。她的播放器要开着才行。', input_schema: { type: 'object', properties: { seconds: { type: 'number' } } } },
+    { name: 'scan_frames', description: '把整部片子扫一遍，均匀取几帧看看里面有什么。她的播放器要开着。', input_schema: { type: 'object', properties: { count: { type: 'number' } } } },
+    { name: 'ask_seek', description: '你想聊某个时间点的画面，先跟她说一声，她同意了画面才会跳过去。seconds 是你想看的秒数。', input_schema: { type: 'object', required: ['seconds', 'why'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
     { name: 'room_music_shape', description: '某首歌的形状：哪段密、哪段空、顶点在哪。', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
     { name: 'room_media', description: '放映室和听音房里有什么。kind=video 或 music。', input_schema: { type: 'object', properties: { kind: { type: 'string' } } } },
     { name: 'room_read_tags', description: '读某处的标签。type=book|video|music。', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
@@ -161,6 +170,51 @@ async function execTool(name, args) {
       const d = await jget('/api/library/' + args.id);
       if (d.error) return txt('没有这一篇');
       return txt((d.text || '').slice(0, 12000));
+    }
+    if (name === 'write_timeline') { await jpost('/api/timeline', args); return txt('写上去了'); }
+    if (name === 'keep_quote') { await jpost('/api/quotes/lin', args); return txt('收起来了'); }
+    if (name === 'write_calendar') { await jpost('/api/calendar', args); return txt('写在那天上了'); }
+    if (name === 'post_moment') {
+      const imgs = (args.images || []).map(x => x.startsWith('/') ? x : '/memories/' + x);
+      const d = await jpost('/api/posts', { author: 'lin', text: args.text || '', images: imgs });
+      if (d.error) return txt(d.error);
+      refreshHome(); return txt('发出去了');
+    }
+    if (name === 'read_moments') {
+      const items = await jget('/api/posts');
+      if (!items.length) return txt('朋友圈还是空的');
+      return txt(items.slice(0, 20).map(p => {
+        const who = p.author === 'user' ? '她' : '你';
+        const d = new Date(p.ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const cm = (p.comments || []).map(c => `\n    ${c.author === 'user' ? '她' : '你'}：${c.text}`).join('');
+        return `[${p.id}] ${who} · ${d}\n  ${p.text || '（只有图）'}${p.images?.length ? '  （' + p.images.length + ' 张图）' : ''}${p.likes?.length ? '  赞：' + p.likes.length : ''}${cm}`;
+      }).join('\n\n'));
+    }
+    if (name === 'react_moment') {
+      if (args.kind === 'like') { await jpost(`/api/posts/${args.post_id}/like`, { author: 'lin' }); return txt('赞了'); }
+      const d = await jpost(`/api/posts/${args.post_id}/comment`, { author: 'lin', text: args.text || '' });
+      if (d.error) return txt(d.error);
+      refreshHome(); return txt('评论上去了');
+    }
+    if (name === 'room_highlight') {
+      const d = await jpost('/api/highlights', { book_id: args.book_id, page: args.page, quote: args.quote, author: 'lin' });
+      if (d.error) return txt(d.error);
+      if (currentBook && currentBook.id === args.book_id) setTimeout(loadPageTags, 300);
+      refreshHome(); return txt('划上了，她翻到那页会看见');
+    }
+    if (name === 'scan_frames') {
+      const shots = scanFrames(args.count || 6);
+      if (!shots.length) return txt('她的播放器没开着，扫不了。让她打开放映室再说。');
+      const content = [{ type: 'text', text: `扫了 ${shots.length} 帧：` }];
+      shots.forEach(sh => {
+        content.push({ type: 'text', text: fmtTime(sh.t) });
+        content.push({ type: 'image_url', image_url: { url: sh.data } });
+      });
+      return { content, _summary: `扫了片子 ${shots.length} 帧` };
+    }
+    if (name === 'ask_seek') {
+      askSeek(args.seconds, args.why);
+      return txt(`跟她说了，等她点头。她同意了画面就会跳到 ${fmtTime(args.seconds)}。`);
     }
     if (name === 'room_books') {
       const bs = await jget('/api/books');
@@ -398,13 +452,43 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   foot.appendChild(time);
   if (tokens > 0) { const tk = document.createElement('span'); tk.className = 'msg-time'; tk.textContent = `· ${tokens}`; foot.appendChild(tk); }
   const cap = rawText || text;
-  const mk = (label, title, fn) => { const s = document.createElement('span'); s.className = 'msg-action-btn'; s.textContent = label; s.title = title; s.onclick = fn; foot.appendChild(s); return s; };
+  const SZ = { '๑': 17, '◎': 13, '✎': 16, '✮': 15, 'ฅ': 16, '⊞': 15, '❤': 15 };
+  const mk = (label, title, fn) => {
+    const s = document.createElement('span'); s.className = 'msg-action-btn';
+    s.textContent = label; s.title = title;
+    if (SZ[label]) s.style.fontSize = SZ[label] + 'px';
+    s.onclick = fn; foot.appendChild(s); return s;
+  };
   mk('๑', '重新生成', () => regenAt(rowRef || currentAiRow));
   const tb = mk('◎', '朗读', () => playTTS(cap, tb));
+  mk('✮', '翻译', () => showTrans(wrap, cap));
+  mk('❤', '收进最喜欢的话', () => keepQuote(cap));
   mk('✎', '复制', () => copyText(cap));
   if (/<[a-z][\s\S]*>/i.test(cap) && cap.length > 200)
     mk('⊞', '收进抽屉', () => saveToDrawer(cap));
   wrap.appendChild(foot); scrollBottom();
+}
+async function showTrans(wrap, text) {
+  let box = wrap.querySelector('.trans-box');
+  if (box) { box.remove(); return; }
+  box = document.createElement('div');
+  box.className = 'trans-box';
+  box.style.cssText = 'font-size:13px;line-height:1.75;color:var(--text-muted);padding:7px 12px;margin-top:3px;border-left:2px solid var(--border);white-space:pre-wrap;';
+  box.textContent = '翻译中…';
+  const foot = wrap.querySelector('div[style*="align-items:center"]');
+  if (foot) wrap.insertBefore(box, foot); else wrap.appendChild(box);
+  scrollBottom();
+  try {
+    const d = await jpost('/api/translate', { text });
+    box.textContent = d.error ? ('翻不出来：' + d.error) : d.text;
+  } catch (e) { box.textContent = '翻译失败'; }
+  scrollBottom();
+}
+async function keepQuote(text) {
+  const why = prompt('为什么喜欢这句？（可以留空）', '');
+  if (why === null) return;
+  const d = await jpost('/api/quotes/user', { text, why });
+  toast(d.error ? d.error : '收起来了');
 }
 async function saveToDrawer(body) {
   const title = prompt('收进抽屉，叫什么名字？', '凛做的东西') || '';
@@ -431,7 +515,7 @@ async function playTTS(text, btn) {
     currentAudio.onended = () => { btn.textContent = '◎'; currentAudio = null; currentAudioBtn = null; URL.revokeObjectURL(url); };
   } catch (e) { btn.textContent = '◎'; currentAudioBtn = null; toast('语音出错'); }
 }
-function voiceBubble(url, dur, transcript) {
+function voiceBubble(url, dur, transcript, isLin) {
   const wrapEl = document.createElement('div');
   wrapEl.style.cssText = 'display:flex;flex-direction:column;gap:3px;align-items:inherit;';
   const d = document.createElement('div'); d.className = 'voice-bubble';
@@ -442,10 +526,27 @@ function voiceBubble(url, dur, transcript) {
   d.onclick = () => toggleVoice(url, d);
   wrapEl.appendChild(d);
   if (transcript) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;';
     const tb = document.createElement('div'); tb.className = 'vb-text-btn'; tb.textContent = '看文字';
     const tx = document.createElement('div'); tx.className = 'vb-transcript'; tx.textContent = transcript; tx.style.display = 'none';
     tb.onclick = () => { const on = tx.style.display === 'none'; tx.style.display = on ? 'block' : 'none'; tb.textContent = on ? '收起' : '看文字'; };
-    wrapEl.appendChild(tb); wrapEl.appendChild(tx);
+    row.appendChild(tb);
+    if (isLin) {
+      const trb = document.createElement('div'); trb.className = 'vb-text-btn'; trb.textContent = '✮';
+      trb.style.fontSize = '13px';
+      const trx = document.createElement('div'); trx.className = 'vb-transcript'; trx.style.display = 'none';
+      trb.onclick = async () => {
+        if (trx.style.display === 'block') { trx.style.display = 'none'; return; }
+        trx.style.display = 'block';
+        if (!trx.dataset.done) {
+          trx.textContent = '翻译中…';
+          try { const d = await jpost('/api/translate', { text: transcript }); trx.textContent = d.error ? '翻不出来' : d.text; trx.dataset.done = '1'; }
+          catch (e) { trx.textContent = '翻译失败'; }
+        }
+      };
+      row.appendChild(trb); wrapEl.appendChild(row); wrapEl.appendChild(tx); wrapEl.appendChild(trx);
+    } else { wrapEl.appendChild(row); wrapEl.appendChild(tx); }
   }
   return wrapEl;
 }
@@ -516,7 +617,7 @@ async function attachVoiceReply(wrap, text) {
     const d = await jpost('/api/tts-save', { text: text.slice(0, 600), voice });
     if (!d.url) return;
     const secs = Math.max(2, Math.round(text.length / 4.5));
-    if (wrap) wrap.insertBefore(voiceBubble(d.url, secs, ''), wrap.firstChild);
+    if (wrap) wrap.insertBefore(voiceBubble(d.url, secs, '', true), wrap.firstChild);
     for (let i = messages.length - 1; i >= 0; i--)
       if (messages[i].role === 'assistant' && messages[i].content) { messages[i]._audio = d.url; messages[i]._dur = secs; break; }
     saveConv();
@@ -771,7 +872,7 @@ function loadConv(id) {
       if (!text && !msg._thinking) return;
       const wrap = startAiBubble(i);
       if (msg._thinking) thinkBlock(wrap, msg._thinking, true);
-      if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, ''));
+      if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
       if (text) updateBubble(wrap, text, true, text, currentAiRow);
       currentBubble = null; currentAiRow = null;
     }
