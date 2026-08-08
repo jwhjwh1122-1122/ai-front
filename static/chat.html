@@ -11,7 +11,27 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=5">
+<link rel="stylesheet" href="/static/style.css?v=8">
+<script>
+// 出错了直接摆在脸上，别白屏
+window.__err = [];
+window.addEventListener('error', function (e) {
+  window.__err.push((e.message || '') + ' @ ' + (e.filename || '').split('/').pop() + ':' + (e.lineno || '?'));
+  var b = document.getElementById('errbox');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'errbox';
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#3a2a30;color:#ffd9e3;font:12px/1.6 -apple-system,monospace;padding:10px 12px;max-height:44vh;overflow:auto;white-space:pre-wrap;word-break:break-all;';
+    b.onclick = function () {
+      var t = window.__err.join('\n');
+      if (navigator.clipboard) navigator.clipboard.writeText(t);
+      b.style.display = 'none';
+    };
+    (document.body || document.documentElement).appendChild(b);
+  }
+  b.textContent = '出错了（点一下复制并关掉）：\n\n' + window.__err.join('\n\n');
+});
+</script>
 </head>
 <body>
 
@@ -691,6 +711,11 @@
       <textarea class="persona-area" id="p-lines" style="min-height:88px;"></textarea>
     </div>
     <div class="persona-block">
+      <label>随身</label>
+      <div class="hint">你想让他每轮都看见的东西，写在这。跟人设一起走缓存，不额外花钱。<br>表情包的名字不用写，前端自己会带。</div>
+      <textarea class="persona-area" id="p-always" style="min-height:88px;"></textarea>
+    </div>
+    <div class="persona-block">
       <label>称呼</label>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <input class="mini-input" id="p-call" placeholder="平常">
@@ -880,7 +905,7 @@
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=5"></script>
-<script src="/static/rooms.js?v=5"></script>
+<script src="/static/app.js?v=8"></script>
+<script src="/static/rooms.js?v=8"></script>
 </body>
 </html>
