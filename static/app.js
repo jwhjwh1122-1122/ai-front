@@ -394,12 +394,28 @@ function buildMsgs(msgs) {
   }
   return out;
 }
+function emojiNames() {
+  try {
+    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]')
+      .map(x => x && x.name).filter(Boolean);
+    return l.length ? `你能用的表情：${l.join('、')}。` : '';
+  } catch (e) { return ''; }
+}
 function roomNote() {
-  if (roomCtx === 'reader' && currentBook)
-    return `你们现在一起在书房，翻着《${currentBook.title}》，她停在第 ${currentPage + 1} 页。`;
+  if (roomCtx === 'reader' && currentBook) {
+    let s = `你们现在一起在书房，翻着《${currentBook.title}》，她停在第 ${currentPage + 1} 页。`;
+    const mine = (pageHls || []).filter(h => h.author === 'user');
+    if (mine.length) {
+      s += `她在这一页划了线，从整页里挑出来的就是这几句：${mine.map(h => '「' + h.quote + '」').join('')}`;
+    }
+    return s;
+  }
   if (roomCtx === 'stage' && curMedia)
     return `你们现在一起在${curKind === 'music' ? '听音房听《' : '放映室看《'}${curMedia.note || curMedia.filename}》，她停在 ${fmtTime(stageTime())}。`;
   return '';
+}
+function extraNote() {
+  return [emojiNames(), roomNote()].filter(Boolean).join(' ');
 }
 
 // ============ 气泡 ============
@@ -431,8 +447,7 @@ function renderBubble(text) {
   let html = renderMd(text);
   customs.forEach(item => {
     if (!item.name) return;
-    const e = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    html = html.replace(new RegExp(`\\[${e}\\]`, 'g'), `<img src="${item.data}" style="width:120px;display:block;margin:4px 0;" alt="${item.name}">`);
+    html = html.split('[' + item.name + ']').join(`<img src="${item.data}" style="width:120px;display:block;margin:4px 0;" alt="${item.name}">`);
   });
   return html;
 }
@@ -680,7 +695,7 @@ async function streamResponse(wrap, hist) {
   abortController = new AbortController();
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abortController.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: roomNote(), _session_id: getSessionId() })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId() })
   });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const reader = resp.body.getReader(), dec = new TextDecoder();
