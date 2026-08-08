@@ -452,7 +452,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   foot.appendChild(time);
   if (tokens > 0) { const tk = document.createElement('span'); tk.className = 'msg-time'; tk.textContent = `· ${tokens}`; foot.appendChild(tk); }
   const cap = rawText || text;
-  const SZ = { '๑': 17, '◎': 13, '✎': 16, '✮': 15, 'ฅ': 16, '⊞': 15, '❤': 15 };
+  const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 20, 'ฅ': 21, '⊞': 20, '♡': 20 };
   const mk = (label, title, fn) => {
     const s = document.createElement('span'); s.className = 'msg-action-btn';
     s.textContent = label; s.title = title;
@@ -462,7 +462,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   mk('๑', '重新生成', () => regenAt(rowRef || currentAiRow));
   const tb = mk('◎', '朗读', () => playTTS(cap, tb));
   mk('✮', '翻译', () => showTrans(wrap, cap));
-  mk('❤', '收进最喜欢的话', () => keepQuote(cap));
+  mk('♡', '收进最喜欢的话', () => keepQuote(cap));
   mk('✎', '复制', () => copyText(cap));
   if (/<[a-z][\s\S]*>/i.test(cap) && cap.length > 200)
     mk('⊞', '收进抽屉', () => saveToDrawer(cap));
