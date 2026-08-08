@@ -552,7 +552,7 @@
     <div><div class="room-title" style="color:var(--text)">欲望室</div>
       <div class="room-sub" id="desire-sub" style="color:var(--text-muted)">—</div></div>
     <div class="room-acts">
-      <button class="room-btn" id="btn-disputes" style="color:var(--text);border-color:var(--border)">分歧</button>
+      <button class="room-btn" id="btn-moves" style="color:var(--text);border-color:var(--border)">怎么变的</button>
       <button class="room-x" data-close="desireroom" style="color:var(--text-muted)">✕</button>
     </div>
   </div>
@@ -577,9 +577,29 @@
   </div>
 </div>
 
+<div class="full" id="dim-panel">
+  <div class="full-head">
+    <div><div class="full-title" id="dp-name">—</div><div class="full-count" id="dp-sub"></div></div>
+    <div class="full-btns">
+      <button class="mem-upload-btn" id="btn-dp-edit">改这个数</button>
+      <div class="mem-close-btn" data-close-full="dim-panel">✕</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px 18px 30px;">
+    <div class="dp-big" id="dp-big">—</div>
+    <div class="d-sec">这 些 天</div>
+    <div class="d-curve" id="dp-curve"></div>
+    <div class="d-legend" id="dp-range"></div>
+    <div class="d-sec">他 写 的</div>
+    <div class="dp-note" id="dp-note"></div>
+    <div class="d-sec">怎 么 变 的</div>
+    <div id="dp-moves"></div>
+  </div>
+</div>
+
 <div class="full" id="dispute-panel">
   <div class="full-head">
-    <div><div class="full-title">分 歧</div><div class="full-count" id="dispute-count"></div></div>
+    <div><div class="full-title">怎 么 变 的</div><div class="full-count" id="dispute-count"></div></div>
     <div class="mem-close-btn" data-close-full="dispute-panel">✕</div>
   </div>
   <div class="list-wrap" id="dispute-list"></div>
