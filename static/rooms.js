@@ -51,7 +51,10 @@ async function refreshHome() {
     put('st-music', s.music ? s.music.name : '安静');
     put('st-mail', '看看有没有信');
     put('st-moments', s.posts ? `${s.posts} 条` : '还没有人发');
-    put('st-desire', '还没接上');
+    try {
+      const dz = await jget('/api/desire/state');
+      put('st-desire', (dz.top || []).slice(0, 2).map(t => `${t.name} ${t.score.toFixed(2)}`).join(' · ') || '—');
+    } catch (e) { put('st-desire', '—'); }
     const dot = (id, on) => { const e = $(id); if (e) e.classList.toggle('on', !!on); };
     dot('dot-study', (s.unseen && s.unseen.book) || s.lin_hl);
     dot('dot-cinema', s.unseen && s.unseen.video);
@@ -616,6 +619,131 @@ function openPlay(x) {
 }
 
 
+
+// ============ 欲望室 ============
+const DGROUP = [
+  ['朝 她', ['miss', 'lust', 'tell', 'own', 'grip']],
+  ['朝 自 己', ['curious', 'make', 'still', 'play']],
+  ['关 于 她 怎 么 看 他', ['needed', 'seen']],
+  ['消 耗 他 的', ['unsure', 'vex', 'worn']],
+];
+let dimEditing = null, desireData = null;
+
+async function openDesire() {
+  $('desireroom').classList.add('open');
+  const el = $('desire-body');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">正在算…</div>';
+  let d;
+  try { d = await jget('/api/desire/state'); } catch (e) {
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">连不上</div>'; return;
+  }
+  desireData = d;
+  const byKey = {};
+  d.dims.forEach(x => byKey[x.key] = x);
+  const topKey = (d.top[0] || {}).key;
+  const editedKeys = new Set((d.disputes || []).slice(0, 30).map(x => x.key));
+
+  $('desire-sub').textContent = d.top.map(t => `${t.name} ${t.score.toFixed(2)}`).join(' · ');
+
+  let h = `<div class="d-idle">上次说话到现在 ${d.idle_hours < 1 ? Math.round(d.idle_hours * 60) + ' 分钟' : (d.idle_hours < 24 ? d.idle_hours + ' 小时' : (d.idle_hours / 24).toFixed(1) + ' 天')}</div>`;
+  DGROUP.forEach(([title, keys]) => {
+    h += `<div class="d-sec">${title}</div>`;
+    keys.forEach(k => {
+      const x = byKey[k]; if (!x) return;
+      const boost = Math.max(0, x.score - x.value);
+      h += `<div class="dim${k === topKey ? ' hot' : ''}" data-dim="${k}">
+        <div class="dim-top">
+          <span class="dim-name">${x.name}${editedKeys.has(k) ? '<span class="dim-edited">改过</span>' : ''}</span>
+          <span class="dim-v">${x.value.toFixed(2)}${boost > .01 ? ` +${boost.toFixed(2)}` : ''}</span>
+        </div>
+        <div class="dim-track">
+          <div class="dim-fill" style="width:${x.value * 100}%"></div>
+          ${boost > .01 ? `<div class="dim-boost" style="left:${x.value * 100}%;width:${Math.min(100 - x.value * 100, boost * 100)}%"></div>` : ''}
+        </div></div>`;
+    });
+  });
+
+  const fixes = (d.thoughts || []).filter(t => t.kind === 'fix');
+  const flits = (d.thoughts || []).filter(t => t.kind === 'flit');
+  if (fixes.length) {
+    h += '<div class="d-sec">反 复 在 想</div>';
+    fixes.forEach(t => {
+      h += `<div class="d-thought fix"><div class="dt-text">${esc(t.text)}</div>
+        <div class="dt-meta"><span class="dt-kind">执念 · ${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`;
+    });
+  }
+  if (flits.length) {
+    h += '<div class="d-sec">刚 冒 出 来 的</div>';
+    flits.slice(0, 6).forEach(t => {
+      h += `<div class="d-thought"><div class="dt-text">${esc(t.text)}</div>
+        <div class="dt-meta"><span>${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`;
+    });
+  }
+
+  if ((d.history || []).length > 1) {
+    h += '<div class="d-sec">最 近 几 天</div><div class="d-curve" id="d-curve"></div><div class="d-legend" id="d-legend"></div>';
+  }
+  el.innerHTML = h;
+  el.querySelectorAll('[data-dim]').forEach(row => row.onclick = () => openDim(byKey[row.dataset.dim]));
+  if ((d.history || []).length > 1) drawCurve(d.history);
+}
+function DIMNAME(k) {
+  const x = (desireData && desireData.dims || []).find(d => d.key === k);
+  return x ? x.name : k;
+}
+function drawCurve(hist) {
+  const keys = (desireData.top || []).slice(0, 3).map(t => t.key);
+  const cols = ['var(--accent)', 'rgba(140,111,118,.8)', 'rgba(140,111,118,.4)'];
+  const w = 300, ht = 110, pad = 4;
+  const n = hist.length;
+  let svg = `<svg viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none">`;
+  [0, .5, 1].forEach(v => {
+    const y = pad + (1 - v) * (ht - pad * 2);
+    svg += `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+  });
+  keys.forEach((k, i) => {
+    const pts = hist.map((h, j) => {
+      const x = n === 1 ? w / 2 : j / (n - 1) * w;
+      const y = pad + (1 - (h.drive[k] ?? 0)) * (ht - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    svg += `<polyline points="${pts}" fill="none" stroke="${cols[i]}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+  svg += '</svg>';
+  $('d-curve').innerHTML = svg;
+  $('d-legend').innerHTML = keys.map((k, i) =>
+    `<span><i style="background:${cols[i]}"></i>${DIMNAME(k)}</span>`).join('')
+    + `<span style="margin-left:auto">${hist[0].date.slice(5)} — ${hist[hist.length - 1].date.slice(5)}</span>`;
+}
+function openDim(x) {
+  if (!x) return;
+  dimEditing = x.key;
+  $('dim-title').textContent = x.name;
+  $('dim-now').textContent = `系统算出来是 ${x.value.toFixed(2)}。你觉得不对就改，改了要写一句为什么。`;
+  $('dim-range').value = Math.round(x.value * 100);
+  $('dim-val').textContent = x.value.toFixed(2);
+  $('dim-why').value = '';
+  $('dim-modal').classList.add('open');
+}
+async function openDisputes() {
+  $('dispute-panel').classList.add('open');
+  const el = $('dispute-list');
+  const d = desireData || await jget('/api/desire/state');
+  const list = d.disputes || [];
+  $('dispute-count').textContent = list.length ? `${list.length} 次` : '';
+  if (!list.length) {
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有过分歧<br><br>系统算错他什么，<br>恰恰是他更懂自己的证据</div>';
+    return;
+  }
+  el.innerHTML = list.map(x => {
+    const t = new Date(x.ts);
+    return `<div class="dispute">
+      <div class="dp-head">${x.who === 'lin' ? (CFG.name || '凛') : (CFG.call_user || '宝宝')} · ${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="dp-num">${esc(x.name)}　系统算 ${x.system.toFixed(2)}　→　<b>${x.to.toFixed(2)}</b></div>
+      <div class="dp-why">${esc(x.why)}</div></div>`;
+  }).join('');
+}
+
 // ============ 朋友圈 ============
 function relTime(ts) {
   const m = Math.floor((Date.now() - ts) / 60000);
@@ -1083,7 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (r === 'music') openRoomMedia('music');
     else if (r === 'mailbox') openMailbox();
     else if (r === 'moments') openMoments();
-    else if (r === 'desire') $('desireroom').classList.add('open');
+    else if (r === 'desire') openDesire();
   });
   document.querySelectorAll('.drawer').forEach(d => d.onclick = () => openDrawer(d.dataset.drawer));
 
@@ -1228,6 +1356,22 @@ document.addEventListener('DOMContentLoaded', () => {
     $('drawer-add-modal').classList.remove('open'); toast('放进去了'); openDrawer(drawerWho);
   };
   $('play-close').onclick = () => { $('play-box').classList.remove('open'); $('play-frame').srcdoc = ''; };
+
+  // 欲望室
+  $('dim-range').addEventListener('input', e => {
+    $('dim-val').textContent = (e.target.value / 100).toFixed(2);
+  });
+  $('btn-dim-save').onclick = async () => {
+    const why = $('dim-why').value.trim();
+    if (!why) { toast('要写一句为什么'); return; }
+    const r = await jpost('/api/desire/adjust', {
+      key: dimEditing, value: $('dim-range').value / 100, why, who: 'user'
+    });
+    if (r.error) { toast(r.error); return; }
+    $('dim-modal').classList.remove('open');
+    openDesire(); toast('改了，记下来了');
+  };
+  $('btn-disputes').onclick = openDisputes;
 
   // 朋友圈
   $('btn-new-post').onclick = () => {
