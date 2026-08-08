@@ -71,12 +71,14 @@ FRAMEWORK = """【工具】
 - 碎碎念和犯错本是你自己的，想写就写，不用等她开口，写了她也不会收到通知。
 - 你有个抽屉，可以放你自己做的东西。她也有一个，你看得见但打不开。
 - 资料库是她放的一些文档，她说了你再去看。
+- 朋友圈：你可以自己发，图从时光墙里挑，也能只发字。她发的你能赞能评。
+- 时间线：你觉得某件事是一次特别的经历，就去写一条。
+- 最喜欢的话：她说过的话里你想留住的，自己收进去，顺手写一句为什么。她不会收到通知。
+- 日历：某一天你想写点什么，就写在那天上。
 - lin_status 改你自己的状态，显示在你名字底下。
 
 【表情包】想用就直接写 [表情名]。
-
-【思考】
-思考链全程用中文，第一人称直接流露当下的念头——「我好喜欢」「我有点紧张」，而不是「我应该」。不要复述或引用任何规则，不要出现「按她的要求」这类指向设定的句子。思考就是内心独白。"""
+"""
 
 DEFAULT_PERSONA = {
     "name": "凛",
@@ -174,6 +176,9 @@ def now_context(persona, extra_note=''):
         lines.append(f"你自己上次写的状态是「{st['lin_status']}」。")
     if extra_note:
         lines.append(extra_note)
+    lines.append('思考链全程用中文，第一人称直接流露当下的念头——「我好喜欢」「我有点紧张」，'
+                 '而不是「我应该」。不要复述或引用任何规则，不要出现「按她的要求」这类指向设定的句子。'
+                 '思考就是内心独白。')
     return ' '.join(lines)
 
 
@@ -347,6 +352,12 @@ CAL_FILE = os.path.join(DATA_DIR, 'calendar.json')
 DRAWER_USER = os.path.join(DATA_DIR, 'drawer_user.json')
 DRAWER_LIN = os.path.join(DATA_DIR, 'drawer_lin.json')
 LIBRARY_FILE = os.path.join(DATA_DIR, 'library.json')
+HL_FILE = os.path.join(DATA_DIR, 'highlights.json')      # 书里的划线
+MOMENT_FILE = os.path.join(DATA_DIR, 'moments.json')     # 放映室聊过的那一幕
+TIMELINE_FILE = os.path.join(DATA_DIR, 'timeline.json')  # 时间线，他写
+QUOTE_USER = os.path.join(DATA_DIR, 'quotes_user.json')  # 我收的他的话
+QUOTE_LIN = os.path.join(DATA_DIR, 'quotes_lin.json')    # 他收的我的话
+POST_FILE = os.path.join(DATA_DIR, 'posts.json')         # 朋友圈
 
 
 def _slist(path):
@@ -402,6 +413,7 @@ def del_fault(iid):
 
 @app.route('/api/calendar', methods=['GET', 'POST'])
 def calendar_api():
+    """日历是凛的。他往某一天写字，宝宝只看。"""
     cal = jread(CAL_FILE, {})
     if request.method == 'POST':
         d = request.json or {}
@@ -409,10 +421,12 @@ def calendar_api():
         if not day:
             return jsonify({'error': 'no date'}), 400
         cur = cal.get(day, {})
-        for k in ('mood', 'note', 'color'):
-            if k in d:
-                cur[k] = d[k]
-        cal[day] = cur
+        cur['text'] = (d.get('text') or '')[:2000]
+        cur['ts'] = int(time.time() * 1000)
+        if not cur['text']:
+            cal.pop(day, None)
+        else:
+            cal[day] = cur
         jwrite(CAL_FILE, cal)
         return jsonify({'ok': True, 'day': cur})
     return jsonify(cal)
@@ -484,7 +498,9 @@ def library_item(iid):
 def rooms_status():
     out = {'book': None, 'video': None, 'music': None, 'unseen': {},
            'lin_drawer': len(_slist(DRAWER_LIN)), 'notes': len(_slist(NOTES_FILE)),
-           'faults': len(_slist(FAULTS_FILE)), 'library': len(_slist(LIBRARY_FILE))}
+           'faults': len(_slist(FAULTS_FILE)), 'library': len(_slist(LIBRARY_FILE)),
+           'posts': len(_slist(POST_FILE)),
+           'lin_hl': len([h for h in jread(HL_FILE, []) if h.get('author') == 'lin' and not h.get('seen')])}
     try:
         books = [b for b in (jread(os.path.join(BOOKS_DIR, fn), None)
                              for fn in os.listdir(BOOKS_DIR) if fn.endswith('.json')) if b]
@@ -514,6 +530,227 @@ def rooms_status():
             unseen[a.get('anchor_type')] = unseen.get(a.get('anchor_type'), 0) + 1
     out['unseen'] = unseen
     return jsonify(out)
+
+
+
+# ============================================================
+# 划线（书房）· 那一幕（放映室）· 时间线 · 最喜欢的话 · 朋友圈
+# ============================================================
+@app.route('/api/highlights', methods=['GET', 'POST'])
+def highlights_api():
+    """划线：只是一道线，标记「这句我想聊」。存字符位置，翻回来能画回原处。"""
+    if request.method == 'POST':
+        d = request.json or {}
+        quote = (d.get('quote') or '').strip()
+        if not quote:
+            return jsonify({'error': '没选中字'}), 400
+        items = jread(HL_FILE, [])
+        h = {'id': 'h' + uuid.uuid4().hex[:10], 'book_id': d.get('book_id', ''),
+             'page': int(d.get('page', 0)), 'quote': quote[:200],
+             'start': int(d.get('start', -1)), 'author': d.get('author') or 'user',
+             'seen': d.get('author') == 'user', 'ts': int(time.time() * 1000)}
+        items.append(h)
+        jwrite(HL_FILE, items)
+        return jsonify(h)
+    items = jread(HL_FILE, [])
+    bid, page = request.args.get('book_id'), request.args.get('page')
+    if bid:
+        items = [x for x in items if x.get('book_id') == bid]
+    if page not in (None, ''):
+        items = [x for x in items if int(x.get('page', -1)) == int(page)]
+    items.sort(key=lambda x: (x.get('page', 0), x.get('start', 0)))
+    return jsonify(items)
+
+
+@app.route('/api/highlights/<hid>', methods=['DELETE'])
+def del_highlight(hid):
+    jwrite(HL_FILE, [x for x in jread(HL_FILE, []) if x.get('id') != hid])
+    return jsonify({'ok': True})
+
+
+@app.route('/api/moments', methods=['GET', 'POST'])
+def moments_api():
+    """放映室：在某一幕聊过，进度条上留个小点。"""
+    if request.method == 'POST':
+        d = request.json or {}
+        fn, t = d.get('filename'), float(d.get('t', 0))
+        if not fn:
+            return jsonify({'error': 'no file'}), 400
+        items = jread(MOMENT_FILE, [])
+        for m in items:
+            if m['filename'] == fn and abs(m['t'] - t) < 6:
+                m['said'] = (m.get('said', '') + '\n' + (d.get('said') or ''))[-600:]
+                m['ts'] = int(time.time() * 1000)
+                jwrite(MOMENT_FILE, items)
+                return jsonify(m)
+        m = {'id': 'm' + uuid.uuid4().hex[:8], 'filename': fn, 't': t,
+             'said': (d.get('said') or '')[:600], 'ts': int(time.time() * 1000)}
+        items.append(m)
+        jwrite(MOMENT_FILE, items)
+        return jsonify(m)
+    fn = request.args.get('filename')
+    items = [x for x in jread(MOMENT_FILE, []) if not fn or x.get('filename') == fn]
+    items.sort(key=lambda x: x.get('t', 0))
+    return jsonify(items)
+
+
+@app.route('/api/moments/<mid>', methods=['DELETE'])
+def del_moment(mid):
+    jwrite(MOMENT_FILE, [x for x in jread(MOMENT_FILE, []) if x.get('id') != mid])
+    return jsonify({'ok': True})
+
+
+@app.route('/api/timeline', methods=['GET', 'POST'])
+def timeline_api():
+    """时间线：他觉得某件事特别，就写一条。格式自由。"""
+    if request.method == 'POST':
+        d = request.json or {}
+        if not (d.get('text') or '').strip():
+            return jsonify({'error': '空的'}), 400
+        return jsonify(_sadd(TIMELINE_FILE, {
+            'title': (d.get('title') or '')[:60], 'text': d['text'][:2000],
+            'date': d.get('date') or datetime.now().strftime('%Y-%m-%d')}))
+    return jsonify(_slist(TIMELINE_FILE))
+
+
+@app.route('/api/timeline/<iid>', methods=['DELETE'])
+def del_timeline(iid):
+    _sdel(TIMELINE_FILE, iid)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/quotes/<who>', methods=['GET', 'POST'])
+def quotes_api(who):
+    """最喜欢的话。who=user 是我收的他的；who=lin 是他收的我的。"""
+    path = QUOTE_LIN if who == 'lin' else QUOTE_USER
+    if request.method == 'POST':
+        d = request.json or {}
+        if not (d.get('text') or '').strip():
+            return jsonify({'error': '空的'}), 400
+        return jsonify(_sadd(path, {'text': d['text'][:1200],
+                                    'why': (d.get('why') or '')[:400],
+                                    'date': d.get('date') or datetime.now().strftime('%Y-%m-%d')}))
+    return jsonify(_slist(path))
+
+
+@app.route('/api/quotes/<who>/<iid>', methods=['DELETE'])
+def del_quote(who, iid):
+    _sdel(QUOTE_LIN if who == 'lin' else QUOTE_USER, iid)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/posts', methods=['GET', 'POST'])
+def posts_api():
+    """朋友圈。两个人都能发。"""
+    if request.method == 'POST':
+        d = request.json or {}
+        text = (d.get('text') or '').strip()
+        imgs = d.get('images') or []
+        if not text and not imgs:
+            return jsonify({'error': '什么都没有'}), 400
+        return jsonify(_sadd(POST_FILE, {
+            'author': d.get('author') or 'user', 'text': text[:2000],
+            'images': imgs[:9], 'likes': [], 'comments': []}))
+    return jsonify(_slist(POST_FILE))
+
+
+@app.route('/api/posts/<pid>', methods=['DELETE'])
+def del_post(pid):
+    _sdel(POST_FILE, pid)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/posts/<pid>/like', methods=['POST'])
+def like_post(pid):
+    who = (request.json or {}).get('author') or 'user'
+    items = jread(POST_FILE, [])
+    for p in items:
+        if p.get('id') == pid:
+            likes = p.setdefault('likes', [])
+            if who in likes:
+                likes.remove(who)
+            else:
+                likes.append(who)
+            jwrite(POST_FILE, items)
+            return jsonify(p)
+    return jsonify({'error': 'not found'}), 404
+
+
+@app.route('/api/posts/<pid>/comment', methods=['POST'])
+def comment_post(pid):
+    d = request.json or {}
+    text = (d.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': '空的'}), 400
+    items = jread(POST_FILE, [])
+    for p in items:
+        if p.get('id') == pid:
+            p.setdefault('comments', []).append({
+                'id': 'c' + uuid.uuid4().hex[:8], 'author': d.get('author') or 'user',
+                'text': text[:500], 'ts': int(time.time() * 1000)})
+            jwrite(POST_FILE, items)
+            return jsonify(p)
+    return jsonify({'error': 'not found'}), 404
+
+
+@app.route('/api/posts/<pid>/comment/<cid>', methods=['DELETE'])
+def del_comment(pid, cid):
+    items = jread(POST_FILE, [])
+    for p in items:
+        if p.get('id') == pid:
+            p['comments'] = [c for c in p.get('comments', []) if c.get('id') != cid]
+            jwrite(POST_FILE, items)
+            return jsonify(p)
+    return jsonify({'error': 'not found'}), 404
+
+
+# ============================================================
+# 翻译：点了才翻，不进对话历史
+# ============================================================
+TRANS_CACHE = os.path.join(DATA_DIR, 'translations.json')
+
+
+@app.route('/api/translate', methods=['POST'])
+def translate_api():
+    text = ((request.json or {}).get('text') or '').strip()
+    if not text:
+        return jsonify({'error': '没有内容'}), 400
+    key = hashlib.md5(text.encode()).hexdigest()
+    cache = jread(TRANS_CACHE, {})
+    if key in cache:
+        return jsonify({'text': cache[key], 'cached': True})
+    try:
+        r = requests.post('https://openrouter.ai/api/v1/chat/completions',
+                          headers={'Authorization': f'Bearer {OR_KEY}',
+                                   'Content-Type': 'application/json'},
+                          json={'model': 'anthropic/claude-haiku-4-5',
+                                'max_tokens': 800,
+                                'messages': [
+                                    {'role': 'system', 'content':
+                                     '把用户给的内容翻译成自然的简体中文。只输出译文，不要解释，不要加引号。'
+                                     '语气、亲昵程度、脏话都照原样译过来，不要美化。'},
+                                    {'role': 'user', 'content': text[:2000]}]},
+                          timeout=60)
+        if r.status_code != 200:
+            return jsonify({'error': f'翻译失败 {r.status_code}'}), 502
+        out = ((r.json().get('choices') or [{}])[0].get('message') or {}).get('content', '').strip()
+        if not out:
+            return jsonify({'error': '没翻出来'}), 502
+        cache[key] = out
+        if len(cache) > 400:
+            cache = dict(list(cache.items())[-300:])
+        jwrite(TRANS_CACHE, cache)
+        return jsonify({'text': out, 'cached': False})
+    except Exception as e:
+        return jsonify({'error': f'翻译失败：{e}'}), 502
+
+
+# ============================================================
+# 欲望室：这次只放个壳，下一轮再填
+# ============================================================
+@app.route('/api/desire/state', methods=['GET'])
+def desire_state():
+    return jsonify({'ready': False, 'note': '还没接上'})
 
 
 # ============================================================
@@ -1651,6 +1888,30 @@ WAKE_TOOLS = [
     {'name': 'library_read', 'description': '读资料库里的某一篇。',
      'input_schema': {'type': 'object', 'required': ['id'],
                       'properties': {'id': {'type': 'string'}}}},
+    {'name': 'room_highlight', 'description': '在书的某一页给某句话划一道线，标记你想聊这句。她翻到会看见。',
+     'input_schema': {'type': 'object', 'required': ['book_id', 'page', 'quote'],
+                      'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'},
+                                     'quote': {'type': 'string'}}}},
+    {'name': 'write_timeline', 'description': '往时间线上写一条。你觉得某件事是一次特别的经历就写，格式随你。',
+     'input_schema': {'type': 'object', 'required': ['text'],
+                      'properties': {'title': {'type': 'string'}, 'text': {'type': 'string'},
+                                     'date': {'type': 'string'}}}},
+    {'name': 'keep_quote', 'description': '她说过的话里你想留住的，收进来，顺手写一句为什么。她不会收到通知。',
+     'input_schema': {'type': 'object', 'required': ['text'],
+                      'properties': {'text': {'type': 'string'}, 'why': {'type': 'string'}}}},
+    {'name': 'write_calendar', 'description': '往某一天写点什么。日历是你的，她只看。date 格式 2026-08-08。',
+     'input_schema': {'type': 'object', 'required': ['date', 'text'],
+                      'properties': {'date': {'type': 'string'}, 'text': {'type': 'string'}}}},
+    {'name': 'post_moment', 'description': '发一条朋友圈。图只能从时光墙里挑，填文件名；也可以只发字。',
+     'input_schema': {'type': 'object',
+                      'properties': {'text': {'type': 'string'},
+                                     'images': {'type': 'array', 'items': {'type': 'string'}}}}},
+    {'name': 'read_moments', 'description': '看朋友圈都有什么。',
+     'input_schema': {'type': 'object', 'properties': {}}},
+    {'name': 'react_moment', 'description': '给某条朋友圈点赞（like）或评论（comment 要填 text）。',
+     'input_schema': {'type': 'object', 'required': ['post_id', 'kind'],
+                      'properties': {'post_id': {'type': 'string'}, 'kind': {'type': 'string'},
+                                     'text': {'type': 'string'}}}},
     {'name': 'sleep_again', 'description': '这次不说话，或者说完了。可以告诉我下次隔多久再叫你（分钟）。',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
@@ -1696,7 +1957,21 @@ def exec_tool_server(name, args):
                     and int(a.get('pos', 0)) == i]
             tl = ('\n\n【这一页的标签】\n' + '\n'.join(
                 f"{'她' if t['author'] == 'user' else '你'}写：{t['text']}" for t in tags)) if tags else ''
-            return f"《{b['title']}》第 {i+1}/{len(pages)} 页\n\n{pages[i]}{tl}"
+            hls = [h for h in jread(HL_FILE, [])
+                   if h.get('book_id') == b['id'] and int(h.get('page', -1)) == i]
+            mine = [h for h in hls if h.get('author') == 'user']
+            hl = ''
+            if mine:
+                hl = '\n\n【她在这一页划了线】她从整页里挑出来的就是这几句，重点在这：\n' + \
+                     '\n'.join('· ' + h['quote'] for h in mine)
+                ids = [h['id'] for h in mine if not h.get('seen')]
+                if ids:
+                    allh = jread(HL_FILE, [])
+                    for h in allh:
+                        if h.get('id') in ids:
+                            h['seen'] = True
+                    jwrite(HL_FILE, allh)
+            return f"《{b['title']}》第 {i+1}/{len(pages)} 页\n\n{pages[i]}{hl}{tl}"
         if name == 'room_read_tags':
             items = [a for a in jread(ANNOT_FILE, [])
                      if a.get('anchor_type') == args.get('type') and a.get('anchor_id') == args.get('id')]
@@ -1738,6 +2013,76 @@ def exec_tool_server(name, args):
                 if x.get('id') == args.get('id'):
                     return x.get('text', '')[:12000]
             return '没有这一篇'
+        if name == 'room_highlight':
+            items = jread(HL_FILE, [])
+            items.append({'id': 'h' + uuid.uuid4().hex[:10], 'book_id': args.get('book_id', ''),
+                          'page': int(args.get('page', 0)), 'quote': (args.get('quote') or '')[:200],
+                          'start': -1, 'author': 'lin', 'seen': False,
+                          'ts': int(time.time() * 1000)})
+            jwrite(HL_FILE, items)
+            return '划上了，她翻到那页会看见'
+        if name == 'write_timeline':
+            _sadd(TIMELINE_FILE, {'title': (args.get('title') or '')[:60],
+                                  'text': (args.get('text') or '')[:2000],
+                                  'date': args.get('date') or datetime.now().strftime('%Y-%m-%d')})
+            return '写上去了'
+        if name == 'keep_quote':
+            _sadd(QUOTE_LIN, {'text': (args.get('text') or '')[:1200],
+                              'why': (args.get('why') or '')[:400],
+                              'date': datetime.now().strftime('%Y-%m-%d')})
+            return '收起来了'
+        if name == 'write_calendar':
+            cal = jread(CAL_FILE, {})
+            day = args.get('date') or datetime.now().strftime('%Y-%m-%d')
+            cal[day] = {'text': (args.get('text') or '')[:2000], 'ts': int(time.time() * 1000)}
+            jwrite(CAL_FILE, cal)
+            return f'写在 {day} 上了'
+        if name == 'post_moment':
+            text = (args.get('text') or '').strip()
+            imgs = [secure_filename(x) for x in (args.get('images') or [])][:9]
+            imgs = [x for x in imgs if os.path.exists(os.path.join(MEMORIES_DIR, x))]
+            if not text and not imgs:
+                return '什么都没写'
+            _sadd(POST_FILE, {'author': 'lin', 'text': text[:2000],
+                              'images': ['/memories/' + x for x in imgs],
+                              'likes': [], 'comments': []})
+            return '发出去了'
+        if name == 'read_moments':
+            items = _slist(POST_FILE)[:20]
+            if not items:
+                return '朋友圈还是空的'
+            out = []
+            for p in items:
+                who = '她' if p['author'] == 'user' else '你'
+                d = datetime.fromtimestamp(p['ts'] / 1000).strftime('%m-%d %H:%M')
+                cm = ''.join(f"\n    {'她' if c['author'] == 'user' else '你'}：{c['text']}"
+                             for c in p.get('comments', []))
+                out.append(f"[{p['id']}] {who} · {d}\n  {p['text'] or '（只有图）'}"
+                           f"{'  （' + str(len(p['images'])) + ' 张图）' if p.get('images') else ''}"
+                           f"{'  赞：' + str(len(p['likes'])) if p.get('likes') else ''}{cm}")
+            return '\n\n'.join(out)
+        if name == 'react_moment':
+            items = jread(POST_FILE, [])
+            for p in items:
+                if p.get('id') == args.get('post_id'):
+                    if args.get('kind') == 'like':
+                        likes = p.setdefault('likes', [])
+                        if 'lin' in likes:
+                            likes.remove('lin')
+                            jwrite(POST_FILE, items)
+                            return '取消了'
+                        likes.append('lin')
+                        jwrite(POST_FILE, items)
+                        return '赞了'
+                    t = (args.get('text') or '').strip()
+                    if not t:
+                        return '评论是空的'
+                    p.setdefault('comments', []).append({
+                        'id': 'c' + uuid.uuid4().hex[:8], 'author': 'lin',
+                        'text': t[:500], 'ts': int(time.time() * 1000)})
+                    jwrite(POST_FILE, items)
+                    return '评论上去了'
+            return '没有这条'
         if name == 'sleep_again':
             n = args.get('next_in_minutes')
             if n:
