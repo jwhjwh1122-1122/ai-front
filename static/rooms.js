@@ -1601,9 +1601,11 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const d = await jpost('/api/mcp-connect', { url });
       if (d.error) { toast(d.error); return; }
+      const tl = d.tools || [];
       mcpServers.push({
         id: genId(), name: $('mcp-name-input').value.trim() || new URL(url).hostname,
-        url, enabled: true, sid: d.session_id || null, tools: d.tools || []
+        url, enabled: true, sid: d.session_id || null, tools: tl,
+        off: tl.length > 6 ? tl.slice(6).map(t => t.name) : []
       });
       saveMcp(); renderMcp();
       $('mcp-url-input').value = ''; $('mcp-name-input').value = '';
@@ -1699,20 +1701,63 @@ function renderEmoji() {
 }
 function renderMcp() {
   const el = $('mcp-list');
-  $('mcp-count').textContent = `${mcpServers.length} 个 · ${buildTools().length} 个工具`;
+  $('mcp-count').textContent = `${mcpServers.length} 个 · 这一轮实发 ${buildTools().length} 个工具`;
   if (!mcpServers.length) { el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:50px 20px;">还没有添加服务器</div>'; return; }
   el.innerHTML = '';
   mcpServers.forEach(s => {
+    const off = new Set(s.off || []);
+    const tools = s.tools || [];
+    const on = tools.filter(t => !off.has(t.name)).length;
     const d = document.createElement('div');
     d.className = 'mcp-server' + (s.enabled ? '' : ' off');
     d.innerHTML = `<div class="mcp-name">${esc(s.name)}</div><div class="mcp-url">${esc(s.url)}</div>
-      <div class="mcp-tools">${(s.tools || []).length} 个工具：${(s.tools || []).map(t => t.name).join(', ') || '无'}</div>
+      <div class="mcp-tools"><span class="mt-count">${on} / ${tools.length} 个工具在发</span><span class="mcp-more">展开 ▾</span></div>
+      <div class="mcp-tool-list"></div>
       <div class="mcp-actions"><div class="mcp-toggle${s.enabled ? ' on' : ''}"></div><div class="mcp-del">✕</div></div>`;
     d.querySelector('.mcp-toggle').onclick = () => { s.enabled = !s.enabled; saveMcp(); renderMcp(); };
     d.querySelector('.mcp-del').onclick = () => {
       if (!confirm(`删掉「${s.name}」？`)) return;
       mcpServers = mcpServers.filter(x => x.id !== s.id); saveMcp(); renderMcp();
     };
+    const box = d.querySelector('.mcp-tool-list');
+    const more = d.querySelector('.mcp-more');
+    more.onclick = () => {
+      const open = box.classList.toggle('open');
+      more.textContent = open ? '收起 ▴' : '展开 ▾';
+      if (open && !box.dataset.done) { drawToolRows(box, s, d); box.dataset.done = '1'; }
+    };
     el.appendChild(d);
+  });
+}
+function drawToolRows(box, s, card) {
+  const refresh = () => {
+    const off = new Set(s.off || []);
+    const on = (s.tools || []).filter(x => !off.has(x.name)).length;
+    card.querySelector('.mt-count').textContent = `${on} / ${(s.tools || []).length} 个工具在发`;
+    $('mcp-count').textContent = `${mcpServers.length} 个 · 这一轮实发 ${buildTools().length} 个工具`;
+  };
+  box.innerHTML = '';
+  const bar = document.createElement('div');
+  bar.className = 'mt-bar';
+  bar.innerHTML = '<span data-all="1">全开</span><span data-none="1">全关</span>';
+  bar.querySelector('[data-all]').onclick = () => { s.off = []; saveMcp(); drawToolRows(box, s, card); refresh(); };
+  bar.querySelector('[data-none]').onclick = () => { s.off = (s.tools || []).map(t => t.name); saveMcp(); drawToolRows(box, s, card); refresh(); };
+  box.appendChild(bar);
+  (s.tools || []).forEach(t => {
+    const isOff = (s.off || []).includes(t.name);
+    const row = document.createElement('div');
+    row.className = 'mt-row' + (isOff ? ' off' : '');
+    row.innerHTML = `<div class="mt-n">${esc(t.name)}<div class="mt-d">${esc((t.description || '').slice(0, 56))}</div></div>
+      <div class="mt-sw${isOff ? '' : ' on'}"></div>`;
+    row.querySelector('.mt-sw').onclick = () => {
+      const cur = new Set(s.off || []);
+      cur.has(t.name) ? cur.delete(t.name) : cur.add(t.name);
+      s.off = [...cur]; saveMcp();
+      const nowOff = cur.has(t.name);
+      row.classList.toggle('off', nowOff);
+      row.querySelector('.mt-sw').classList.toggle('on', !nowOff);
+      refresh();
+    };
+    box.appendChild(row);
   });
 }
