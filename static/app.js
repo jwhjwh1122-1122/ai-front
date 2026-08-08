@@ -88,7 +88,8 @@ const DEFAULT_MCP = [{
     { name: 'grow', description: '整理长文本存进记忆', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } },
   ]
 }];
-// 不常用的，唤醒时和信箱里才发
+// 记忆库每轮只发这几个。服务器上有多少是一回事，发给他多少是另一回事。
+const OMBRE_HOT = ['breath', 'breath_search', 'hold', 'grow'];
 const OMBRE_EXTRA = [
   { name: 'dream', description: '读最近有变动的记忆', input_schema: { type: 'object', properties: {} } },
   { name: 'letter_write', description: '写信。author: user=她写 ai=你写', input_schema: { type: 'object', required: ['author', 'content'], properties: { author: { type: 'string' }, content: { type: 'string' }, title: { type: 'string' } } } },
@@ -110,8 +111,13 @@ function buildTools() {
   if (groupOn('log')) T.log.forEach(push);
   if (roomCtx === 'reader' && groupOn('reader')) T.reader.forEach(push);
   if (roomCtx === 'stage' && groupOn('stage')) T.stage.forEach(push);
-  for (const s of enabledServers()) for (const t of s.tools)
-    push({ name: t.name, description: t.description || '', input_schema: t.input_schema || { type: 'object', properties: {} } });
+  for (const s of enabledServers()) {
+    const isOmbre = /jwhjwh|ombre/i.test(s.url);
+    for (const t of s.tools) {
+      if (isOmbre && !OMBRE_HOT.includes(t.name)) continue;
+      push({ name: t.name, description: (t.description || '').slice(0, 120), input_schema: t.input_schema || { type: 'object', properties: {} } });
+    }
+  }
   return out;
 }
 function findServerForTool(n) {
