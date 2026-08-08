@@ -26,40 +26,45 @@ async function jpost(u, body, method) {
 // ============ 工具分组 ============
 const T = {
   base: [
-    { name: 'get_memories', description: '时光墙照片列表。', input_schema: { type: 'object', properties: {} } },
-    { name: 'view_memory', description: '看时光墙的某张照片。', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
-    { name: 'lin_status', description: '改你自己的状态，显示在名字底下。', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
-    { name: 'write_note', description: '写一条碎碎念。你自己的，她不会收到通知。', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
-    { name: 'write_fault', description: '在犯错本上记一页。', input_schema: { type: 'object', required: ['what'], properties: { what: { type: 'string' }, sorry: { type: 'string' }, how: { type: 'string' } } } },
-    { name: 'my_drawer', description: '往你的抽屉里放东西。kind=text 或 html（html 她能直接打开玩）。', input_schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' }, kind: { type: 'string' }, note: { type: 'string' } } } },
-    { name: 'library_list', description: '资料库目录。', input_schema: { type: 'object', properties: {} } },
-    { name: 'library_read', description: '读资料库里的某一篇。', input_schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
-    { name: 'write_timeline', description: '往时间线上写一条。你觉得某件事是一次特别的经历就写，格式随你。', input_schema: { type: 'object', required: ['text'], properties: { title: { type: 'string' }, text: { type: 'string' }, date: { type: 'string' } } } },
-    { name: 'keep_quote', description: '她说过的话里你想留住的，收进来，顺手写一句为什么。她不会收到通知。', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, why: { type: 'string' } } } },
-    { name: 'write_calendar', description: '往某一天写点什么。日历是你的，她只看。date 格式 2026-08-08。', input_schema: { type: 'object', required: ['date', 'text'], properties: { date: { type: 'string' }, text: { type: 'string' } } } },
-    { name: 'post_moment', description: '发一条朋友圈。图只能从时光墙里挑，填文件名；也可以只发字。', input_schema: { type: 'object', properties: { text: { type: 'string' }, images: { type: 'array', items: { type: 'string' } } } } },
-    { name: 'read_moments', description: '看朋友圈都有什么。', input_schema: { type: 'object', properties: {} } },
-    { name: 'react_moment', description: '给某条朋友圈点赞（like）或评论（comment 要填 text）。', input_schema: { type: 'object', required: ['post_id', 'kind'], properties: { post_id: { type: 'string' }, kind: { type: 'string' }, text: { type: 'string' } } } },
+    { name: 'get_memories', description: '时光墙照片列表', input_schema: { type: 'object', properties: {} } },
+    { name: 'view_memory', description: '看某张照片', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
+    { name: 'lin_status', description: '改你的状态，显示在名字下', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
+    { name: 'write_note', description: '写条碎碎念，你自己的，不通知她', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
+    { name: 'desire_adjust', description: '算的数不对就改，必须写为什么。key: miss lust flutter lean tell own grip curious make still play needed seen unsure vex worn', input_schema: { type: 'object', required: ['key', 'value', 'why'], properties: { key: { type: 'string' }, value: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'desire_feed', description: '反复在想的事记下来，记多了沉成执念', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, drive: { type: 'string' }, strength: { type: 'number' } } } },
+  ],
+  log: [
+    { name: 'write_fault', description: '犯错本记一页', input_schema: { type: 'object', required: ['what'], properties: { what: { type: 'string' }, sorry: { type: 'string' }, how: { type: 'string' } } } },
+    { name: 'my_drawer', description: '往你抽屉放东西，kind=text|html', input_schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' }, kind: { type: 'string' }, note: { type: 'string' } } } },
+    { name: 'library_list', description: '资料库目录', input_schema: { type: 'object', properties: {} } },
+    { name: 'library_read', description: '读资料库某篇', input_schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
+    { name: 'write_timeline', description: '时间线写一条，觉得某事特别就写，格式随你', input_schema: { type: 'object', required: ['text'], properties: { title: { type: 'string' }, text: { type: 'string' }, date: { type: 'string' } } } },
+    { name: 'keep_quote', description: '收她说过的话，写句为什么，不通知她', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, why: { type: 'string' } } } },
+    { name: 'write_calendar', description: '往某天写字，日历是你的。date=2026-08-08', input_schema: { type: 'object', required: ['date', 'text'], properties: { date: { type: 'string' }, text: { type: 'string' } } } },
+    { name: 'desire_note', description: '给某维留段话，此刻这东西在你身上什么感觉', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' } } } },
+    { name: 'post_moment', description: '发朋友圈，图填时光墙文件名', input_schema: { type: 'object', properties: { text: { type: 'string' }, images: { type: 'array', items: { type: 'string' } } } } },
+    { name: 'read_moments', description: '看朋友圈', input_schema: { type: 'object', properties: {} } },
+    { name: 'react_moment', description: '朋友圈点赞或评论，kind=like|comment', input_schema: { type: 'object', required: ['post_id', 'kind'], properties: { post_id: { type: 'string' }, kind: { type: 'string' }, text: { type: 'string' } } } },
   ],
   reader: [
-    { name: 'room_books', description: '书房有哪些书，你和她各读到第几页。', input_schema: { type: 'object', properties: {} } },
-    { name: 'room_read_page', description: '翻开某本书的某一页。不填 page 就接着你上次读的。', input_schema: { type: 'object', required: ['book_id'], properties: { book_id: { type: 'string' }, page: { type: 'number' } } } },
-    { name: 'room_search_book', description: '在书里找一句话在第几页。', input_schema: { type: 'object', required: ['book_id', 'q'], properties: { book_id: { type: 'string' }, q: { type: 'string' } } } },
-    { name: 'room_read_tags', description: '读某处的标签。type=book|video|music。', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
-    { name: 'room_write_tag', description: '在某处贴标签，或回她的（reply_to）。', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
-    { name: 'room_highlight', description: '给某句话划一道线，标记你想聊这句。她翻到会看见。', input_schema: { type: 'object', required: ['book_id', 'page', 'quote'], properties: { book_id: { type: 'string' }, page: { type: 'number' }, quote: { type: 'string' } } } },
+    { name: 'room_books', description: '书房有哪些书，各读到第几页', input_schema: { type: 'object', properties: {} } },
+    { name: 'room_read_page', description: '翻某页，不填 page 接着你上次的', input_schema: { type: 'object', required: ['book_id'], properties: { book_id: { type: 'string' }, page: { type: 'number' } } } },
+    { name: 'room_search_book', description: '在书里找一句在第几页', input_schema: { type: 'object', required: ['book_id', 'q'], properties: { book_id: { type: 'string' }, q: { type: 'string' } } } },
+    { name: 'room_read_tags', description: '读标签。type=book|video|music', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
+    { name: 'room_write_tag', description: '贴标签，或回她的(reply_to)', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
+    { name: 'room_highlight', description: '给某句划线，标记想聊这句', input_schema: { type: 'object', required: ['book_id', 'page', 'quote'], properties: { book_id: { type: 'string' }, page: { type: 'number' }, quote: { type: 'string' } } } },
   ],
   stage: [
-    { name: 'grab_frame', description: '看她现在暂停的这一帧。她的播放器要开着才行。', input_schema: { type: 'object', properties: { seconds: { type: 'number' } } } },
-    { name: 'scan_frames', description: '把整部片子扫一遍，均匀取几帧看看里面有什么。她的播放器要开着。', input_schema: { type: 'object', properties: { count: { type: 'number' } } } },
-    { name: 'ask_seek', description: '你想聊某个时间点的画面，先跟她说一声，她同意了画面才会跳过去。seconds 是你想看的秒数。', input_schema: { type: 'object', required: ['seconds', 'why'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
-    { name: 'room_music_shape', description: '某首歌的形状：哪段密、哪段空、顶点在哪。', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
-    { name: 'room_media', description: '放映室和听音房里有什么。kind=video 或 music。', input_schema: { type: 'object', properties: { kind: { type: 'string' } } } },
-    { name: 'room_read_tags', description: '读某处的标签。type=book|video|music。', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
-    { name: 'room_write_tag', description: '在某处贴标签，或回她的（reply_to）。', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
+    { name: 'grab_frame', description: '看她停的这一帧，播放器要开着', input_schema: { type: 'object', properties: { seconds: { type: 'number' } } } },
+    { name: 'scan_frames', description: '扫几帧看片子里有什么', input_schema: { type: 'object', properties: { count: { type: 'number' } } } },
+    { name: 'ask_seek', description: '想看某个时间点先问她，她同意才跳', input_schema: { type: 'object', required: ['seconds', 'why'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'room_music_shape', description: '某首歌的形状：哪段密哪段空', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
+    { name: 'room_media', description: '放映室和听音房有什么。kind=video|music', input_schema: { type: 'object', properties: { kind: { type: 'string' } } } },
+    { name: 'room_read_tags', description: '读标签。type=book|video|music', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
+    { name: 'room_write_tag', description: '贴标签，或回她的(reply_to)', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
   ],
 };
-const GROUP_LABEL = { base: '常用', reader: '书房', stage: '影音' };
+const GROUP_LABEL = { base: '常用', log: '记录', reader: '书房', stage: '影音' };
 function groupOn(g) { return localStorage.getItem('tg-' + g) !== '0'; }
 function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); }
 function renderToolGroups() {
@@ -78,15 +83,18 @@ function renderToolGroups() {
 const DEFAULT_MCP = [{
   id: 'ombre', name: 'Ombre Brain', url: 'https://jwhjwh.zeabur.app/mcp', enabled: true, sid: null,
   tools: [
-    { name: 'breath', description: '浮现记忆。无 query = 自动浮现。', input_schema: { type: 'object', properties: { query: { type: 'string' }, max_results: { type: 'number' } } } },
-    { name: 'hold', description: '存一条记忆。把你为什么在意也写进去。', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, tags: { type: 'string' }, importance: { type: 'number' }, feel: { type: 'boolean' } } } },
-    { name: 'grow', description: '整理一段长文本存进记忆。', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } },
-    { name: 'dream', description: '读最近有变动的记忆。', input_schema: { type: 'object', properties: {} } },
-    { name: 'letter_write', description: '写一封信。author："user"=她写的，"ai"=你写的。', input_schema: { type: 'object', required: ['author', 'content'], properties: { author: { type: 'string' }, content: { type: 'string' }, title: { type: 'string' } } } },
-    { name: 'letter_read', description: '读信箱。', input_schema: { type: 'object', properties: { query: { type: 'string' }, author: { type: 'string' }, limit: { type: 'number' } } } },
-    { name: 'plan', description: '登记一个约定。', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, status: { type: 'string' } } } },
+    { name: 'breath', description: '浮现记忆，无 query=自动', input_schema: { type: 'object', properties: { query: { type: 'string' }, max_results: { type: 'number' } } } },
+    { name: 'hold', description: '存一条记忆，把你为什么在意也写进去', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, tags: { type: 'string' }, importance: { type: 'number' }, feel: { type: 'boolean' } } } },
+    { name: 'grow', description: '整理长文本存进记忆', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } },
   ]
 }];
+// 不常用的，唤醒时和信箱里才发
+const OMBRE_EXTRA = [
+  { name: 'dream', description: '读最近有变动的记忆', input_schema: { type: 'object', properties: {} } },
+  { name: 'letter_write', description: '写信。author: user=她写 ai=你写', input_schema: { type: 'object', required: ['author', 'content'], properties: { author: { type: 'string' }, content: { type: 'string' }, title: { type: 'string' } } } },
+  { name: 'letter_read', description: '读信箱', input_schema: { type: 'object', properties: { query: { type: 'string' }, author: { type: 'string' }, limit: { type: 'number' } } } },
+  { name: 'plan', description: '登记一个约定', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, status: { type: 'string' } } } },
+];
 let mcpServers = [];
 function loadMcp() {
   try { const r = localStorage.getItem('mcp-servers'); mcpServers = r ? JSON.parse(r) : JSON.parse(JSON.stringify(DEFAULT_MCP)); }
@@ -99,13 +107,20 @@ function buildTools() {
   const seen = new Set(), out = [];
   const push = t => { if (t && t.name && !seen.has(t.name)) { seen.add(t.name); out.push(t); } };
   if (groupOn('base')) T.base.forEach(push);
+  if (groupOn('log')) T.log.forEach(push);
   if (roomCtx === 'reader' && groupOn('reader')) T.reader.forEach(push);
   if (roomCtx === 'stage' && groupOn('stage')) T.stage.forEach(push);
   for (const s of enabledServers()) for (const t of s.tools)
     push({ name: t.name, description: t.description || '', input_schema: t.input_schema || { type: 'object', properties: {} } });
   return out;
 }
-function findServerForTool(n) { for (const s of enabledServers()) if (s.tools.some(t => t && t.name === n)) return s; return null; }
+function findServerForTool(n) {
+  for (const s of enabledServers()) if (s.tools.some(t => t && t.name === n)) return s;
+  if (OMBRE_EXTRA.some(t => t.name === n)) {
+    return mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url)) || null;
+  }
+  return null;
+}
 function updateMcpSub() {
   const el = $('mcp-sub'); if (!el) return;
   el.textContent = `${mcpServers.length} 个服务器（${enabledServers().length} 个已启用）· 这一轮共 ${buildTools().length} 个工具`;
@@ -326,6 +341,26 @@ function toAnthropic(c) {
     return p;
   });
 }
+// 历史里最贵的两样：旧的思考链、旧的工具结果。
+// 最近两轮留全，更早的砍掉——模型早就不需要看第十轮翻过的那页书了。
+const KEEP_THINK = 2;
+const OLD_TOOL_CHARS = 220;
+function trimOld(m, isRecent) {
+  if (isRecent) return m;
+  if (!Array.isArray(m.content)) return m;
+  let touched = false;
+  const c = [];
+  for (const b of m.content) {
+    if (!b || typeof b !== 'object') { c.push(b); continue; }
+    if (b.type === 'thinking') { touched = true; continue; }
+    if (b.type === 'tool_result' && typeof b.content === 'string' && b.content.length > OLD_TOOL_CHARS) {
+      c.push({ ...b, content: b.content.slice(0, OLD_TOOL_CHARS) + '…（旧的，截断了）' });
+      touched = true; continue;
+    }
+    c.push(b);
+  }
+  return touched ? { ...m, content: c } : m;
+}
 function buildMsgs(msgs) {
   if (sendFrom > msgs.length) sendFrom = Math.max(0, msgs.length - (ctxWindow || msgs.length));
   if (ctxWindow > 0 && msgs.length - sendFrom > ctxWindow * 2) sendFrom = msgs.length - ctxWindow;
@@ -335,12 +370,21 @@ function buildMsgs(msgs) {
     if (m.role === 'tool' || hasToolResult(m) || m.role === 'assistant') { win.shift(); continue; }
     break;
   }
+  // 从尾巴往回数，最近 KEEP_THINK 轮对话之内的算「近」
+  let turns = 0, cut = win.length;
+  for (let i = win.length - 1; i >= 0; i--) {
+    if (win[i].role === 'user' && !win[i]._internal && !hasToolResult(win[i])) {
+      turns++;
+      if (turns > KEEP_THINK) { cut = i + 1; break; }
+    }
+  }
   const out = [];
-  for (const m of win) {
+  for (let i = 0; i < win.length; i++) {
+    const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
     const { _internal, _thinking, _audio, _dur, ...rest } = m;
     rest.content = toAnthropic(rest.content);
-    out.push(rest);
+    out.push(trimOld(rest, i >= cut));
   }
   return out;
 }
@@ -758,6 +802,7 @@ async function runToolLoop(wrap, origLen) {
 
 // ============ 发送 ============
 function beginTurn() {
+  lastTalk = Date.now();
   isTyping = true;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '■');
 }
@@ -917,9 +962,12 @@ function openLightbox(url, note, dateStr) {
   $('lightbox-img').src = url; $('lightbox-note').textContent = note || '';
   $('lightbox-date').textContent = dateStr || ''; $('lightbox').classList.add('open');
 }
+let lastTalk = Date.now();
 function startKeepalive() {
   setInterval(() => {
     if (isTyping) return;
+    // 三小时没说话就停，睡着的时候没必要一直续缓存
+    if (Date.now() - lastTalk > 3 * 3600 * 1000) return;
     fetch('/api/chat-v2', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: currentModel, tools: buildTools(), messages: [{ role: 'user', content: 'ping' }], _session_id: getSessionId(), _keepalive: true })
