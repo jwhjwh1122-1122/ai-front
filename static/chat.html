@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 
@@ -27,8 +27,7 @@
   <div class="topbar-left">
     <div class="avatar" id="avatar"><span id="avatar-text">凛</span></div>
     <div>
-      <div class="name" id="lin-name">凛</div>
-      <div class="lin-state" id="lin-state" style="display:none"></div>
+      <div class="name"><span id="lin-name">凛</span><span class="lin-state" id="lin-state"></span></div>
       <div class="sub" id="status-text">在线</div>
       <div class="user-status" id="user-status" style="display:none"></div>
     </div>
@@ -61,46 +60,57 @@
       <div class="home-sub" id="home-sub">—</div>
     </div>
     <div class="hall">
-      <div class="doors">
-        <div class="door lit" data-room="study">
-          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
-          <div class="door-knob"></div><div class="door-plate"><span>书房</span></div>
-          <div class="door-state" id="st-study">空着</div><div class="door-dot" id="dot-study"></div>
+      <div class="rooms">
+        <div class="room-card" data-room="study">
+          <svg width="90" height="72" viewBox="0 0 96 72"><g transform="translate(7,0)"><path class="ic" d="M13 10 V62"/><path class="ic" d="M71 10 V62"/><path class="ic" d="M11 62 H73"/><path class="ic" d="M13 37 H71"/><rect class="ic thin" x="20" y="19" width="7" height="18" rx="1.5"/><rect class="ic thin" x="29" y="16" width="6" height="21" rx="1.5"/><rect class="ic thin" x="37" y="21" width="8" height="16" rx="1.5"/><path class="ic thin" d="M49 37 L60 22 L64 25 L54 37 Z"/><rect class="ic thin" x="18" y="45" width="6" height="17" rx="1.5"/><rect class="ic thin" x="26" y="48" width="7" height="14" rx="1.5"/><path class="ic thin" d="M41 56 H67"/><path class="ic thin" d="M41 62 H67"/><path class="ic thin" d="M41 56 V62"/><path class="ic thin" d="M67 56 V62"/></g></svg>
+          <div><div class="rc-name">书 房</div><div class="rc-sub" id="st-study">—</div></div>
+          <div class="rc-dot" id="dot-study"></div>
         </div>
-        <div class="door flicker" data-room="cinema">
-          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
-          <div class="door-knob"></div><div class="door-plate"><span>放映室</span></div>
-          <div class="door-state" id="st-cinema">空着</div><div class="door-dot" id="dot-cinema"></div>
+        <div class="room-card" data-room="cinema">
+          <svg width="90" height="72" viewBox="0 0 96 72"><g transform="translate(8,0)"><rect class="ic" x="12" y="10" width="60" height="52"/><path class="ic fillbg" d="M58 63 C58 53 53 48.8 46.3 48.8 C42.6 48.8 40 50.4 38.4 53 L38.4 63 Z"/><circle class="ic fillbg" cx="46.3" cy="47.4" r="6.2"/><path class="ic fillbg" d="M25 63 C25 55.5 29 52 35 51.6 C38.8 51.3 41 52.8 42.6 55.2 L42.6 63 Z"/><circle class="ic fillbg" cx="35" cy="50.2" r="5.6"/></g></svg>
+          <div><div class="rc-name">放映室</div><div class="rc-sub" id="st-cinema">—</div></div>
+          <div class="rc-dot" id="dot-cinema"></div>
         </div>
-        <div class="door dim" data-room="music">
-          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
-          <div class="door-knob"></div><div class="door-plate"><span>听音房</span></div>
-          <div class="door-state" id="st-music">空着</div><div class="door-dot" id="dot-music"></div>
+        <div class="room-card" data-room="music">
+          <svg width="90" height="72" viewBox="0 0 96 72"><g transform="translate(2,0)"><rect class="ic" x="14" y="11" width="31" height="44" rx="4"/><rect class="ic thin" x="18.5" y="15" width="22" height="16" rx="2"/><rect class="ic hair" x="21" y="18" width="7" height="7" rx="1"/><path class="ic hair" d="M30.5 20 H37.5"/><path class="ic hair" d="M30.5 23.5 H35.5"/><circle class="ic thin" cx="29.5" cy="43" r="8.4"/><path class="ic hair" d="M29.5 45.6 C27.6 43.7 26 42.7 26 41.2 C26 40.2 26.8 39.6 27.6 39.6 C28.4 39.6 29.1 40 29.5 40.7 C29.9 40 30.6 39.6 31.4 39.6 C32.2 39.6 33 40.2 33 41.2 C33 42.7 31.4 43.7 29.5 45.6 Z"/><path class="ic thin" d="M33 55 V59.5"/><path class="ic thin" d="M33 59.5 C33 65 40 68 46.5 65 C53.5 61.8 52 53 58.5 49 C63 46.2 68.5 47.5 70 43"/><path class="ic thin" d="M70 43 C71.5 37.5 68.5 32.5 64 30"/><path class="ic thin" d="M70 43 C74.5 38.5 77.5 32.5 78.5 27"/><ellipse class="ic thin" cx="61" cy="26.5" rx="4.5" ry="3.9" transform="rotate(-22 61 26.5)"/><ellipse class="ic thin" cx="80" cy="23" rx="4.5" ry="3.9" transform="rotate(16 80 23)"/></g></svg>
+          <div><div class="rc-name">一起听</div><div class="rc-sub" id="st-music">—</div></div>
+          <div class="rc-dot" id="dot-music"></div>
         </div>
-        <div class="door" data-room="mailbox">
-          <div class="door-glow"></div><div class="door-panel a"></div><div class="door-panel b"></div>
-          <div class="door-knob"></div><div class="door-plate"><span>信箱</span></div>
-          <div class="door-state">看看有没有信</div><div class="door-dot" id="dot-mail"></div>
+        <div class="room-card" data-room="mailbox">
+          <svg width="90" height="72" viewBox="0 0 96 72"><path class="ic" d="M25 16 H71 V54 H25 Z"/><path class="ic thin" d="M25 16 L48 36 L71 16"/><path class="ic fillbg" d="M48 45 C41.6 38.6 36.4 35.2 36.4 30.3 C36.4 27 39 24.8 41.8 24.8 C44.3 24.8 46.7 26.4 48 28.6 C49.3 26.4 51.7 24.8 54.2 24.8 C57 24.8 59.6 27 59.6 30.3 C59.6 35.2 54.4 38.6 48 45 Z"/><g transform="translate(21,35)"><path class="ic thin" d="M0 0 C-3 -6.5 -11.5 -7 -11.5 -2.8 C-11.5 -0.6 -8.4 0 -5.4 0 C-8.4 0 -11.5 0.6 -11.5 2.8 C-11.5 7 -3 6.5 0 0 Z"/><circle class="ic hair" cx="-16" cy="-3.6" r="1.8"/></g><g transform="translate(75,35) scale(-1,1)"><path class="ic thin" d="M0 0 C-3 -6.5 -11.5 -7 -11.5 -2.8 C-11.5 -0.6 -8.4 0 -5.4 0 C-8.4 0 -11.5 0.6 -11.5 2.8 C-11.5 7 -3 6.5 0 0 Z"/><circle class="ic hair" cx="-16" cy="-3.6" r="1.8"/></g></svg>
+          <div><div class="rc-name">信 箱</div><div class="rc-sub" id="st-mail">—</div></div>
+          <div class="rc-dot" id="dot-mail"></div>
+        </div>
+        <div class="room-card" data-room="moments">
+          <svg width="90" height="72" viewBox="0 0 96 72"><g transform="translate(48,36)"><circle class="ic" cx="0" cy="0" r="21"/><g class="ic thin"><path d="M0 -21 A21 21 0 0 1 18.2 -10.5 L6.1 -3.5 A7 7 0 0 0 0 -7 Z"/><path d="M18.2 -10.5 A21 21 0 0 1 18.2 10.5 L6.1 3.5 A7 7 0 0 0 6.1 -3.5 Z"/><path d="M18.2 10.5 A21 21 0 0 1 0 21 L0 7 A7 7 0 0 0 6.1 3.5 Z"/><path d="M0 21 A21 21 0 0 1 -18.2 10.5 L-6.1 3.5 A7 7 0 0 0 0 7 Z"/><path d="M-18.2 10.5 A21 21 0 0 1 -18.2 -10.5 L-6.1 -3.5 A7 7 0 0 0 -6.1 3.5 Z"/><path d="M-18.2 -10.5 A21 21 0 0 1 0 -21 L0 -7 A7 7 0 0 0 -6.1 -3.5 Z"/></g></g></svg>
+          <div><div class="rc-name">朋友圈</div><div class="rc-sub" id="st-moments">—</div></div>
+          <div class="rc-dot" id="dot-moments"></div>
+        </div>
+        <div class="room-card" data-room="desire">
+          <svg width="90" height="72" viewBox="0 0 96 72"><g transform="translate(48,36) scale(.49) translate(-50,-69)"><path class="ic" stroke-width="3.05" d="M48 8 C49 14 52.2 18 52.6 25 C53 33 50.2 40 49.8 48 L49.8 60 C58 59.5 66 58.5 72 57 C78 55 84 57.5 90 62.3 C84 67 78 69.5 72 67.5 C66 66 58 65 49.8 64.5 C50.2 78 52.4 95 52.8 108 C53.2 118 50.5 125 48 132 C45.5 125 42.8 118 43.2 108 C43.6 95 45.8 78 46.2 64.5 C38 65 30 66 24 67.5 C18 69.5 12 67 6 62.3 C12 57.5 18 55 24 57 C30 58.5 38 59.5 46.2 60 L46.2 48 C45.8 40 43 33 43.4 25 C43.8 18 47 14 48 8 Z"/><path class="ic" stroke-width="3.05" d="M48 57 L52.5 62.3 L48 67.5 L43.5 62.3 Z"/><path class="ic" stroke-width="2.4" d="M48 15 C47.5 25 47.4 38 47.7 50"/><path class="ic" stroke-width="2.4" d="M48 15 C48.5 25 48.6 38 48.3 50"/><path class="ic" stroke-width="2.4" d="M48 105 C47.4 115 47.3 124 48 131"/><path class="ic" stroke-width="2.4" d="M48 105 C48.6 115 48.7 124 48 131"/><path class="ic" stroke-width="2.4" d="M24 57 C25.5 60 25.5 65 24 67.5"/><path class="ic" stroke-width="2.4" d="M72 57 C70.5 60 70.5 65 72 67.5"/><path class="ic" stroke-width="2.4" d="M70 21.5 C71 16.8 72.5 13.8 74.5 12.5 C78 10.3 82 9.2 84.5 9"/><path class="ic" stroke-width="2.4" d="M75 26.5 C77 23.2 78.8 20.6 80.5 18.5 C82 16.4 83.6 12.5 84.5 9"/><path class="ic" stroke-width="1.8" d="M84.5 9 L88.2 6.8"/><path class="ic" stroke-width="1.8" d="M87 7.4 L88.6 9.4"/><path class="ic" stroke-width="2.4" d="M66.5 124 C63.5 124.7 61 125.9 59.3 127.4"/><path class="ic" stroke-width="2.4" d="M69.5 127 C66.3 127.6 62 127.9 59.3 127.4"/><path class="ic" stroke-width="2.4" d="M70 21.5 C60 29 52 40 50.5 52 C49 64 37 70 24.5 66 C16 63 13 53 18.5 45"/><path class="ic" stroke-width="1.8" d="M75 26.5 C65 34 57 45 55.5 56 C54 68 40 76 26 72 C15.5 68.5 11.5 56 17.5 47"/></g></svg>
+          <div><div class="rc-name">欲望室</div><div class="rc-sub" id="st-desire">—</div></div>
+          <div class="rc-dot" id="dot-desire"></div>
         </div>
       </div>
-      <div class="floor"></div>
-      <div class="floor-shadow"></div>
       <div class="drawers">
         <div class="drawer" data-drawer="library">
-          <div class="drawer-pull"></div><div class="drawer-label">资料库</div>
+          <svg viewBox="0 0 100 46" preserveAspectRatio="none"><rect class="dl" x="1.5" y="2" width="97" height="42" rx="6"/></svg>
+          <span class="dknob"></span><span class="dname">资料库</span>
         </div>
-        <div class="drawer mine" data-drawer="user">
-          <div class="drawer-pull"></div><div class="drawer-label">我的抽屉</div>
+        <div class="drawer" data-drawer="user">
+          <svg viewBox="0 0 100 46" preserveAspectRatio="none"><rect class="dl" x="1.5" y="2" width="97" height="42" rx="6"/></svg>
+          <span class="dknob"></span><span class="dname">我的</span>
         </div>
         <div class="drawer" data-drawer="lin">
-          <div class="drawer-pull"></div><div class="drawer-label">凛的抽屉</div>
-          <div class="drawer-dot" id="dot-lin-drawer"></div>
+          <svg viewBox="0 0 100 46" preserveAspectRatio="none"><rect class="dl" x="1.5" y="2" width="97" height="42" rx="6"/></svg>
+          <span class="dknob"></span><span class="dname">凛的</span>
+          <span class="drawer-dot" id="dot-lin-drawer"></span>
         </div>
       </div>
-    </div>
-    <div class="home-card">
-      <div class="home-card-title">日 子</div>
-      <div id="home-days"></div>
+      <div class="home-card">
+        <div class="home-card-title">日 子</div>
+        <div id="home-days"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -123,38 +133,121 @@
 
 <!-- ============ 时光 ============ -->
 <div class="page" id="page-time">
-  <div class="seg" id="time-seg">
-    <div class="on" data-sub="wall">照片墙</div>
-    <div data-sub="cal">日历</div>
-    <div data-sub="mumble">碎碎念</div>
-    <div data-sub="fault">犯错本</div>
+  <div class="full-head" style="background:transparent;border:none;">
+    <div><div class="full-title">时 光</div><div class="full-count" id="time-sub">—</div></div>
   </div>
-  <div class="sub-page on" id="sub-wall">
-    <div class="full-head" style="background:transparent;border:none;padding-top:6px;">
-      <div class="full-count" id="memory-count"></div>
-      <div class="full-btns">
-        <button class="mem-upload-btn" id="btn-mem-upload">+ 上传</button>
-        <button class="mem-upload-btn" id="btn-days" style="border-color:var(--border);color:var(--text-muted);">纪念日</button>
-      </div>
+  <div class="time-grid" id="time-grid">
+    <div class="tcard tall" data-t="timeline">
+      <div class="tcard-ico"><svg width="52" height="52" viewBox="0 0 48 48"><path class="ic" d="M8 12 C8 9 10 8 13 8 H24 V40 H13 C10 40 8 39 8 36 Z"/><path class="ic" d="M40 12 C40 9 38 8 35 8 H24 V40 H35 C38 40 40 39 40 36 Z"/></svg></div>
+      <div class="tcard-t">时间线</div>
+      <div class="tcard-d">他觉得特别的事，一件一件攒起来。</div>
+      <div class="tcard-n" id="n-timeline"></div>
     </div>
-    <div class="memory-grid" id="memory-grid"></div>
-  </div>
-  <div class="sub-page" id="sub-cal">
-    <div class="cal-wrap">
-      <div class="cal-head">
-        <div class="cal-title" id="cal-title">—</div>
-        <div class="cal-nav"><span id="cal-prev">‹</span><span id="cal-today">今</span><span id="cal-next">›</span></div>
-      </div>
-      <div class="cal-grid" id="cal-grid"></div>
-      <div class="settings-sub" style="margin-top:14px;text-align:center;">点某一天，记心情、写一句、涂个颜色</div>
+    <div class="tcard" data-t="quote-user">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><path class="ic" d="M10 30 C6 30 5 26 6 22 C7 17 11 13 16 11 L18 15 C14 17 12 20 12 22 C15 22 18 24 18 27 C18 29 15 30 10 30 Z"/><path class="ic" d="M32 30 C28 30 27 26 28 22 C29 17 33 13 38 11 L40 15 C36 17 34 20 34 22 C37 22 40 24 40 27 C40 29 37 30 32 30 Z"/></svg></div>
+      <div class="tcard-t">他说的话</div>
+      <div class="tcard-d">我舍不得删的那些。</div>
+      <div class="tcard-n" id="n-qu"></div>
+    </div>
+    <div class="tcard" data-t="quote-lin">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><path class="ic" d="M10 18 C6 18 5 22 6 26 C7 31 11 35 16 37 L18 33 C14 31 12 28 12 26 C15 26 18 24 18 21 C18 19 15 18 10 18 Z"/><path class="ic" d="M32 18 C28 18 27 22 28 26 C29 31 33 35 38 37 L40 33 C36 31 34 28 34 26 C37 26 40 24 40 21 C40 19 37 18 32 18 Z"/></svg></div>
+      <div class="tcard-t">我说的话</div>
+      <div class="tcard-d">他收着的，我随口说的。</div>
+      <div class="tcard-n" id="n-ql"></div>
+    </div>
+    <div class="tcard" data-t="wall">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><rect class="ic" x="7" y="10" width="34" height="28" rx="3"/><circle class="ic thin" cx="17" cy="19" r="3"/><path class="ic thin" d="M7 32 L18 23 L27 30 L33 26 L41 33"/></svg></div>
+      <div class="tcard-t">照片墙</div>
+      <div class="tcard-d">我们的照片。</div>
+      <div class="tcard-n" id="n-wall"></div>
+    </div>
+    <div class="tcard" data-t="mumble">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><rect class="ic" x="9" y="9" width="30" height="30" rx="3" transform="rotate(-4 24 24)"/><path class="ic thin" d="M15 19 H33"/><path class="ic thin" d="M15 25 H30"/><path class="ic thin" d="M15 31 H26"/></svg></div>
+      <div class="tcard-t">碎碎念</div>
+      <div class="tcard-d">他自己写的，不通知我。</div>
+      <div class="tcard-n" id="n-mumble"></div>
+    </div>
+    <div class="tcard" data-t="cal">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><rect class="ic" x="8" y="11" width="32" height="29" rx="3"/><path class="ic" d="M8 19 H40"/><path class="ic thin" d="M16 8 V14"/><path class="ic thin" d="M32 8 V14"/><circle class="ic hair" cx="17" cy="26" r="1.6"/><circle class="ic hair" cx="24" cy="26" r="1.6"/><circle class="ic hair" cx="31" cy="33" r="1.6"/></svg></div>
+      <div class="tcard-t">日历</div>
+      <div class="tcard-d">他往哪天写字，我就翻到哪天。</div>
+      <div class="tcard-n" id="n-cal"></div>
+    </div>
+    <div class="tcard" data-t="days">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><path class="ic" d="M24 38 C14 29 8 24 8 18 C8 13 12 9.5 16.5 9.5 C19.6 9.5 22.4 11.4 24 14 C25.6 11.4 28.4 9.5 31.5 9.5 C36 9.5 40 13 40 18 C40 24 34 29 24 38 Z"/></svg></div>
+      <div class="tcard-t">纪念日</div>
+      <div class="tcard-d">要记住的日子。</div>
+      <div class="tcard-n" id="n-days"></div>
+    </div>
+    <div class="tcard" data-t="fault">
+      <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><path class="ic" d="M24 8 L41 38 H7 Z"/><path class="ic thin" d="M24 19 V28"/><circle class="ic" cx="24" cy="33" r="1.2"/></svg></div>
+      <div class="tcard-t">犯错本</div>
+      <div class="tcard-d">他觉得自己做错了才写。</div>
+      <div class="tcard-n" id="n-fault"></div>
     </div>
   </div>
-  <div class="sub-page" id="sub-mumble">
-    <div class="list-wrap" id="mumble-list"></div>
+</div>
+
+<!-- 时光里各块的详情页 -->
+<div class="full" id="tp-timeline">
+  <div class="full-head"><div><div class="full-title">时间线</div><div class="full-count" id="tl-count"></div></div>
+    <div class="mem-close-btn" data-close-full="tp-timeline">✕</div></div>
+  <div class="tl-list" id="tl-list"></div>
+</div>
+
+<div class="full" id="tp-quote">
+  <div class="full-head"><div><div class="full-title" id="q-title">最喜欢的话</div><div class="full-count" id="q-count"></div></div>
+    <div class="full-btns"><button class="mem-upload-btn" id="btn-add-quote">+ 收一句</button>
+    <div class="mem-close-btn" data-close-full="tp-quote">✕</div></div></div>
+  <div class="quote-list" id="q-list"></div>
+</div>
+
+<div class="sheet" id="quote-modal">
+  <div class="sheet-inner">
+    <div class="sheet-title">收一句他的话</div>
+    <textarea class="note-input" id="q-text" placeholder="他说的那句…" style="height:100px;"></textarea>
+    <div class="settings-label" style="margin-top:12px;">为什么喜欢这句</div>
+    <textarea class="note-input" id="q-why" placeholder="因为…" style="height:70px;margin-top:6px;"></textarea>
+    <div class="sheet-btns">
+      <button class="btn-ghost" data-close-sheet="quote-modal">算了</button>
+      <button class="btn-solid" id="btn-save-quote">收起来</button>
+    </div>
   </div>
-  <div class="sub-page" id="sub-fault">
-    <div class="list-wrap" id="fault-list"></div>
+</div>
+
+<div class="full" id="tp-wall">
+  <div class="full-head"><div><div class="full-title">照片墙</div><div class="full-count" id="memory-count"></div></div>
+    <div class="full-btns"><button class="mem-upload-btn" id="btn-mem-upload">+ 上传</button>
+    <div class="mem-close-btn" data-close-full="tp-wall">✕</div></div></div>
+  <div class="memory-grid" id="memory-grid"></div>
+</div>
+
+<div class="full" id="tp-mumble">
+  <div class="full-head"><div><div class="full-title">碎碎念</div><div class="full-count" id="mumble-count"></div></div>
+    <div class="mem-close-btn" data-close-full="tp-mumble">✕</div></div>
+  <div class="pin-wall" id="mumble-list"></div>
+</div>
+
+<div class="full" id="tp-cal">
+  <div class="full-head"><div><div class="full-title">日历</div><div class="full-count">他写的</div></div>
+    <div class="mem-close-btn" data-close-full="tp-cal">✕</div></div>
+  <div class="cal-wrap">
+    <div class="cal-head">
+      <div class="cal-title" id="cal-title">—</div>
+      <div class="cal-nav"><span id="cal-prev">‹</span><span id="cal-today">今</span><span id="cal-next">›</span></div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="day-read" id="day-read" style="display:none">
+      <div class="day-read-d" id="day-read-d"></div>
+      <div class="day-read-t" id="day-read-t"></div>
+    </div>
   </div>
+</div>
+
+<div class="full" id="tp-fault">
+  <div class="full-head"><div><div class="full-title">犯错本</div><div class="full-count" id="fault-count"></div></div>
+    <div class="mem-close-btn" data-close-full="tp-fault">✕</div></div>
+  <div class="list-wrap" id="fault-list"></div>
 </div>
 
 <!-- ============ 设置 ============ -->
@@ -305,6 +398,7 @@
           <button class="reader-arrow" id="next-page">下一页</button>
         </div>
         <div class="lin-behind" id="lin-behind"></div>
+        <div class="hl-count" id="hl-count" style="text-align:center;margin-top:5px;"></div>
       </div>
     </div>
     <div class="split-bar" data-split="reader"><span id="split-hint-reader">收起</span></div>
@@ -317,7 +411,7 @@
     </div>
   </div>
 </div>
-<div class="sel-tip" id="sel-tip">贴 标 签</div>
+<div class="sel-tip" id="sel-tip"><span id="sel-hl">划 一 道</span><span style="opacity:.35;margin:0 8px;">|</span><span id="sel-tag">贴标签</span></div>
 
 <div class="annot-new" id="annot-new">
   <div class="annot-new-quote" id="annot-new-quote"></div>
@@ -395,10 +489,7 @@
           <audio id="stage-audio" class="audio-el" controls preload="metadata"></audio>
         </div>
       </div>
-      <div class="stage-acts">
-        <button class="cine-btn solid" id="btn-tag-here">这里贴标签</button>
-        <button class="cine-btn" id="btn-see-tags">看标签</button>
-      </div>
+      <div class="moment-bar" id="moment-bar"></div>
     </div>
     <div class="split-bar" data-split="stage"><span id="split-hint-stage">收起</span></div>
     <div class="split-chat" id="split-chat-stage">
@@ -420,6 +511,58 @@
     <div class="annots" id="tagview-list" style="border:none;margin-top:0;"></div>
   </div>
 </div>
+
+
+<!-- ============ 朋友圈 ============ -->
+<div class="room" id="momentsroom" style="background:var(--bg);">
+  <div class="room-head">
+    <div><div class="room-title" style="color:var(--text)">朋友圈</div><div class="room-sub" id="moments-sub" style="color:var(--text-muted)">—</div></div>
+    <div class="room-acts">
+      <button class="room-btn" id="btn-new-post" style="color:var(--text);border-color:var(--border)">发一条</button>
+      <button class="room-x" data-close="momentsroom" style="color:var(--text-muted)">✕</button>
+    </div>
+  </div>
+  <div class="moments" id="post-list"></div>
+  <div class="cm-bar" id="cm-bar">
+    <div class="input-btn" id="cm-emoji" style="font-size:17px;">♡</div>
+    <textarea id="cm-input" placeholder="说点什么…" rows="1" style="flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:18px;padding:9px 14px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:90px;min-height:38px;font-family:inherit;"></textarea>
+    <button class="send-btn" id="cm-send" style="width:38px;height:38px;font-size:16px;">↑</button>
+  </div>
+</div>
+
+<div class="sheet" id="post-modal">
+  <div class="sheet-inner">
+    <div class="sheet-title">发一条</div>
+    <textarea class="note-input" id="post-text" placeholder="这一刻想说什么…" style="height:110px;"></textarea>
+    <div class="pc-thumbs" id="post-thumbs"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn-ghost" id="btn-post-img" style="font-size:13px;padding:9px;">加图片</button>
+      <button class="btn-ghost" id="btn-post-emoji" style="font-size:13px;padding:9px;">加表情</button>
+    </div>
+    <div class="sheet-btns">
+      <button class="btn-ghost" data-close-sheet="post-modal">算了</button>
+      <button class="btn-solid" id="btn-send-post">发出去</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 欲望室（壳） ============ -->
+<div class="room" id="desireroom" style="background:var(--bg);">
+  <div class="room-head">
+    <div><div class="room-title" style="color:var(--text)">欲望室</div><div class="room-sub" style="color:var(--text-muted)">还没接上</div></div>
+    <button class="room-x" data-close="desireroom" style="color:var(--text-muted)">✕</button>
+  </div>
+  <div class="room-empty" style="color:var(--text-muted)">
+    这里以后会有他的十四条<br><br>
+    思念 · 欲 · 倾诉 · 占有 · 掌控<br>
+    好奇 · 创造 · 沉淀 · 玩心<br>
+    想被需要 · 想被看见<br>
+    不安 · 烦 · 倦<br><br>
+    <span style="opacity:.6">下一轮再填</span>
+  </div>
+</div>
+
+<input type="file" id="post-img-input" accept="image/*" multiple style="display:none">
 
 <!-- ============ 信箱 ============ -->
 <div class="room" id="mailbox">
@@ -677,9 +820,9 @@
   <div class="lightbox-date" id="lightbox-date"></div>
 </div>
 
-<div class="prog-wrap" id="prog-wrap">
-  <div class="prog-label" id="prog-label">上传中…</div>
-  <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+<div class="up-bar" id="up-bar">
+  <div class="up-label"><span id="up-name">上传中…</span><span id="up-pct">0%</span></div>
+  <div class="up-track"><div class="up-fill" id="up-fill"></div></div>
 </div>
 
 <div class="rec-hint" id="rec-hint">● 正在录音，松开发出去</div>
@@ -694,7 +837,7 @@
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=3"></script>
-<script src="/static/rooms.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
+<script src="/static/rooms.js?v=4"></script>
 </body>
 </html>
