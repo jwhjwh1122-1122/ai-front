@@ -1,11 +1,11 @@
 /* 凛 · 房间与交互 */
 let currentBook = null, currentPage = 0, curMedia = null, curKind = 'video';
 let bookList = [], selQuote = '', replyTo = null, tagPos = 0;
-let calYear = 0, calMonth = 0, dayEditing = '', dayColor = '';
+let calYear = 0, calMonth = 0;
+let postImgs = [], cmTarget = null, pageHls = [], emojiTarget = 'chat';
 let drawerWho = 'lin';
 
-const MOODS = ['开心', '平静', '累', '烦', '难过', '想他', '兴奋', '空'];
-const DAYCOLORS = ['', '#e8a0b8', '#a0a0ee', '#9ec8a8', '#e8c48a', '#b0b0c0'];
+const PINC = ['pin-c1', 'pin-c2', 'pin-c3', 'pin-c4'];
 
 // ============ 页面 ============
 function showPage(name) {
@@ -15,42 +15,50 @@ function showPage(name) {
   });
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
-  if (name === 'time') { renderMemories(); }
+  if (name === 'time') refreshTimeCounts();
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
-function showSub(name) {
-  ['wall', 'cal', 'mumble', 'fault'].forEach(s => {
-    $('sub-' + s).classList.toggle('on', s === name);
-  });
-  [...$('time-seg').children].forEach(d => d.classList.toggle('on', d.dataset.sub === name));
-  if (name === 'cal') renderCalendar();
-  if (name === 'mumble') renderMumbles();
-  if (name === 'fault') renderFaults();
+async function refreshTimeCounts() {
+  try {
+    const [tl, qu, ql, mem, nt, cal, ft] = await Promise.all([
+      jget('/api/timeline'), jget('/api/quotes/user'), jget('/api/quotes/lin'),
+      jget('/api/memories'), jget('/api/notes'), jget('/api/calendar'), jget('/api/faults')]);
+    const put = (id, n) => { const e = $(id); if (e) e.textContent = n ? n : ''; };
+    put('n-timeline', tl.length); put('n-qu', qu.length); put('n-ql', ql.length);
+    put('n-wall', mem.length); put('n-mumble', nt.length);
+    put('n-cal', Object.keys(cal).length); put('n-fault', ft.length);
+    put('n-days', daysList().length);
+    $('time-sub').textContent = `在一起第 ${daysSince(CFG.together_since || '2026-06-06')} 天`;
+  } catch (e) { }
 }
 function showLinState(t) {
   const el = $('lin-state');
-  if (t) { el.textContent = '◉ ' + t; el.style.display = 'block'; }
-  else el.style.display = 'none';
+  el.textContent = t ? `（${t}）` : '';
+}
+function showUserStatus(t) {
+  const el = $('user-status');
+  if (t) { el.textContent = (CFG.call_user || '宝宝') + '—' + t; el.style.display = 'block'; }
+  else { el.textContent = ''; el.style.display = 'none'; }
 }
 
 // ============ 家 ============
 async function refreshHome() {
   try {
     const s = await jget('/api/rooms/status');
-    const setDoor = (key, el, txt, lit) => {
-      $(el).textContent = txt;
-      const door = document.querySelector(`.door[data-room="${key}"]`);
-      if (door) { door.classList.remove('lit', 'dim', 'flicker'); if (lit) door.classList.add(lit); }
-    };
-    setDoor('study', 'st-study', s.book ? `《${s.book.title}》\n第 ${s.book.page}/${s.book.total} 页` : '书架空着', s.book ? 'lit' : 'dim');
-    setDoor('cinema', 'st-cinema', s.video ? s.video.name : '没有片子', s.video ? 'flicker' : 'dim');
-    setDoor('music', 'st-music', s.music ? s.music.name : '安静', s.music ? 'dim' : 'dim');
-    $('dot-study').classList.toggle('on', !!(s.unseen && s.unseen.book));
-    $('dot-cinema').classList.toggle('on', !!(s.unseen && s.unseen.video));
-    $('dot-music').classList.toggle('on', !!(s.unseen && s.unseen.music));
-    const anyUnseen = Object.values(s.unseen || {}).some(n => n > 0) || s.lin_drawer > 0;
-    $('dot-home').classList.toggle('on', anyUnseen);
-    $('dot-lin-drawer').classList.toggle('on', s.lin_drawer > 0);
+    const put = (id, t) => { const e = $(id); if (e) e.textContent = t; };
+    put('st-study', s.book ? `《${s.book.title}》第 ${s.book.page}/${s.book.total} 页` : '书架空着');
+    put('st-cinema', s.video ? s.video.name : '没有片子');
+    put('st-music', s.music ? s.music.name : '安静');
+    put('st-mail', '看看有没有信');
+    put('st-moments', s.posts ? `${s.posts} 条` : '还没有人发');
+    put('st-desire', '还没接上');
+    const dot = (id, on) => { const e = $(id); if (e) e.classList.toggle('on', !!on); };
+    dot('dot-study', (s.unseen && s.unseen.book) || s.lin_hl);
+    dot('dot-cinema', s.unseen && s.unseen.video);
+    dot('dot-music', s.unseen && s.unseen.music);
+    dot('dot-lin-drawer', s.lin_drawer > 0);
+    const any = Object.values(s.unseen || {}).some(n => n > 0) || s.lin_drawer > 0 || s.lin_hl > 0;
+    dot('dot-home', any);
   } catch (e) { }
   renderHomeDays();
   try {
@@ -146,11 +154,67 @@ async function showPageAt(i) {
   $('next-page').disabled = d.index >= d.total - 1;
   $('reader-body').scrollTop = 0;
   jpost(`/api/books/${currentBook.id}/progress`, { page: d.index });
+  paintHighlights();
   const lp = (bookList.find(x => x.id === currentBook.id) || {}).lin_progress || 0;
   $('lin-behind').textContent = lp === d.index ? '你们在同一页'
     : (lp < d.index ? `凛还在第 ${lp + 1} 页` : `凛已经翻到第 ${lp + 1} 页了`);
   loadPageTags();
   refreshHome();
+}
+async function paintHighlights() {
+  if (!currentBook) return;
+  const t = $('reader-text');
+  const raw = t.dataset.raw || t.textContent;
+  t.dataset.raw = raw;
+  let hls = [];
+  try { hls = await jget(`/api/highlights?book_id=${currentBook.id}&page=${currentPage}`); } catch (e) { }
+  pageHls = hls;
+  const mine = hls.filter(h => h.author === 'user').length;
+  const his = hls.filter(h => h.author === 'lin').length;
+  $('hl-count').textContent = hls.length
+    ? `划了 ${hls.length} 道` + (his ? `（他划了 ${his}）` : '') : '';
+  if (!hls.length) { t.textContent = raw; return; }
+  const marks = [];
+  hls.forEach(h => {
+    let i = (h.start >= 0 && raw.substr(h.start, h.quote.length) === h.quote) ? h.start : raw.indexOf(h.quote);
+    if (i >= 0) marks.push({ s: i, e: i + h.quote.length, id: h.id, who: h.author });
+  });
+  marks.sort((a, b) => a.s - b.s);
+  let out = '', pos = 0;
+  marks.forEach(m => {
+    if (m.s < pos) return;
+    out += esc(raw.slice(pos, m.s));
+    out += `<span class="hl${m.who === 'lin' ? ' lin' : ''}" data-hl="${m.id}">${esc(raw.slice(m.s, m.e))}</span>`;
+    pos = m.e;
+  });
+  out += esc(raw.slice(pos));
+  t.innerHTML = out;
+  t.querySelectorAll('[data-hl]').forEach(el => {
+    el.onclick = () => {
+      const h = pageHls.find(x => x.id === el.dataset.hl);
+      if (!h) return;
+      if (confirm(`「${h.quote.slice(0, 40)}」\n\n擦掉这道线？`)) {
+        fetch('/api/highlights/' + h.id, { method: 'DELETE' }).then(() => { t.textContent = t.dataset.raw; paintHighlights(); refreshHome(); });
+      }
+    };
+  });
+  const unseen = hls.filter(h => h.author === 'lin' && !h.seen);
+  if (unseen.length) setTimeout(refreshHome, 600);
+}
+async function saveHighlight() {
+  if (!currentBook || !selQuote) return;
+  const raw = $('reader-text').dataset.raw || $('reader-text').textContent;
+  const d = await jpost('/api/highlights', {
+    book_id: currentBook.id, page: currentPage, quote: selQuote,
+    start: raw.indexOf(selQuote), author: 'user'
+  });
+  if (d.error) { toast(d.error); return; }
+  selQuote = '';
+  window.getSelection().removeAllRanges();
+  $('sel-tip').classList.remove('on');
+  $('reader-text').textContent = raw;
+  paintHighlights(); refreshHome();
+  toast('划上了，跟他说说这句');
 }
 function annotHTML(a, kind) {
   const where = kind === 'book' ? '' : ` · ${fmtTime(a.pos)}`;
@@ -308,6 +372,8 @@ function playMedia(m, kind) {
   } else {
     aw.style.display = 'none'; a.pause(); a.removeAttribute('src');
     v.style.display = 'block'; v.src = m.url;
+    v.onloadedmetadata = loadMoments;
+    setTimeout(loadMoments, 900);
   }
   renderSplit('stage');
 }
@@ -376,32 +442,83 @@ function grabFrameNow(seconds) {
     return { data: c.toDataURL('image/jpeg', 0.72), t: Math.floor(v.currentTime || 0) };
   } catch (e) { return null; }
 }
-async function showTags() {
-  if (!curMedia) return;
-  $('tagview').classList.add('open');
-  $('tagview-title').textContent = curMedia.note || curMedia.filename;
-  const tags = await jget(`/api/annotations?type=${curKind}&id=${curMedia.filename}`);
-  $('tagview-sub').textContent = tags.length ? `${tags.length} 张标签` : '';
-  const el = $('tagview-list');
-  if (!tags.length) { el.innerHTML = '<div class="room-empty">这里还没有人写过字</div>'; return; }
-  const tops = tags.filter(a => !a.reply_to);
-  el.innerHTML = tops.map(a => annotHTML(a, curKind)).join('');
-  tags.filter(a => a.reply_to).forEach(r => {
-    const box = el.querySelector(`[data-replies="${r.reply_to}"]`);
-    if (box) box.insertAdjacentHTML('beforeend', annotHTML(r, curKind));
+async function loadMoments() {
+  if (!curMedia || curKind === 'music') { $('moment-bar').innerHTML = ''; return; }
+  const v = $('stage-video');
+  const dur = v.duration || 0;
+  if (!dur) { setTimeout(loadMoments, 800); return; }
+  let list = [];
+  try { list = await jget('/api/moments?filename=' + encodeURIComponent(curMedia.filename)); } catch (e) { }
+  const bar = $('moment-bar');
+  bar.innerHTML = '';
+  list.forEach(m => {
+    const d = document.createElement('div');
+    d.className = 'moment-dot';
+    d.style.left = (m.t / dur * 100) + '%';
+    d.title = fmtTime(m.t);
+    d.onclick = () => {
+      v.currentTime = m.t;
+      v.pause();
+      toast(fmtTime(m.t) + '：' + (m.said || '在这儿说过话').slice(0, 40));
+    };
+    bar.appendChild(d);
   });
-  bindAnnotActions(el, curKind, curMedia.filename, showTags);
-  const unseen = tags.filter(a => a.author === 'lin' && !a.seen).map(a => a.id);
-  if (unseen.length) { jpost('/api/annotations/seen', { ids: unseen }); setTimeout(refreshHome, 500); }
+}
+function markMoment(said) {
+  if (!curMedia || curKind === 'music') return;
+  jpost('/api/moments', { filename: curMedia.filename, t: stageTime(), said: said.slice(0, 200) })
+    .then(() => loadMoments());
+}
+function scanFrames(count) {
+  const v = $('stage-video');
+  if (!$('stage').classList.contains('open') || curKind === 'music' || !v.src || !v.duration) return [];
+  const n = Math.max(2, Math.min(8, count || 6));
+  const keep = v.currentTime, shots = [];
+  const c = document.createElement('canvas');
+  const w = Math.min(560, v.videoWidth || 480);
+  c.width = w; c.height = Math.round(w * (v.videoHeight || 270) / (v.videoWidth || 480));
+  const ctx = c.getContext('2d');
+  for (let i = 1; i <= n; i++) {
+    const t = v.duration * i / (n + 1);
+    try {
+      v.currentTime = t;
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      shots.push({ t: Math.floor(t), data: c.toDataURL('image/jpeg', 0.6) });
+    } catch (e) { }
+  }
+  v.currentTime = keep;
+  return shots;
+}
+function askSeek(seconds, why) {
+  const box = msgBox();
+  const d = document.createElement('div');
+  d.className = 'sys-msg';
+  d.style.cssText = 'background:var(--bubble-ai);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin:8px 4px;text-align:left;font-size:13px;line-height:1.7;color:var(--text);';
+  d.innerHTML = `他想看 <b>${fmtTime(seconds)}</b> 那里${why ? '：' + esc(why) : ''}
+    <div style="display:flex;gap:8px;margin-top:9px;">
+      <span class="post-btn" data-yes="1">倒回去</span>
+      <span class="post-btn" data-no="1" style="color:var(--text-muted)">不用</span>
+    </div>`;
+  d.querySelector('[data-yes]').onclick = () => {
+    const v = $('stage-video');
+    if (v && v.src) { v.currentTime = seconds; v.pause(); }
+    d.innerHTML = `<span style="color:var(--text-muted)">画面跳到了 ${fmtTime(seconds)}</span>`;
+    sendComposed('好，跳过去了，你看吧。', []);
+  };
+  d.querySelector('[data-no]').onclick = () => {
+    d.innerHTML = '<span style="color:var(--text-muted)">没跳</span>';
+  };
+  box.appendChild(d); scrollBottom();
 }
 
 // ============ 分片上传 ============
+let upQueue = [];
 async function chunkUpload(file, kind, note) {
   const CH = 3 * 1024 * 1024;
   const ext = (file.name.split('.').pop() || (kind === 'video' ? 'mp4' : 'mp3')).toLowerCase();
-  $('prog-wrap').classList.add('on');
-  $('prog-label').textContent = `上传中… 0%`;
-  $('prog-fill').style.width = '0%';
+  const job = { name: note || file.name, pct: 0 };
+  upQueue.push(job);
+  drawUp();
   try {
     const b = await jpost('/api/upload/begin', { ext, note, kind });
     if (!b.upload_id) throw new Error('开不了头');
@@ -410,16 +527,30 @@ async function chunkUpload(file, kind, note) {
       const part = file.slice(i * CH, (i + 1) * CH);
       const r = await fetch(`/api/upload/part?id=${b.upload_id}&i=${i}`, { method: 'POST', body: part });
       if (!r.ok) throw new Error('第 ' + (i + 1) + ' 块失败');
-      const pct = Math.round((i + 1) / total * 100);
-      $('prog-fill').style.width = pct + '%';
-      $('prog-label').textContent = `上传中… ${pct}%`;
+      job.pct = Math.round((i + 1) / total * 100);
+      drawUp();
     }
     const d = await jpost('/api/upload/finish', { upload_id: b.upload_id });
     if (d.error) throw new Error(d.error);
-    toast('放好了');
+    toast(kind === 'music' ? '碟放好了' : '片子放好了');
+    const room = kind === 'music' ? 'musicroom' : 'cinema';
+    if ($(room).classList.contains('open')) openRoomMedia(kind === 'music' ? 'music' : 'video');
+    refreshHome();
     return d;
   } catch (e) { toast('上传失败：' + e.message); return null; }
-  finally { setTimeout(() => $('prog-wrap').classList.remove('on'), 600); }
+  finally {
+    upQueue = upQueue.filter(x => x !== job);
+    drawUp();
+  }
+}
+function drawUp() {
+  const bar = $('up-bar');
+  if (!upQueue.length) { bar.classList.remove('on'); return; }
+  const j = upQueue[0];
+  $('up-name').textContent = (upQueue.length > 1 ? `（还有 ${upQueue.length - 1} 个）` : '') + j.name;
+  $('up-pct').textContent = j.pct + '%';
+  $('up-fill').style.width = j.pct + '%';
+  bar.classList.add('on');
 }
 
 // ============ 信箱 ============
@@ -484,6 +615,134 @@ function openPlay(x) {
   $('play-frame').srcdoc = x.body;
 }
 
+
+// ============ 朋友圈 ============
+function relTime(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return m + ' 分钟前';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + ' 小时前';
+  const d = Math.floor(h / 24);
+  if (d < 8) return d + ' 天前';
+  return new Date(ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+}
+function emojiHtml(t) {
+  const customs = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
+  let h = esc(t);
+  customs.forEach(it => {
+    if (!it.name) return;
+    const e = it.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    h = h.replace(new RegExp(`\\[${e}\\]`, 'g'), `<img src="${it.data}" alt="${it.name}">`);
+  });
+  return h;
+}
+async function openMoments() {
+  $('momentsroom').classList.add('open');
+  const el = $('post-list');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">正在看…</div>';
+  const items = await jget('/api/posts');
+  $('moments-sub').textContent = items.length ? `${items.length} 条` : '还没有人发';
+  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有人发过<br>右上角发一条</div>'; return; }
+  const avU = localStorage.getItem('chat-avatar-user'), avL = localStorage.getItem('chat-avatar-ai');
+  el.innerHTML = '';
+  items.forEach(p => {
+    const mine = p.author === 'user';
+    const av = mine ? avU : avL;
+    const nm = mine ? (CFG.call_user || '宝宝') : (CFG.name || '凛');
+    const d = document.createElement('div');
+    d.className = 'post';
+    const liked = (p.likes || []).includes('user');
+    const cms = (p.comments || []).map(c =>
+      `<div class="post-cm" data-cid="${c.id}"><b>${c.author === 'user' ? esc(CFG.call_user || '宝宝') : esc(CFG.name || '凛')}</b>：${emojiHtml(c.text)}<span class="x" data-delcm="${c.id}">✕</span></div>`).join('');
+    const likeTxt = (p.likes || []).map(x => x === 'user' ? (CFG.call_user || '宝宝') : (CFG.name || '凛')).join('、');
+    d.innerHTML = `
+      <div class="post-av${av ? ' has-img' : ''}">${av ? `<img src="${av}">` : esc(nm[0])}</div>
+      <div class="post-main">
+        <div class="post-who">${esc(nm)}</div>
+        ${p.text ? `<div class="post-text">${emojiHtml(p.text)}</div>` : ''}
+        ${(p.images || []).length ? `<div class="post-imgs n${p.images.length}">${p.images.map(u => `<img src="${u}" loading="lazy">`).join('')}</div>` : ''}
+        <div class="post-foot">
+          <span class="post-time">${relTime(p.ts)}</span>
+          <div class="post-acts">
+            <span class="post-btn" data-like="${p.id}">${liked ? '取消赞' : '赞'}</span>
+            <span class="post-btn" data-cm="${p.id}">评论</span>
+            <span class="post-del" data-del="${p.id}">删</span>
+          </div>
+        </div>
+        ${(likeTxt || cms) ? `<div class="post-react">
+          ${likeTxt ? `<div class="post-likes${cms ? ' has-cm' : ''}">♡ ${esc(likeTxt)}</div>` : ''}
+          ${cms}</div>` : ''}
+      </div>`;
+    d.querySelector('[data-like]').onclick = async () => {
+      await jpost(`/api/posts/${p.id}/like`, { author: 'user' }); openMoments();
+    };
+    d.querySelector('[data-cm]').onclick = () => {
+      cmTarget = p.id;
+      $('cm-bar').classList.add('open');
+      $('cm-input').focus();
+    };
+    d.querySelector('[data-del]').onclick = async () => {
+      if (!confirm('删掉这条？')) return;
+      await fetch('/api/posts/' + p.id, { method: 'DELETE' }); openMoments(); refreshHome();
+    };
+    d.querySelectorAll('[data-delcm]').forEach(x => x.onclick = async () => {
+      if (!confirm('删掉这条评论？')) return;
+      await fetch(`/api/posts/${p.id}/comment/${x.dataset.delcm}`, { method: 'DELETE' }); openMoments();
+    });
+    d.querySelectorAll('.post-imgs img').forEach(im => im.onclick = () => openLightbox(im.src, '', ''));
+    el.appendChild(d);
+  });
+}
+function drawPostThumbs() {
+  const box = $('post-thumbs');
+  box.innerHTML = '';
+  postImgs.forEach((u, i) => {
+    const w = document.createElement('div'); w.className = 'pc-wrap';
+    w.innerHTML = `<img class="pc-thumb" src="${u}"><div class="pc-x">✕</div>`;
+    w.querySelector('.pc-x').onclick = () => { postImgs.splice(i, 1); drawPostThumbs(); };
+    box.appendChild(w);
+  });
+}
+
+// ============ 时光各页 ============
+async function openTimeline() {
+  $('tp-timeline').classList.add('open');
+  const el = $('tl-list');
+  const items = await jget('/api/timeline');
+  $('tl-count').textContent = items.length ? `${items.length} 件` : '';
+  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">他还没写过<br>觉得某件事特别，他会自己写上来</div>'; return; }
+  el.innerHTML = items.map(x => `<div class="tl-item">
+    <div class="tl-date">${(x.date || '').replace(/-/g, ' · ')}</div>
+    ${x.title ? `<div class="tl-title">${esc(x.title)}</div>` : ''}
+    <div class="tl-text">${esc(x.text)}</div></div>`).join('');
+}
+let quoteWho = 'user';
+async function openQuotes(who) {
+  quoteWho = who;
+  $('tp-quote').classList.add('open');
+  $('q-title').textContent = who === 'user' ? '他说的话' : '我说的话';
+  $('btn-add-quote').style.display = who === 'user' ? '' : 'none';
+  const items = await jget('/api/quotes/' + who);
+  $('q-count').textContent = items.length ? `${items.length} 句` : (who === 'user' ? '还没收过' : '他还没收过');
+  const el = $('q-list');
+  if (!items.length) {
+    el.innerHTML = `<div class="room-empty" style="color:var(--text-muted)">${who === 'user' ? '他说的话里，你想留住的<br>在聊天里点 ❤ 就能收' : '他收着的，你说过的话<br>他自己判断要不要收'}</div>`;
+    return;
+  }
+  el.innerHTML = items.map(x => `<div class="qcard">
+    <div class="qmark">"</div>
+    <div class="qdate">${(x.date || '').replace(/-/g, ' · ')}</div>
+    <div class="qtext">${esc(x.text)}</div>
+    ${x.why ? `<div class="qwhy">${esc(x.why)}</div>` : ''}
+    <div class="qdel" data-del="${x.id}">✕</div></div>`).join('');
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('删掉？')) return;
+    await fetch(`/api/quotes/${who}/${b.dataset.del}`, { method: 'DELETE' });
+    openQuotes(who); refreshTimeCounts();
+  });
+}
+
 // ============ 时光：照片墙 ============
 async function renderMemories() {
   const grid = $('memory-grid');
@@ -525,58 +784,38 @@ async function renderCalendar() {
   grid.innerHTML = ['日', '一', '二', '三', '四', '五', '六'].map(d => `<div class="cal-dow">${d}</div>`).join('');
   for (let i = 0; i < first; i++) grid.insertAdjacentHTML('beforeend', '<div class="cal-cell blank"></div>');
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const annis = daysList();
   for (let d = 1; d <= days; d++) {
     const key = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const info = calData[key] || {};
-    const isAnni = annis.some(a => a.date === key || (a.yearly && a.date.slice(5) === key.slice(5)));
     const cell = document.createElement('div');
-    cell.className = 'cal-cell' + (key === todayKey ? ' today' : '');
-    if (info.color) cell.style.background = info.color + '33';
-    cell.innerHTML = `<div class="cal-day">${d}</div>
-      ${info.mood ? `<div class="cal-mood">${esc(info.mood)}</div>` : ''}
-      ${info.note ? '<div class="cal-note-mark">✎</div>' : ''}
-      ${isAnni ? '<div class="cal-dot" style="background:var(--accent)"></div>' : ''}`;
-    cell.onclick = () => openDay(key, info);
+    cell.className = 'cal-cell' + (key === todayKey ? ' today' : '') + (info.text ? ' has' : '');
+    cell.innerHTML = `<div class="cal-day">${d}</div>${info.text ? '<div class="cal-txt"></div>' : ''}`;
+    cell.onclick = () => {
+      const box = $('day-read');
+      if (!info.text) { box.style.display = 'none'; toast('这天他没写东西'); return; }
+      $('day-read-d').textContent = key.replace(/-/g, ' · ');
+      $('day-read-t').textContent = info.text;
+      box.style.display = 'block';
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
     grid.appendChild(cell);
   }
-}
-function openDay(key, info) {
-  dayEditing = key; dayColor = info.color || '';
-  $('day-modal-title').textContent = key.replace(/-/g, '.');
-  const mb = $('day-moods'); mb.innerHTML = '';
-  MOODS.forEach(m => {
-    const c = document.createElement('div');
-    c.className = 'mood-chip' + (info.mood === m ? ' on' : '');
-    c.textContent = m;
-    c.onclick = () => { [...mb.children].forEach(x => x.classList.remove('on')); c.classList.add('on'); };
-    mb.appendChild(c);
-  });
-  const cb = $('day-colors'); cb.innerHTML = '';
-  DAYCOLORS.forEach(col => {
-    const c = document.createElement('div');
-    c.style.cssText = `width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid ${info.color === col ? 'var(--accent)' : 'var(--border)'};background:${col || 'transparent'};`;
-    c.dataset.color = col;
-    if (info.color === col) dayColor = col;
-    c.onclick = () => {
-      [...cb.children].forEach(x => x.style.borderColor = 'var(--border)');
-      c.style.borderColor = 'var(--accent)'; dayColor = col;
-    };
-    cb.appendChild(c);
-  });
-  $('day-note').value = info.note || '';
-  $('day-modal').classList.add('open');
+  $('day-read').style.display = 'none';
 }
 
 // ============ 碎碎念 / 犯错本 ============
 async function renderMumbles() {
   const el = $('mumble-list');
   const items = await jget('/api/notes');
-  if (!items.length) { el.innerHTML = '<div class="room-empty">他还没写过什么<br>这里是他自己的地方</div>'; return; }
-  el.innerHTML = items.map(x => {
+  $('mumble-count').textContent = items.length ? `${items.length} 条` : '';
+  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">他还没写过什么<br>这里是他自己的地方</div>'; return; }
+  el.innerHTML = items.map((x, i) => {
     const d = new Date(x.ts);
-    return `<div class="mumble"><div class="mumble-body">${esc(x.text)}</div>
-      <div class="mumble-date">${d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
+    return `<div class="pin ${PINC[i % 4]}">
+      <div class="pin-body">${esc(x.text)}</div>
+      ${x.mood ? `<div class="pin-tag">${esc(x.mood)}</div>` : ''}
+      <div class="pin-date">${d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
+    </div>`;
   }).join('');
 }
 async function renderFaults() {
@@ -665,8 +904,7 @@ async function boot() {
   if (bg) { document.body.style.backgroundImage = `url(${bg})`; $('clear-bg-btn').style.display = 'flex'; }
   const av = localStorage.getItem('chat-avatar-ai');
   if (av) { $('avatar').classList.add('has-img'); $('avatar').innerHTML = `<img src="${av}">`; }
-  const st = localStorage.getItem('user-status');
-  if (st) { $('user-status').textContent = st; $('user-status').style.display = 'block'; }
+  showUserStatus(localStorage.getItem('user-status'));
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
   loadMcp(); updateMcpSub(); renderToolGroups();
@@ -679,7 +917,7 @@ async function boot() {
   $('wake-on').checked = !!CFG.wake_on;
   const wi = CFG.wake_interval || 120;
   document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
-  try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; } catch (e) { }
+  try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
@@ -704,6 +942,11 @@ async function loadBalance() {
 // ============ 事件 ============
 document.addEventListener('DOMContentLoaded', () => {
   // 锁屏
+  const th = localStorage.getItem('theme') || '';
+  document.body.className = th ? 'theme-' + th : '';
+  const bg0 = localStorage.getItem('chat-bg');
+  if (bg0) document.body.style.backgroundImage = `url(${bg0})`;
+
   const unlock = async () => {
     let pwd = '0606';
     try { const c = await jget('/api/config'); pwd = c.password || '0606'; } catch (e) { }
@@ -719,7 +962,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 底栏
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => showPage(t.dataset.page));
-  [...$('time-seg').children].forEach(d => d.onclick = () => showSub(d.dataset.sub));
+  document.querySelectorAll('.tcard').forEach(c => c.onclick = () => {
+    const t = c.dataset.t;
+    if (t === 'timeline') openTimeline();
+    else if (t === 'quote-user') openQuotes('user');
+    else if (t === 'quote-lin') openQuotes('lin');
+    else if (t === 'wall') { $('tp-wall').classList.add('open'); renderMemories(); }
+    else if (t === 'mumble') { $('tp-mumble').classList.add('open'); renderMumbles(); }
+    else if (t === 'cal') { $('tp-cal').classList.add('open'); renderCalendar(); }
+    else if (t === 'fault') { $('tp-fault').classList.add('open'); renderFaults(); }
+    else if (t === 'days') { renderDaysModal(); $('days-modal').classList.add('open'); }
+  });
 
   // 输入
   const inp = $('input');
@@ -728,9 +981,22 @@ document.addEventListener('DOMContentLoaded', () => {
   $('send-btn').onclick = () => { if (isTyping && abortController) { abortController.abort(); endTurn(); } else sendMsg(); };
   document.querySelectorAll('.split-input').forEach(el => {
     el.addEventListener('input', () => autoResize(el));
-    el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(el.dataset.ctx); } });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (el.dataset.ctx === 'stage' && el.value.trim()) markMoment(el.value.trim());
+        sendMsg(el.dataset.ctx);
+      }
+    });
   });
-  document.querySelectorAll('[data-splitsend]').forEach(b => b.onclick = () => sendMsg(b.dataset.splitsend));
+  document.querySelectorAll('[data-splitsend]').forEach(b => b.onclick = () => {
+    const ctx = b.dataset.splitsend;
+    if (ctx === 'stage') {
+      const t = document.querySelector('.split-input[data-ctx="stage"]').value.trim();
+      if (t) markMoment(t);
+    }
+    sendMsg(ctx);
+  });
 
   // 录音
   const mic = $('mic-btn');
@@ -789,16 +1055,13 @@ document.addEventListener('DOMContentLoaded', () => {
     r.readAsDataURL(f); e.target.value = '';
   };
   document.querySelectorAll('#status-presets .status-preset').forEach(p => p.onclick = () => {
-    if (p.dataset.clear) { localStorage.removeItem('user-status'); $('user-status').style.display = 'none'; }
-    else {
-      localStorage.setItem('user-status', p.textContent);
-      $('user-status').textContent = p.textContent; $('user-status').style.display = 'block';
-    }
+    if (p.dataset.clear) { localStorage.removeItem('user-status'); showUserStatus(''); }
+    else { localStorage.setItem('user-status', p.textContent); showUserStatus(p.textContent); }
     $('status-modal').classList.remove('open');
   });
   $('status-ok').onclick = () => {
     const v = $('status-custom-input').value.trim();
-    if (v) { localStorage.setItem('user-status', v); $('user-status').textContent = v; $('user-status').style.display = 'block'; }
+    if (v) { localStorage.setItem('user-status', v); showUserStatus(v); }
     $('status-custom-input').value = ''; $('status-modal').classList.remove('open');
   };
 
@@ -813,12 +1076,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('lightbox').onclick = () => $('lightbox').classList.remove('open');
 
   // 门 / 抽屉
-  document.querySelectorAll('.door').forEach(d => d.onclick = () => {
+  document.querySelectorAll('.room-card').forEach(d => d.onclick = () => {
     const r = d.dataset.room;
     if (r === 'study') openStudy();
     else if (r === 'cinema') openRoomMedia('video');
     else if (r === 'music') openRoomMedia('music');
     else if (r === 'mailbox') openMailbox();
+    else if (r === 'moments') openMoments();
+    else if (r === 'desire') $('desireroom').classList.add('open');
   });
   document.querySelectorAll('.drawer').forEach(d => d.onclick = () => openDrawer(d.dataset.drawer));
 
@@ -888,6 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sel = window.getSelection();
     const t = sel ? sel.toString().trim() : '';
     if (!t || t.length < 2 || !$('reader-text').contains(sel.anchorNode)) { tip.classList.remove('on'); return; }
+    if (t.length > 120) { tip.classList.remove('on'); return; }
     try {
       const r = sel.getRangeAt(0).getBoundingClientRect();
       tip.style.left = Math.max(10, Math.min(window.innerWidth - 110, r.left + r.width / 2 - 45)) + 'px';
@@ -895,7 +1161,9 @@ document.addEventListener('DOMContentLoaded', () => {
       tip.classList.add('on'); selQuote = t.slice(0, 80);
     } catch (e) { }
   });
-  $('sel-tip').onclick = () => {
+  $('sel-hl').onclick = e => { e.stopPropagation(); saveHighlight(); };
+  $('sel-tag').onclick = e => {
+    e.stopPropagation();
     replyTo = null; tagPos = currentPage;
     $('annot-new-quote').textContent = '「' + selQuote + '」';
     $('annot-input').value = ''; $('annot-new').classList.add('open');
@@ -921,13 +1189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('stage-video').pause(); $('stage-audio').pause();
     refreshHome();
   };
-  $('btn-tag-here').onclick = () => {
-    if (!curMedia) return;
-    replyTo = null; selQuote = ''; tagPos = stageTime();
-    $('annot-new-quote').textContent = `在 ${fmtTime(tagPos)} 这里`;
-    $('annot-input').value = ''; $('annot-new').classList.add('open'); $('annot-input').focus();
-  };
-  $('btn-see-tags').onclick = showTags;
+
 
   // 信箱
   $('btn-write-letter').onclick = () => $('write-letter-modal').classList.add('open');
@@ -967,6 +1229,59 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('play-close').onclick = () => { $('play-box').classList.remove('open'); $('play-frame').srcdoc = ''; };
 
+  // 朋友圈
+  $('btn-new-post').onclick = () => {
+    postImgs = []; $('post-text').value = ''; drawPostThumbs();
+    $('post-modal').classList.add('open');
+  };
+  $('btn-post-img').onclick = () => $('post-img-input').click();
+  $('post-img-input').onchange = e => {
+    [...e.target.files].slice(0, 9 - postImgs.length).forEach(f => {
+      const r = new FileReader();
+      r.onload = ev => { postImgs.push(ev.target.result); drawPostThumbs(); };
+      r.readAsDataURL(f);
+    });
+    e.target.value = '';
+  };
+  $('btn-post-emoji').onclick = () => { emojiTarget = 'post'; renderEmoji(); $('emoji-panel').classList.add('open'); };
+  $('btn-send-post').onclick = async () => {
+    const text = $('post-text').value.trim();
+    if (!text && !postImgs.length) { toast('什么都没写'); return; }
+    const urls = [];
+    for (const data of postImgs) {
+      try {
+        const blob = await (await fetch(data)).blob();
+        const fd = new FormData(); fd.append('file', blob, 'p.jpg');
+        const d = await (await fetch('/api/memories', { method: 'POST', body: fd })).json();
+        if (d.url) urls.push(d.url);
+      } catch (e) { }
+    }
+    const r = await jpost('/api/posts', { author: 'user', text, images: urls });
+    if (r.error) { toast(r.error); return; }
+    postImgs = []; $('post-text').value = '';
+    $('post-modal').classList.remove('open');
+    openMoments(); refreshHome();
+  };
+  $('cm-send').onclick = async () => {
+    const t = $('cm-input').value.trim();
+    if (!t || !cmTarget) return;
+    await jpost(`/api/posts/${cmTarget}/comment`, { author: 'user', text: t });
+    $('cm-input').value = ''; $('cm-bar').classList.remove('open'); cmTarget = null;
+    openMoments();
+  };
+  $('cm-emoji').onclick = () => { emojiTarget = 'comment'; renderEmoji(); $('emoji-panel').classList.add('open'); };
+  $('cm-input').addEventListener('input', () => autoResize($('cm-input')));
+
+  // 收一句
+  $('btn-add-quote').onclick = () => { $('q-text').value = ''; $('q-why').value = ''; $('quote-modal').classList.add('open'); };
+  $('btn-save-quote').onclick = async () => {
+    const text = $('q-text').value.trim();
+    if (!text) { toast('还没写'); return; }
+    const d = await jpost('/api/quotes/user', { text, why: $('q-why').value.trim() });
+    if (d.error) { toast(d.error); return; }
+    $('quote-modal').classList.remove('open'); openQuotes('user'); refreshTimeCounts();
+  };
+
   // 时光墙
   $('btn-mem-upload').onclick = () => $('file-input').click();
   let pendingFile = null;
@@ -992,19 +1307,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('cal-prev').onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
   $('cal-next').onclick = () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); };
   $('cal-today').onclick = () => { const n = new Date(); calYear = n.getFullYear(); calMonth = n.getMonth(); renderCalendar(); };
-  $('day-save').onclick = async () => {
-    const mood = [...$('day-moods').children].find(c => c.classList.contains('on'))?.textContent || '';
-    await jpost('/api/calendar', { date: dayEditing, mood, note: $('day-note').value.trim(), color: dayColor });
-    $('day-modal').classList.remove('open'); renderCalendar();
-  };
-  $('day-clear').onclick = async () => {
-    dayColor = '';
-    await jpost('/api/calendar', { date: dayEditing, mood: '', note: '', color: '' });
-    $('day-modal').classList.remove('open'); renderCalendar();
-  };
 
   // 纪念日
-  $('btn-days').onclick = () => { renderDaysModal(); $('days-modal').classList.add('open'); };
   $('day-add').onclick = () => {
     const name = $('day-name-input').value.trim(), date = $('day-date-input').value;
     if (!name || !date) { toast('名字和日期都要填'); return; }
@@ -1100,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // 表情
-  $('btn-emoji').onclick = () => { renderEmoji(); $('emoji-panel').classList.add('open'); };
+  $('btn-emoji').onclick = () => { emojiTarget = 'chat'; renderEmoji(); $('emoji-panel').classList.add('open'); };
   $('btn-emoji-upload').onclick = () => $('emoji-input').click();
   let pendingEmoji = null;
   $('emoji-input').onchange = e => {
@@ -1162,9 +1466,13 @@ function renderEmoji() {
     const d = document.createElement('div'); d.className = 'emoji-item';
     d.innerHTML = `<img src="${item.data}" alt="${esc(item.name)}">`;
     d.onclick = () => {
-      const inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
+      let inp;
+      if (emojiTarget === 'post') inp = $('post-text');
+      else if (emojiTarget === 'comment') inp = $('cm-input');
+      else inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
       inp.value += `[${item.name}]`; autoResize(inp);
       $('emoji-panel').classList.remove('open'); inp.focus();
+      emojiTarget = 'chat';
     };
     let timer = null;
     d.addEventListener('touchstart', () => {
