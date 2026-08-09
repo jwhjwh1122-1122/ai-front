@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=9">
+<link rel="stylesheet" href="/static/style.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -289,10 +289,12 @@ window.addEventListener('error', function (e) {
       <div class="settings-label" style="margin-top:12px;">多久醒一次</div>
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
         <div class="ctx-option" data-wake="30">30 分</div>
+        <div class="ctx-option" data-wake="45">45 分</div>
         <div class="ctx-option" data-wake="60">1 小时</div>
         <div class="ctx-option" data-wake="120">2 小时</div>
         <div class="ctx-option" data-wake="240">4 小时</div>
       </div>
+      <div class="settings-sub" id="wake-cost" style="margin-top:7px;"></div>
       <div class="settings-label" style="margin-top:12px;">叫他的时候说什么</div>
       <textarea class="persona-area" id="wake-prompt" style="min-height:70px;font-size:13px;"></textarea>
       <div style="display:flex;gap:8px;margin-top:10px;">
@@ -325,8 +327,9 @@ window.addEventListener('error', function (e) {
 
     <div class="settings-card">
       <div class="settings-label">工具</div>
-      <div class="settings-sub">按你在哪个房间发给他，省 token。不用的整组关掉。</div>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="tool-groups"></div>
+      <div class="settings-sub">一个功能一个开关，关掉的这一轮就不发给他。后面的数字是它占多少 token。书房和影音只在你进那个房间时才发。</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;" id="tool-groups"></div>
+      <div class="settings-sub" id="tool-sub" style="margin-top:9px;"></div>
     </div>
 
     <div class="settings-card">
@@ -357,6 +360,14 @@ window.addEventListener('error', function (e) {
       <div class="settings-label">OpenRouter 余额</div>
       <div class="settings-value" id="balance-val">加载中…</div>
       <div class="settings-sub" id="balance-limit"></div>
+      <button class="btn-ghost" id="btn-topup" style="width:100%;margin-top:10px;font-size:13px;padding:9px;">去 OpenRouter 充值</button>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-label">前情提要</div>
+      <div class="settings-sub">滑出窗口的对话不直接丢，先用 DeepSeek 压成一段留着，跟人设一起给他看。他自己也能补。</div>
+      <div class="settings-value" id="recap-n" style="font-size:14px;margin-top:8px;">—</div>
+      <button class="btn-ghost" id="btn-recap" style="width:100%;margin-top:10px;">看看压了什么</button>
     </div>
 
     <button class="btn-ghost" id="btn-clear-conv" style="width:100%;margin-top:14px;">清空本次对话</button>
@@ -594,6 +605,21 @@ window.addEventListener('error', function (e) {
       <button class="btn-ghost" data-close-sheet="dim-modal">算了</button>
       <button class="btn-solid" id="btn-dim-save">改</button>
     </div>
+  </div>
+</div>
+
+<div class="full" id="recap-panel">
+  <div class="full-head">
+    <div><div class="full-title">前情提要</div><div class="full-count" id="recap-sub"></div></div>
+    <div class="full-btns">
+      <button class="mem-upload-btn" id="btn-recap-save">保存</button>
+      <div class="mem-close-btn" data-close-full="recap-panel">✕</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px 16px 24px;">
+    <div class="settings-sub">你也可以直接改。改完他下一句就按新的记。</div>
+    <textarea class="persona-area" id="recap-text" style="min-height:280px;margin-top:10px;"></textarea>
+    <button class="btn-ghost" id="btn-recap-clear" style="width:100%;margin-top:12px;">清空重来</button>
   </div>
 </div>
 
@@ -905,7 +931,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=9"></script>
-<script src="/static/rooms.js?v=9"></script>
+<script src="/static/app.js?v=12"></script>
+<script src="/static/rooms.js?v=12"></script>
 </body>
 </html>
