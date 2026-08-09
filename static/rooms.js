@@ -375,7 +375,11 @@ function playMedia(m, kind) {
   } else {
     aw.style.display = 'none'; a.pause(); a.removeAttribute('src');
     v.style.display = 'block'; v.src = m.url;
-    v.onloadedmetadata = loadMoments;
+    v.onloadedmetadata = () => {
+      loadMoments();
+      // iOS 不先解一帧就截不出画面，静音快进一下再退回来
+      if (v.readyState < 2) { try { v.currentTime = 0.1; } catch (e) { } }
+    };
     setTimeout(loadMoments, 900);
   }
   renderSplit('stage');
@@ -436,6 +440,8 @@ function saveShape(filename, duration) {
 function grabFrameNow(seconds) {
   const v = $('stage-video');
   if (!$('stage').classList.contains('open') || curKind === 'music' || !v.src) return null;
+  // readyState < 2 说明还没解出画面，截出来是黑的
+  if (v.readyState < 2 || !v.videoWidth) return null;
   try {
     if (seconds !== undefined && seconds !== null) v.currentTime = seconds;
     const c = document.createElement('canvas');
@@ -475,6 +481,7 @@ function markMoment(said) {
 function scanFrames(count) {
   const v = $('stage-video');
   if (!$('stage').classList.contains('open') || curKind === 'music' || !v.src || !v.duration) return [];
+  if (v.readyState < 2 || !v.videoWidth) return [];
   const n = Math.max(2, Math.min(8, count || 6));
   const keep = v.currentTime, shots = [];
   const c = document.createElement('canvas');
@@ -783,7 +790,12 @@ function openDim(x) {
 async function openMoves() {
   $('dispute-panel').classList.add('open');
   const el = $('dispute-list');
-  const d = desireData || await jget('/api/desire/state');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">读一下…</div>';
+  let d = desireData;
+  if (!d) {
+    try { d = await jget('/api/desire/state'); desireData = d; }
+    catch (e) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">读不到</div>'; return; }
+  }
   const list = d.moves || [];
   $('dispute-count').textContent = list.length ? `${list.length} 次` : '';
   if (!list.length) {
@@ -1105,6 +1117,7 @@ async function boot() {
   $('wake-on').checked = !!CFG.wake_on;
   const wi = CFG.wake_interval || 120;
   document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
+  { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
@@ -1113,17 +1126,32 @@ async function boot() {
   showPage(localStorage.getItem('cur-page') || 'chat');
   refreshHome();
   loadBalance();
+  loadRecapCount();
   bindSplit('reader'); bindSplit('stage');
   startKeepalive();
+}
+async function loadRecapCount() {
+  const e = $('recap-n'); if (!e) return;
+  try {
+    const d = await jget('/api/recap?conv=' + encodeURIComponent(currentConvId || 'default'));
+    e.textContent = (d.text || '').trim()
+      ? `${d.text.length} 字 · 压了 ${d.covered || 0} 条` : '还没有';
+  } catch (err) { e.textContent = '—'; }
 }
 async function loadBalance() {
   try {
     const d = await jget('/api/key-info');
-    if (d.data) {
-      const u = d.data.usage || 0, l = d.data.limit;
+    const c = d.credits || {};
+    const total = c.total_credits, used = c.total_usage;
+    if (typeof total === 'number' && typeof used === 'number') {
+      $('balance-val').textContent = `$${(total - used).toFixed(2)}`;
+      $('balance-limit').textContent = `充了 $${total.toFixed(2)}，已用 $${used.toFixed(2)}`;
+    } else {
+      const k = (d.key || {}).data || {};
+      const u = k.usage || 0, l = k.limit;
       $('balance-val').textContent = l ? `$${(l - u).toFixed(2)}` : `已用 $${u.toFixed(2)}`;
-      $('balance-limit').textContent = l ? `额度 $${l.toFixed(2)}，已用 $${u.toFixed(2)}` : '不限额';
-    } else $('balance-val').textContent = '—';
+      $('balance-limit').textContent = l ? `额度 $${l.toFixed(2)}` : '不限额';
+    }
   } catch (e) { $('balance-val').textContent = '—'; }
 }
 
@@ -1389,9 +1417,16 @@ document.addEventListener('DOMContentLoaded', () => {
     $('letter-input').value = ''; $('write-letter-modal').classList.remove('open');
     toast('寄出去了'); openMailbox();
   };
-  $('btn-ask-letter').onclick = () => {
-    $('mailbox').classList.remove('open');
-    sendComposed('给我写一封信吧，写完寄到信箱里。', []);
+  $('btn-ask-letter').onclick = async () => {
+    const el = $('mail-list');
+    el.innerHTML = '<div class="room-empty" style="color:var(--ink-soft)">他在写…</div>';
+    $('mail-sub').textContent = '等一下';
+    try {
+      const r = await jpost('/api/ask-letter', {});
+      if (r.error) { toast(r.error); openMailbox(); return; }
+      toast(r.wrote ? '他写好了' : '他这次没写');
+      openMailbox();
+    } catch (e) { toast('出错了'); openMailbox(); }
   };
 
   // 抽屉
@@ -1557,10 +1592,18 @@ document.addEventListener('DOMContentLoaded', () => {
     await jpost('/api/persona', { wake_on: e.target.checked });
     toast(e.target.checked ? '他会自己醒了' : '关掉了');
   };
+  const wakeCost = m => {
+    const e = $('wake-cost'); if (!e) return;
+    e.textContent = m <= 55
+      ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。'
+      : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。';
+  };
   document.querySelectorAll('[data-wake]').forEach(o => o.onclick = async () => {
     document.querySelectorAll('[data-wake]').forEach(x => x.classList.remove('active'));
     o.classList.add('active');
-    await jpost('/api/persona', { wake_interval: parseInt(o.dataset.wake) });
+    const m = parseInt(o.dataset.wake);
+    wakeCost(m);
+    await jpost('/api/persona', { wake_interval: m });
   });
   $('wake-prompt').addEventListener('blur', () => jpost('/api/persona', { wake_prompt: $('wake-prompt').value }));
   $('btn-wake-log').onclick = renderWakeLog;
@@ -1596,6 +1639,28 @@ document.addEventListener('DOMContentLoaded', () => {
   $('auto-voice-toggle').onchange = e => localStorage.setItem('auto-voice', e.target.checked ? '1' : '0');
   $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(); };
   $('btn-new-conv').onclick = newConv;
+  $('btn-recap').onclick = async () => {
+    $('recap-panel').classList.add('open');
+    $('recap-text').value = '读一下…';
+    try {
+      const d = await jget('/api/recap?conv=' + encodeURIComponent(currentConvId || 'default'));
+      $('recap-text').value = d.text || '';
+      $('recap-sub').textContent = d.covered ? `压了 ${d.covered} 条` : '还没压过';
+    } catch (e) { $('recap-text').value = ''; }
+  };
+  $('btn-recap-save').onclick = async () => {
+    const r = await jpost('/api/recap', { conv: currentConvId, text: $('recap-text').value }, 'PUT');
+    if (r.error) { toast(r.error); return; }
+    toast('存好了'); loadRecapCount();
+  };
+  $('btn-recap-clear').onclick = async () => {
+    if (!confirm('清空前情提要？他就不记得更早的事了。')) return;
+    await fetch('/api/recap?conv=' + encodeURIComponent(currentConvId || 'default'), { method: 'DELETE' });
+    $('recap-text').value = ''; $('recap-sub').textContent = '还没压过';
+    localStorage.removeItem('recap-done-' + currentConvId);
+    loadRecapCount();
+  };
+  $('btn-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
   $('btn-mcp').onclick = () => { renderMcp(); $('mcp-panel').classList.add('open'); };
   $('mcp-add-btn').onclick = async () => {
     const url = $('mcp-url-input').value.trim(); if (!url) { toast('填个地址'); return; }
