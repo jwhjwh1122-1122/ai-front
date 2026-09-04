@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=12">
+<link rel="stylesheet" href="/static/style.css?v=13">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -304,13 +304,28 @@ window.addEventListener('error', function (e) {
       <div class="settings-sub" id="wake-sub"></div>
     </div>
 
+    <div class="settings-card" style="border-color:var(--accent);">
+      <div class="settings-label" style="color:var(--accent);">上游</div>
+      <div class="settings-sub">走哪家、什么地址、什么 key。换中转站在这改，不用动代码。</div>
+      <input class="mini-input" id="up-name" style="margin-top:10px;" placeholder="叫什么，比如 msuicode">
+      <input class="mini-input" id="up-base" style="margin-top:8px;" placeholder="https://www.msuicode.com" autocapitalize="off">
+      <input class="mini-input" id="up-key" style="margin-top:8px;" placeholder="sk-… 留空就用环境变量里那个" autocapitalize="off">
+      <div class="settings-label" style="margin-top:12px;">模型名（一行一个，第一个是默认）</div>
+      <textarea class="persona-area" id="up-models" style="min-height:80px;font-size:13px;margin-top:6px;" placeholder="claude-sonnet-4-5&#10;claude-opus-4-5&#10;claude-haiku-4-5"></textarea>
+      <input class="mini-input" id="up-small" style="margin-top:8px;" placeholder="翻译用的小模型，可留空">
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;">
+        <input type="checkbox" id="up-cache"> 发缓存参数（中转站不支持就关掉）
+      </label>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn-ghost" id="btn-up-test" style="font-size:13px;padding:9px;">测一下</button>
+        <button class="btn-solid" id="btn-up-save" style="font-size:13px;padding:9px;">保存</button>
+      </div>
+      <div class="settings-sub" id="up-result" style="margin-top:8px;"></div>
+    </div>
+
     <div class="settings-card">
       <div class="settings-label">模型</div>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-        <div class="ctx-option" data-model="anthropic/claude-sonnet-4-6">Sonnet 4.6</div>
-        <div class="ctx-option" data-model="anthropic/claude-opus-4-6">Opus 4.6</div>
-        <div class="ctx-option" data-model="anthropic/claude-haiku-4-5">Haiku 4.5</div>
-      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="model-list"></div>
       <div class="settings-sub" id="model-sub"></div>
     </div>
 
@@ -931,7 +946,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=12"></script>
-<script src="/static/rooms.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
+<script src="/static/rooms.js?v=13"></script>
 </body>
 </html>
