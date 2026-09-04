@@ -17,6 +17,37 @@ app = Flask(__name__, static_folder='static')
 CORS(app)
 
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+UPSTREAM_FILE = os.path.join(os.path.dirname(__file__), 'data', 'upstream.json')
+
+
+def load_upstream():
+    """上游是哪家、地址、key。换中转站只改这里，不动代码。"""
+    d = {'name': 'OpenRouter', 'base': 'https://openrouter.ai/api/v1',
+         'key': '', 'models': [], 'cache': True}
+    try:
+        if os.path.exists(UPSTREAM_FILE):
+            with open(UPSTREAM_FILE, 'r', encoding='utf-8') as f:
+                d.update(json.load(f) or {})
+    except Exception:
+        pass
+    if not d.get('key'):
+        d['key'] = OR_KEY
+    base = (d.get('base') or '').rstrip('/')
+    if base.endswith('/chat/completions'):
+        base = base[:-len('/chat/completions')]
+    if base and not base.endswith('/v1'):
+        base += '/v1'
+    d['base'] = base
+    return d
+
+
+def upstream_url():
+    return load_upstream()['base'] + '/chat/completions'
+
+
+def upstream_headers():
+    return {'Authorization': f"Bearer {load_upstream()['key']}",
+            'Content-Type': 'application/json'}
 EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
 DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
@@ -1360,10 +1391,8 @@ def translate_api():
     if key in cache:
         return jsonify({'text': cache[key], 'cached': True})
     try:
-        r = requests.post('https://openrouter.ai/api/v1/chat/completions',
-                          headers={'Authorization': f'Bearer {OR_KEY}',
-                                   'Content-Type': 'application/json'},
-                          json={'model': 'anthropic/claude-haiku-4-5',
+        r = requests.post(upstream_url(), headers=upstream_headers(),
+                          json={'model': load_upstream().get('small_model') or 'anthropic/claude-haiku-4-5',
                                 'max_tokens': 800,
                                 'messages': [
                                     {'role': 'system', 'content':
@@ -1618,8 +1647,9 @@ def chat_v2():
 
     payload = {'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
                'messages': oa, 'stream': True,
-               'cache_control': {'type': 'ephemeral', 'ttl': '1h'},
                'session_id': str(sid)[:256], 'usage': {'include': True}}
+    if load_upstream().get('cache', True):
+        payload['cache_control'] = {'type': 'ephemeral', 'ttl': '1h'}
     if keepalive:
         payload['max_tokens'] = 1
     else:
@@ -1630,9 +1660,7 @@ def chat_v2():
 
     def gen():
         try:
-            with requests.post('https://openrouter.ai/api/v1/chat/completions',
-                               headers={'Authorization': f'Bearer {OR_KEY}',
-                                        'Content-Type': 'application/json'},
+            with requests.post(upstream_url(), headers=upstream_headers(),
                                json=payload, stream=True, timeout=180) as r:
                 if r.status_code != 200:
                     body = r.text[:400]
@@ -1753,9 +1781,7 @@ def ask_letter():
     wrote, said = False, ''
     for _ in range(4):
         try:
-            r = requests.post('https://openrouter.ai/api/v1/chat/completions',
-                              headers={'Authorization': f'Bearer {OR_KEY}',
-                                       'Content-Type': 'application/json'},
+            r = requests.post(upstream_url(), headers=upstream_headers(),
                               json={'model': p.get('wake_model') or 'anthropic/claude-sonnet-4-6',
                                     'messages': [{'role': 'system', 'content': system_prompt}] + msgs,
                                     'max_tokens': 1600,
@@ -2543,6 +2569,68 @@ def tts():
                     headers={'Cache-Control': 'no-cache'})
 
 
+@app.route('/api/upstream', methods=['GET', 'POST'])
+def upstream_api():
+    if request.method == 'POST':
+        d = request.json or {}
+        cur = load_upstream()
+        for k in ('name', 'base', 'key', 'cache', 'small_model'):
+            if k in d:
+                cur[k] = d[k]
+        if 'models' in d:
+            cur['models'] = [str(x).strip() for x in (d['models'] or []) if str(x).strip()][:12]
+        os.makedirs(os.path.dirname(UPSTREAM_FILE), exist_ok=True)
+        jwrite(UPSTREAM_FILE, cur)
+        return jsonify({'ok': True})
+    u = load_upstream()
+    return jsonify({'name': u['name'], 'base': u['base'], 'models': u.get('models') or [],
+                    'cache': u.get('cache', True), 'small_model': u.get('small_model', ''),
+                    'key_tail': (u['key'][-6:] if u.get('key') else ''),
+                    'has_key': bool(u.get('key'))})
+
+
+@app.route('/api/upstream/test', methods=['POST'])
+def upstream_test():
+    d = request.json or {}
+    base = (d.get('base') or load_upstream()['base']).rstrip('/')
+    if base.endswith('/chat/completions'):
+        base = base[:-len('/chat/completions')]
+    if base and not base.endswith('/v1'):
+        base += '/v1'
+    key = d.get('key') or load_upstream()['key']
+    model = d.get('model') or 'claude-sonnet-4-5'
+    try:
+        r = requests.post(base + '/chat/completions',
+                          headers={'Authorization': f'Bearer {key}',
+                                   'Content-Type': 'application/json'},
+                          json={'model': model, 'max_tokens': 20,
+                                'messages': [{'role': 'user', 'content': '说「通了」两个字'}]},
+                          timeout=60)
+        if r.status_code != 200:
+            return jsonify({'ok': False, 'status': r.status_code, 'body': r.text[:400]})
+        txt = ((r.json().get('choices') or [{}])[0].get('message') or {}).get('content', '')
+        return jsonify({'ok': True, 'reply': txt[:120]})
+    except Exception as e:
+        return jsonify({'ok': False, 'body': str(e)[:300]})
+
+
+@app.route('/api/models', methods=['GET'])
+def upstream_models():
+    """问中转站有哪些模型可用。"""
+    u = load_upstream()
+    try:
+        r = requests.get(u['base'] + '/models',
+                         headers={'Authorization': f"Bearer {u['key']}"}, timeout=30)
+        if r.status_code != 200:
+            return jsonify({'error': f'{r.status_code}'}), 502
+        data = r.json()
+        ids = [x.get('id') for x in (data.get('data') or []) if x.get('id')]
+        cl = sorted([i for i in ids if 'claude' in i.lower()])
+        return jsonify({'all': len(ids), 'claude': cl[:40], 'sample': ids[:40]})
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 502
+
+
 @app.route('/api/key-info', methods=['GET'])
 def key_info():
     out = {}
@@ -2927,9 +3015,7 @@ def do_wake(manual=False):
                    'cache_control': {'type': 'ephemeral', 'ttl': '1h'},
                    'session_id': shared_session(), 'usage': {'include': True}}
         try:
-            r = requests.post('https://openrouter.ai/api/v1/chat/completions',
-                              headers={'Authorization': f'Bearer {OR_KEY}',
-                                       'Content-Type': 'application/json'},
+            r = requests.post(upstream_url(), headers=upstream_headers(),
                               json=payload, timeout=180)
             if r.status_code != 200:
                 return {'error': f'{r.status_code} {r.text[:200]}'}
