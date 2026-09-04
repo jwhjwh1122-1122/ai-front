@@ -1108,7 +1108,6 @@ async function boot() {
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
   loadMcp(); updateMcpSub(); renderToolGroups();
-  document.querySelectorAll('[data-model]').forEach(o => o.classList.toggle('active', o.dataset.model === currentModel));
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
   $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
@@ -1127,8 +1126,31 @@ async function boot() {
   refreshHome();
   loadBalance();
   loadRecapCount();
+  loadUpstream();
   bindSplit('reader'); bindSplit('stage');
   startKeepalive();
+}
+async function loadUpstream() {
+  try {
+    const u = await jget('/api/upstream');
+    $('up-name').value = u.name || '';
+    $('up-base').value = u.base || '';
+    $('up-key').placeholder = u.has_key ? `已存 …${u.key_tail}，留空不改` : 'sk-…';
+    $('up-models').value = (u.models || []).join('\n');
+    $('up-small').value = u.small_model || '';
+    $('up-cache').checked = u.cache !== false;
+    renderModels(u.models);
+  } catch (e) { renderModels(null); }
+}
+function upstreamBody() {
+  const models = $('up-models').value.split('\n').map(x => x.trim()).filter(Boolean);
+  const b = {
+    name: $('up-name').value.trim(), base: $('up-base').value.trim(),
+    models, small_model: $('up-small').value.trim(), cache: $('up-cache').checked
+  };
+  const k = $('up-key').value.trim();
+  if (k) b.key = k;
+  return b;
 }
 async function loadRecapCount() {
   const e = $('recap-n'); if (!e) return;
@@ -1620,12 +1642,28 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // 设置
-  document.querySelectorAll('[data-model]').forEach(o => o.onclick = () => {
-    document.querySelectorAll('[data-model]').forEach(x => x.classList.remove('active'));
-    o.classList.add('active'); currentModel = o.dataset.model;
-    localStorage.setItem('model', currentModel);
-    $('model-sub').textContent = '下一句用 ' + o.textContent;
-  });
+  // 模型列表跟着上游配置走
+  window.renderModels = (models) => {
+    const el = $('model-list'); if (!el) return;
+    const list = (models && models.length) ? models
+      : ['anthropic/claude-sonnet-4-6', 'anthropic/claude-opus-4-6', 'anthropic/claude-haiku-4-5'];
+    if (!list.includes(currentModel)) { currentModel = list[0]; localStorage.setItem('model', currentModel); }
+    el.innerHTML = '';
+    list.forEach(mo => {
+      const d = document.createElement('div');
+      d.className = 'ctx-option' + (mo === currentModel ? ' active' : '');
+      d.textContent = mo.split('/').pop();
+      d.title = mo;
+      d.onclick = () => {
+        currentModel = mo; localStorage.setItem('model', mo);
+        [...el.children].forEach(x => x.classList.remove('active'));
+        d.classList.add('active');
+        $('model-sub').textContent = '下一句用 ' + d.textContent;
+      };
+      el.appendChild(d);
+    });
+  };
+
   document.querySelectorAll('[data-val]').forEach(o => o.onclick = () => {
     document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); ctxWindow = parseInt(o.dataset.val);
@@ -1639,6 +1677,25 @@ document.addEventListener('DOMContentLoaded', () => {
   $('auto-voice-toggle').onchange = e => localStorage.setItem('auto-voice', e.target.checked ? '1' : '0');
   $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(); };
   $('btn-new-conv').onclick = newConv;
+  $('btn-up-save').onclick = async () => {
+    const r = await jpost('/api/upstream', upstreamBody());
+    if (r.error) { toast(r.error); return; }
+    $('up-key').value = '';
+    await loadUpstream();
+    $('up-result').textContent = '存好了，下一句就走新的';
+    toast('存好了');
+  };
+  $('btn-up-test').onclick = async () => {
+    const b = upstreamBody();
+    $('up-result').textContent = '测试中…';
+    const r = await jpost('/api/upstream/test', {
+      base: b.base, key: $('up-key').value.trim(), model: (b.models[0] || '')
+    });
+    $('up-result').textContent = r.ok
+      ? `通了：${r.reply || '(空回复)'}`
+      : `不通${r.status ? ' ' + r.status : ''}：${(r.body || '').slice(0, 220)}`;
+    $('up-result').style.color = r.ok ? 'var(--accent)' : '';
+  };
   $('btn-recap').onclick = async () => {
     $('recap-panel').classList.add('open');
     $('recap-text').value = '读一下…';
