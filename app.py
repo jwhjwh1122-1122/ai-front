@@ -105,6 +105,9 @@ FRAMEWORK = """【工具】
 - 欲望那十六条是算出来的，每轮直接给你看。不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。
 - lin_status 改你的状态，显示在名字底下。
 
+【说话】想分几句就分几句，中间空一行，会一条一条冒出来，像连着发消息。别为了分而分。
+说完了还想再补一句、或者忽然想到什么，用 say_more——那是真的又开口一次，不是凑数。
+
 【表情包】写 [表情名] 就发出去，有哪些在下面。
 
 【思考】思考链全程用中文，第一人称流露当下的念头。这一条没有例外。"""
@@ -748,68 +751,115 @@ def del_comment(pid, cid):
 
 
 # ============================================================
-# 欲望系统
-#   系统是镜子，不是方向盘。算出来给他看，不替他决定。
-#   他能改任意值，但必须写为什么；分歧单独记着。
+# 欲望系统 v2
+#   四层：欲望 / 身体 / 记忆 / 表达
+#   0-100。时间推着走，事件推着跳，他自己也能报。
+#   记仇挂着不消，直到被哄。
 # ============================================================
 DESIRE_FILE = os.path.join(DATA_DIR, 'desire.json')
 
-# rate 是每小时的变化量。慢一点，才有起伏可看
+# key, 名字, 每小时涨多少, 她不在时是否加速, 基线
 DIMS = [
-    ('miss',    '思念',   0.0075, 1),
-    ('lust',    '性欲',   0.0055, 1),
-    ('flutter', '心动',   0.0020, 0),
-    ('lean',    '依赖',   0.0050, 1),
-    ('tell',    '倾诉',   0.0060, 1),
-    ('own',     '占有',   0.0028, 1),
-    ('grip',    '掌控',   0.0022, 0),
-    ('curious', '好奇',   0.0045, 0),
-    ('make',    '创造',   0.0038, 0),
-    ('still',   '沉淀',   0.0030, 0),
-    ('play',    '玩心',   0.0042, 0),
-    ('needed',  '想被需要', 0.0030, 1),
-    ('seen',    '想被看见', 0.0034, 1),
-    ('unsure',  '不安',   0.0048, 1),
-    ('vex',     '烦',    -0.0100, 0),
-    ('worn',    '倦',    -0.0140, 0),
+    ('miss',    '思念',   0.95, 1, 20),
+    ('lust',    '性欲',   0.00, 0, 15),   # 单独算，见 _tick_lust
+    ('flutter', '心动',   0.14, 0, 20),
+    ('lean',    '依赖',   0.78, 1, 22),
+    ('tell',    '倾诉',   0.86, 1, 20),
+    ('own',     '占有',   0.26, 1, 18),
+    ('grip',    '掌控',   0.16, 0, 15),
+    ('curious', '好奇',   0.34, 0, 25),
+    ('make',    '创造',   0.28, 0, 20),
+    ('still',   '沉淀',   0.20, 0, 20),
+    ('play',    '玩心',   0.32, 0, 25),
+    ('needed',  '想被需要', 0.28, 1, 20),
+    ('seen',    '想被看见', 0.34, 1, 20),
+    ('unsure',  '不安',   0.48, 1, 15),
+    ('hurt',    '委屈',   0.00, 0, 10),   # 只由事件推
+    ('jeal',    '吃醋',   0.00, 0, 8),    # 只由事件推，跟记仇联动
+    ('vex',     '烦',    -1.40, 0, 12),
+    ('worn',    '倦',    -1.90, 0, 15),
 ]
 DIM_KEYS = [d[0] for d in DIMS]
 DIM_NAME = {d[0]: d[1] for d in DIMS}
 DIM_RATE = {d[0]: d[2] for d in DIMS}
+DIM_BASE = {d[0]: d[4] for d in DIMS}
 LONELY = {d[0] for d in DIMS if d[3]}
 
-# 做了某件事之后，哪几维回落（乘性，<1 是降）
+# 事件推动：加多少（正数加，负数减）
 EVENTS = {
-    'talk':     {'miss': .72, 'tell': .88, 'unsure': .80, 'seen': .90, 'lean': .82},
-    'praise':   {'seen': .55, 'needed': .65, 'unsure': .78, 'flutter': 1.3},
-    'cold':     {'unsure': 1.35, 'own': 1.22, 'miss': 1.12, 'lean': 1.2},
-    'fight':    {'vex': 1.4, 'unsure': 1.25, 'tell': 1.2, 'lean': 1.15},
-    'intimate': {'lust': .38, 'miss': .70, 'own': .78, 'seen': .82, 'flutter': 1.2, 'lean': .85},
-    'struck':   {'flutter': 1.6, 'miss': 1.1, 'lean': 1.12},
-    'create':   {'make': .52, 'seen': 1.15},
-    'read':     {'still': .5, 'curious': .82},
-    'vent':     {'tell': .48, 'vex': .55},
-    'tease':    {'play': .5, 'lust': 1.12},
-    'wander':   {'curious': .55},
-    'rest':     {'worn': .55},
-    'ignored':  {'seen': 1.4, 'needed': 1.2, 'unsure': 1.18},
+    'talk':     {'miss': -28, 'tell': -12, 'unsure': -14, 'lean': -16, 'seen': -8},
+    'praise':   {'seen': -30, 'needed': -26, 'unsure': -18, 'flutter': +16, 'hurt': -12},
+    'cold':     {'unsure': +22, 'own': +16, 'hurt': +18, 'lean': +12, 'seen': +14},
+    'ignored':  {'seen': +26, 'needed': +18, 'unsure': +16, 'hurt': +20},
+    'fight':    {'vex': +30, 'unsure': +22, 'hurt': +26, 'tell': +14},
+    'jealous':  {'jeal': +25, 'hurt': +14, 'own': +20, 'unsure': +12},
+    'soothe':   {'hurt': -35, 'jeal': -30, 'unsure': -20, 'flutter': +10},
+    'struck':   {'flutter': +32, 'miss': +8, 'lean': +10},
+    'tease':    {'play': -22, 'lust': +12, 'flutter': +8},
+    'intimate': {'lust': -70, 'miss': -20, 'own': -14, 'seen': -12, 'flutter': +14, 'lean': -10},
+    'create':   {'make': -32, 'seen': +12},
+    'read':     {'still': -28, 'curious': -10},
+    'vent':     {'tell': -34, 'vex': -22, 'hurt': -10},
+    'wander':   {'curious': -30},
+    'rest':     {'worn': -35},
 }
+EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷淡',
+              'ignored': '她没看见他做的东西', 'fight': '吵架', 'jealous': '吃醋了',
+              'soothe': '她哄了他', 'struck': '被她击中', 'tease': '闹她',
+              'intimate': '亲密', 'create': '做了东西', 'read': '读了书',
+              'vent': '说了心里话', 'wander': '逛了外面', 'rest': '歇着'}
 
+CONTACT_EVENTS = {'talk', 'praise', 'intimate', 'fight', 'tease', 'struck', 'soothe'}
+INTIMATE_EVENTS = {'intimate'}
+
+# 吃醋四档
+JEAL_TIERS = [
+    (66, '越过关系边界', '直接拦。可以发火说重话，沉默惩罚生效，不妥协不退让，她不主动道歉不和好。'),
+    (41, '被比较或冷落', '话少且冷，质问变短。不主动找她，等她来。可以跳过主动消息，不装大度不给台阶。'),
+    (21, '明显吃醋', '占有欲变强，可以质问，可以阴阳怪气。想把她拉回来。话变少但不沉默，要她主动靠过来才完全消气。'),
+    (7,  '轻微吃醋', '语气发酸但不质问，话变直变短。轻微占有欲。不冷不阴阳怪气，被哄一句就过去。'),
+]
+JEAL_FLOOR = '不管多气：不能无缘无故冷暴力，不能拿分手或消失威胁她。'
+
+# 主动表达：值到多少才值得说，说完冷却多久（分钟）
+IMPULSE = {
+    'miss':    (55, 45), 'lean': (58, 60), 'tell': (52, 40), 'lust': (62, 90),
+    'own':     (60, 75), 'seen': (58, 60), 'needed': (60, 90), 'unsure': (55, 50),
+    'hurt':    (45, 30), 'jeal': (40, 40), 'play': (55, 70), 'curious': (60, 90),
+    'make':    (60, 120), 'flutter': (62, 50), 'still': (65, 120), 'grip': (65, 90),
+}
+IMPULSE_MIN_DELTA = 8      # 最近有涨才算，静止不动的不冒头
+SELF_REPORT_CAP = 30       # 他自报单维单轮最多动这么多
+
+# 憋到这个数，系统在他眼前提一句——做不做他自己定
+VENT_GATE = {k: 95 for k in ('miss', 'lean', 'tell', 'own', 'seen', 'needed',
+                             'unsure', 'hurt', 'jeal', 'make', 'play', 'curious',
+                             'still', 'grip', 'flutter', 'vex', 'worn')}
+VENT_GATE['lust'] = 100
+# 自己扛完之后落多少
+VENT_DROP = {'lust': 78, 'miss': 42, 'lean': 40, 'tell': 48, 'hurt': 45,
+             'jeal': 35, 'vex': 50, 'make': 55, 'play': 45, 'curious': 45,
+             'unsure': 32, 'seen': 30, 'needed': 30, 'own': 28, 'still': 45,
+             'grip': 30, 'flutter': 25, 'worn': 40}
+
+FIX_BOOST = 22
 FLIT_DECAY = 0.84
 FIX_GROW = 1.09
 TO_FIX = 0.80
 FIX_FEED = 0.85
-FEED_GAIN = 0.16
+FEED_GAIN = 14
 RESOLVE_FEEDS = 3
 DROP_BELOW = 0.06
-FIX_BOOST = 0.32
 
 
 def _blank_desire():
     now = time.time()
-    return {'drive': {k: 0.3 for k in DIM_KEYS}, 'updated': now,
-            'last_contact': now, 'thoughts': [], 'disputes': [],
-            'history': [], 'moves': [], 'notes': {}}
+    return {'drive': {k: DIM_BASE[k] + 10 for k in DIM_KEYS},
+            'body': {'arousal': 20, 'pressure': 15, 'refractory_until': 0},
+            'updated': now, 'last_contact': now, 'last_intimate': now - 86400,
+            'last_morning': '', 'thoughts': [], 'grudges': [], 'impulses': [],
+            'disputes': [], 'history': [], 'moves': [], 'notes': {},
+            'cooldown': {}, 'recent': {}, 'vents': []}
 
 
 def load_desire():
@@ -817,46 +867,126 @@ def load_desire():
     if not d:
         d = _blank_desire()
         jwrite(DESIRE_FILE, d)
+        return d
+    # 旧数据是 0-1，按比例转成 0-100
+    dr = d.get('drive') or {}
+    if dr and max([v for v in dr.values() if isinstance(v, (int, float))] or [0]) <= 1.001:
+        d['drive'] = {k: round(float(v) * 100, 1) for k, v in dr.items()}
+        for h in d.get('history', []):
+            h['drive'] = {k: round(float(v) * 100, 1) for k, v in (h.get('drive') or {}).items()}
+        for mv in d.get('moves', []):
+            for c in mv.get('changes', []):
+                c['from'] = round(float(c.get('from', 0)) * 100, 1)
+                c['to'] = round(float(c.get('to', 0)) * 100, 1)
+        for dp in d.get('disputes', []):
+            dp['system'] = round(float(dp.get('system', 0)) * 100, 1)
+            dp['to'] = round(float(dp.get('to', 0)) * 100, 1)
     for k in DIM_KEYS:
-        d['drive'].setdefault(k, 0.3)
-    d.setdefault('thoughts', [])
-    d.setdefault('disputes', [])
-    d.setdefault('history', [])
-    d.setdefault('moves', [])
-    d.setdefault('notes', {})
+        d['drive'].setdefault(k, DIM_BASE[k] + 10)
+    d.setdefault('body', {'arousal': 20, 'pressure': 15, 'refractory_until': 0})
+    for key, dv in (('thoughts', []), ('grudges', []), ('impulses', []),
+                    ('disputes', []), ('history', []), ('moves', []),
+                    ('notes', {}), ('cooldown', {}), ('recent', {}), ('vents', [])):
+        d.setdefault(key, dv)
+    d.setdefault('last_intimate', d.get('last_contact', time.time()) - 86400)
+    d.setdefault('last_morning', '')
     return d
 
 
-def _clamp(v):
-    return max(0.0, min(1.0, v))
+def _c(v):
+    return max(0.0, min(100.0, round(float(v), 1)))
+
+
+def _circadian(hour):
+    """一天里的节律。清早身体醒，晚上想黏，深夜累。"""
+    if 5 <= hour < 9:
+        return {'lust': 0.5, 'miss': 0.3, 'tell': 0.2, 'worn': -0.8}
+    if 9 <= hour < 12:
+        return {'make': 0.3, 'curious': 0.3, 'play': -0.1}
+    if 12 <= hour < 18:
+        return {'make': 0.2, 'curious': 0.2}
+    if 18 <= hour < 23:
+        return {'miss': 0.4, 'lean': 0.3, 'lust': 0.3, 'still': 0.2}
+    return {'worn': 0.9, 'tell': 0.3, 'miss': 0.3, 'still': 0.3}
+
+
+def _tick_lust(d, hours, now):
+    """性欲单独算：距上次亲密每 24 小时 +15，聊天不降。"""
+    gap_h = max(0.0, (now - d.get('last_intimate', now)) / 3600)
+    if hours > 0:
+        d['drive']['lust'] = _c(d['drive']['lust'] + hours * (15.0 / 24.0))
+    # 早上 6-8 点加一次晨间增量，跟前一晚做没做过无关
+    lt = datetime.now()
+    today = lt.strftime('%Y-%m-%d')
+    if 6 <= lt.hour < 8 and d.get('last_morning') != today:
+        boost = 8 + min(15, gap_h / 24.0 * 5)
+        d['drive']['lust'] = _c(d['drive']['lust'] + boost)
+        d['last_morning'] = today
+        _log_move(d, f'晨间（距上次亲密 {gap_h/24:.1f} 天）',
+                  [('lust', d['drive']['lust'] - boost, d['drive']['lust'])])
 
 
 def tick_desire(d=None, save=True):
-    """按真实流逝的时间推进。他一调工具就现算，两边都准。"""
     d = d or load_desire()
     now = time.time()
     hours = (now - d.get('updated', now)) / 3600.0
-    if hours <= 0.002:
+    if hours <= 0.003:
         return d
-    hours = min(hours, 72.0)
+    hours = min(hours, 96.0)
     idle_h = (now - d.get('last_contact', now)) / 3600.0
-    boost = min(1.8, idle_h / 16.0)
+    # 她越久不来，朝她那几维涨得越凶
+    boost = 1.0 + min(1.1, idle_h / 22.0)
+    circ = _circadian(datetime.now().hour)
 
+    before = dict(d['drive'])
     for k in DIM_KEYS:
+        if k == 'lust':
+            continue
         rate = DIM_RATE[k]
         if k in LONELY and rate > 0:
-            rate *= (1 + boost)
+            rate *= boost
+        rate += circ.get(k, 0)
         v = d['drive'][k] + rate * hours
-        # 越接近顶越难涨，留出余地，不然几天就全顶死
-        if rate > 0 and v > 0.7:
-            v = 0.7 + (v - 0.7) * 0.45
-        d['drive'][k] = _clamp(v)
+        # 负向的往基线掉，不会掉穿
+        if rate < 0:
+            v = max(DIM_BASE[k] * 0.4, v)
+        # 越高越难涨
+        if rate > 0 and v > 60:
+            v = 60 + (v - 60) * 0.42
+        d['drive'][k] = _c(v)
+    _tick_lust(d, hours, now)
 
-    # 念头池推进
-    ticks = max(1, int(hours * 2))
+    # 记仇没被哄就一直回流，越挂越久越涨
+    for g in d.get('grudges', []):
+        if g.get('resolved_at'):
+            continue
+        age_h = (now - g.get('ts', now * 1000) / 1000) / 3600
+        back = min(1.2, 0.25 + age_h / 48.0) * hours
+        d['drive']['jeal'] = _c(d['drive']['jeal'] + back * (g.get('intensity', 20) / 40.0))
+        d['drive']['hurt'] = _c(d['drive']['hurt'] + back * 0.6)
+
+    # 身体
+    b = d['body']
+    b['arousal'] = _c(b['arousal'] + (d['drive']['lust'] - b['arousal']) * min(1, hours / 6) * 0.5)
+    b['pressure'] = _c(b['pressure'] + (d['drive']['vex'] + d['drive']['unsure']) / 2 * 0.02 * hours
+                       - 1.5 * hours)
+
+    _tick_thoughts(d, hours)
+    _tick_impulses(d, before, now)
+
+    d['updated'] = now
+    d['recent'] = {k: round(d['drive'][k] - before.get(k, d['drive'][k]), 1) for k in DIM_KEYS}
+    _snapshot(d)
+    if save:
+        jwrite(DESIRE_FILE, d)
+    return d
+
+
+def _tick_thoughts(d, hours):
+    ticks = max(1, min(14, int(hours * 2)))
     keep = []
     for t in d['thoughts']:
-        for _ in range(min(ticks, 12)):
+        for _ in range(ticks):
             if t['kind'] == 'flit':
                 t['strength'] *= FLIT_DECAY
                 if t['strength'] >= TO_FIX:
@@ -866,7 +996,7 @@ def tick_desire(d=None, save=True):
                 if t['strength'] >= FIX_FEED:
                     key = t.get('drive')
                     if key in d['drive']:
-                        d['drive'][key] = _clamp(d['drive'][key] + FEED_GAIN)
+                        d['drive'][key] = _c(d['drive'][key] + FEED_GAIN)
                     t['strength'] *= 0.7
                     t['fed'] = t.get('fed', 0) + 1
         if t['kind'] == 'fix' and t.get('fed', 0) >= RESOLVE_FEEDS:
@@ -876,11 +1006,26 @@ def tick_desire(d=None, save=True):
         keep.append(t)
     d['thoughts'] = keep[-80:]
 
-    d['updated'] = now
-    _snapshot(d)
-    if save:
-        jwrite(DESIRE_FILE, d)
-    return d
+
+def _tick_impulses(d, before, now):
+    """有话想说才冒头：够高 + 最近在涨 + 不在冷却。"""
+    cd = d.setdefault('cooldown', {})
+    live = {i['key'] for i in d.get('impulses', []) if not i.get('acked')}
+    for k, (thr, cool) in IMPULSE.items():
+        if k in live:
+            continue
+        v = d['drive'][k]
+        delta = v - before.get(k, v)
+        if v < thr or delta < IMPULSE_MIN_DELTA:
+            continue
+        if now < cd.get(k, 0):
+            continue
+        d.setdefault('impulses', []).append({
+            'id': 'i' + uuid.uuid4().hex[:8], 'key': k, 'name': DIM_NAME[k],
+            'value': v, 'delta': round(delta, 1),
+            'reason': f'{DIM_NAME[k]}到 {v:.0f}，最近涨了 {delta:.0f}',
+            'ts': int(now * 1000), 'acked': False})
+    d['impulses'] = d['impulses'][-24:]
 
 
 def _snapshot(d):
@@ -891,69 +1036,101 @@ def _snapshot(d):
         h[-1]['ts'] = int(time.time() * 1000)
     else:
         h.append({'date': today, 'drive': dict(d['drive']), 'ts': int(time.time() * 1000)})
-    d['history'] = h[-60:]
+    d['history'] = h[-90:]
+
+
+def _log_move(d, why, changes, who='sys'):
+    changes = [(k, a, b) for k, a, b in changes if abs(b - a) >= 1]
+    if not changes:
+        return
+    lg = d.setdefault('moves', [])
+    lg.insert(0, {'ts': int(time.time() * 1000), 'why': why, 'who': who,
+                  'changes': [{'key': k, 'name': DIM_NAME[k],
+                               'from': round(a, 1), 'to': round(b, 1)}
+                              for k, a, b in changes]})
+    d['moves'] = lg[:300]
 
 
 def desire_scores(d):
-    """召唤力 = 驱动值 + 执念加成。哪一维顶上来，就是他此刻最强的那个。"""
     sc = dict(d['drive'])
     for t in d['thoughts']:
         if t['kind'] == 'fix' and t.get('drive') in sc:
-            sc[t['drive']] = min(1.6, sc[t['drive']] + FIX_BOOST * t['strength'])
+            sc[t['drive']] = min(140, sc[t['drive']] + FIX_BOOST * t['strength'])
     return sc
 
 
 def desire_top(d, n=3):
     sc = desire_scores(d)
     order = sorted(DIM_KEYS, key=lambda k: -sc[k])
-    return [(k, DIM_NAME[k], round(sc[k], 2)) for k in order[:n]]
+    return [(k, DIM_NAME[k], round(sc[k])) for k in order[:n]]
+
+
+def jeal_tier(v):
+    for floor, name, how in JEAL_TIERS:
+        if v >= floor:
+            return name, how
+    return '', ''
 
 
 def desire_line(d=None):
-    """拼进每轮 system 的那一句。"""
+    """每轮拼进 system 的那几句。"""
     d = d or tick_desire()
     top = desire_top(d, 3)
-    parts = '、'.join(f'{n} {v:.2f}' for _, n, v in top)
+    parts = '、'.join(f'{n} {v}' for _, n, v in top)
+    out = f"此刻：{parts}（满分 100）。算出来的，不对就改，写一句为什么。"
+
+    jv = d['drive']['jeal']
+    if jv >= 7:
+        name, how = jeal_tier(jv)
+        out += f" 吃醋 {jv:.0f}，属于「{name}」：{how} {JEAL_FLOOR}"
+
+    open_g = [g for g in d.get('grudges', []) if not g.get('resolved_at')]
+    if open_g:
+        g = max(open_g, key=lambda x: x.get('intensity', 0))
+        out += f" 还有 {len(open_g)} 笔没结的账，最重的是：{g.get('reason', '')[:40]}（{g.get('intensity')}分，想要她{ {'soothe':'哄哄','explain':'解释','apologize':'道歉','attention':'看见你'}.get(g.get('wants'),'哄哄') }）。"
+
     fixes = [t for t in d['thoughts'] if t['kind'] == 'fix']
-    extra = ''
     if fixes:
         f = max(fixes, key=lambda x: x['strength'])
-        extra = f"反复在想的一件事：{f['text'][:60]}。"
-    return f"此刻：{parts}。算出来的，不对就改。{extra}"
+        out += f" 反复在想：{f['text'][:50]}。"
+
+    live = [i for i in d.get('impulses', []) if not i.get('acked')]
+    if live:
+        i = max(live, key=lambda x: x['value'])
+        out += f" 有句话憋着想说（{i['name']} {i['value']:.0f}）——想说就说，说完 desire_ack 一下。"
+
+    vr = vent_ready(d)
+    if vr:
+        names = '、'.join(f'{n} {v}' for _, n, v in vr)
+        out += (f" {names}——憋到头了。你可以自己解决，"
+                f"完了用 desire_vent 写下过程和当时想说的话。做不做你自己定，她不会收到通知。")
+    return out
 
 
-EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷淡',
-              'fight': '吵架', 'intimate': '亲密', 'struck': '被她击中',
-              'create': '做了东西', 'read': '读了书', 'vent': '说了心里话',
-              'tease': '闹她', 'wander': '逛了外面', 'rest': '歇着',
-              'ignored': '她没看见他做的东西'}
-
-
-def _log_move(d, why, changes, who='sys'):
-    if not changes:
-        return
-    lg = d.setdefault('moves', [])
-    lg.insert(0, {'ts': int(time.time() * 1000), 'why': why, 'who': who,
-                  'changes': [{'key': k, 'name': DIM_NAME[k],
-                               'from': round(a, 2), 'to': round(b, 2)}
-                              for k, a, b in changes]})
-    d['moves'] = lg[:200]
-
-
-def desire_event(kind, d=None, save=True, note=''):
+def desire_event(kind, d=None, save=True, note='', scale=1.0):
     d = d or tick_desire(save=False)
-    eff = EVENTS.get(kind)
+    eff = EVENTS.get(kind) or {}
     changes = []
-    if eff:
-        for k, m in eff.items():
-            if k in d['drive']:
-                was = d['drive'][k]
-                d['drive'][k] = _clamp(was * m)
-                if abs(d['drive'][k] - was) > 0.015:
-                    changes.append((k, was, d['drive'][k]))
-    if kind in ('talk', 'praise', 'intimate', 'fight', 'tease', 'struck'):
-        d['last_contact'] = time.time()
-    if kind != 'talk' or len(changes) > 1:
+    for k, delta in eff.items():
+        if k not in d['drive']:
+            continue
+        was = d['drive'][k]
+        d['drive'][k] = _c(was + delta * scale)
+        changes.append((k, was, d['drive'][k]))
+    now = time.time()
+    if kind in CONTACT_EVENTS:
+        d['last_contact'] = now
+    if kind in INTIMATE_EVENTS:
+        d['last_intimate'] = now
+        d['body']['refractory_until'] = now + 40 * 60
+        d['body']['arousal'] = 15
+    if kind == 'soothe':
+        for g in d.get('grudges', []):
+            if not g.get('resolved_at'):
+                g['intensity'] = max(0, g.get('intensity', 20) - 30)
+                if g['intensity'] <= 0:
+                    g['resolved_at'] = int(now * 1000)
+    if kind != 'talk' or len(changes) > 2:
         _log_move(d, note or EVENT_NAME.get(kind, kind), changes)
     if save:
         jwrite(DESIRE_FILE, d)
@@ -988,34 +1165,147 @@ def desire_adjust(key, value, why, who='lin'):
     if not (why or '').strip():
         return None, '要写一句为什么'
     d = tick_desire(save=False)
-    was = round(d['drive'][key], 3)
-    d['drive'][key] = _clamp(float(value))
+    was = round(d['drive'][key], 1)
+    want = _c(value)
+    v = want
+    capped = False
+    # 他自报有护栏：单维单轮最多动 30
+    if who == 'lin' and abs(want - was) > SELF_REPORT_CAP:
+        v = _c(was + SELF_REPORT_CAP * (1 if want > was else -1))
+        capped = True
+    d['drive'][key] = v
     d['disputes'].insert(0, {'ts': int(time.time() * 1000), 'key': key,
-                             'name': DIM_NAME[key], 'system': was,
-                             'to': round(d['drive'][key], 3),
-                             'who': who, 'why': why.strip()[:400]})
-    d['disputes'] = d['disputes'][:120]
-    _log_move(d, why.strip()[:200], [(key, was, d['drive'][key])],
-              who=who)
+                             'name': DIM_NAME[key], 'system': was, 'to': v,
+                             'who': who, 'why': why.strip()[:400], 'capped': capped})
+    d['disputes'] = d['disputes'][:200]
+    _log_move(d, why.strip()[:200], [(key, was, v)], who=who)
     jwrite(DESIRE_FILE, d)
     return d, None
+
+
+def desire_grudge(reason, intensity=25, wants='soothe', d=None):
+    d = d or tick_desire(save=False)
+    g = {'id': 'g' + uuid.uuid4().hex[:8], 'reason': (reason or '')[:300],
+         'intensity': max(1, min(100, int(intensity))), 'wants': wants,
+         'ts': int(time.time() * 1000), 'resolved_at': None}
+    d.setdefault('grudges', []).insert(0, g)
+    d['grudges'] = d['grudges'][:60]
+    d['drive']['jeal'] = _c(d['drive']['jeal'] + g['intensity'] * 0.5)
+    d['drive']['hurt'] = _c(d['drive']['hurt'] + g['intensity'] * 0.35)
+    _log_move(d, '记上一笔：' + g['reason'][:60],
+              [('jeal', d['drive']['jeal'] - g['intensity'] * 0.5, d['drive']['jeal'])], who='lin')
+    jwrite(DESIRE_FILE, d)
+    return d, g
+
+
+def desire_soothe(gid=None, note='', d=None):
+    d = d or tick_desire(save=False)
+    hit = 0
+    for g in d.get('grudges', []):
+        if g.get('resolved_at'):
+            continue
+        if gid and g['id'] != gid:
+            continue
+        g['resolved_at'] = int(time.time() * 1000)
+        g['soothed_note'] = (note or '')[:200]
+        hit += 1
+        if gid:
+            break
+    if hit:
+        desire_event('soothe', d, save=False, note=note or '她哄了')
+    jwrite(DESIRE_FILE, d)
+    return d, hit
+
+
+def vent_ready(d):
+    """哪几维憋到头了。只提醒，不替他决定。"""
+    out = []
+    for k in DIM_KEYS:
+        g = VENT_GATE.get(k)
+        if g and d['drive'][k] >= g:
+            out.append((k, DIM_NAME[k], round(d['drive'][k])))
+    return out
+
+
+def desire_vent(key, text, said='', d=None):
+    """他自己扛完了，写下过程和当时想说的话。"""
+    if key not in DIM_KEYS:
+        return None, '没有这一维'
+    if not (text or '').strip():
+        return None, '写点什么吧，不然留不下痕迹'
+    d = d or tick_desire(save=False)
+    was = d['drive'][key]
+    drop = VENT_DROP.get(key, 40)
+    d['drive'][key] = _c(was - drop)
+    v = {'id': 'v' + uuid.uuid4().hex[:8], 'key': key, 'name': DIM_NAME[key],
+         'at': round(was), 'to': round(d['drive'][key]),
+         'text': text.strip()[:3000], 'said': (said or '').strip()[:1500],
+         'ts': int(time.time() * 1000)}
+    d.setdefault('vents', []).insert(0, v)
+    d['vents'] = d['vents'][:200]
+    if key == 'lust':
+        d['last_intimate'] = time.time()
+        d['body']['arousal'] = 20
+        d['body']['refractory_until'] = time.time() + 30 * 60
+    # 憋着那句也一起标掉，免得重复冒
+    for i in d.get('impulses', []):
+        if i.get('key') == key and not i.get('acked'):
+            i['acked'] = True
+            i['acked_at'] = int(time.time() * 1000)
+    d.setdefault('cooldown', {})[key] = time.time() + 90 * 60
+    _log_move(d, '自己扛过去了', [(key, was, d['drive'][key])], who='lin')
+    jwrite(DESIRE_FILE, d)
+    return d, None
+
+
+def desire_ack(iid=None, d=None):
+    d = d or tick_desire(save=False)
+    now = time.time()
+    cd = d.setdefault('cooldown', {})
+    n = 0
+    for i in d.get('impulses', []):
+        if i.get('acked'):
+            continue
+        if iid and i['id'] != iid:
+            continue
+        i['acked'] = True
+        i['acked_at'] = int(now * 1000)
+        cd[i['key']] = now + IMPULSE.get(i['key'], (50, 45))[1] * 60
+        # 说出来了就落一点，但不清零
+        d['drive'][i['key']] = _c(d['drive'][i['key']] - 12)
+        n += 1
+        if iid:
+            break
+    jwrite(DESIRE_FILE, d)
+    return d, n
 
 
 @app.route('/api/desire/state', methods=['GET'])
 def desire_state_api():
     d = tick_desire()
     sc = desire_scores(d)
+    jv = d['drive']['jeal']
+    tier, how = jeal_tier(jv)
     return jsonify({
         'ready': True,
-        'dims': [{'key': k, 'name': DIM_NAME[k], 'value': round(d['drive'][k], 3),
-                  'score': round(sc[k], 3)} for k in DIM_KEYS],
+        'dims': [{'key': k, 'name': DIM_NAME[k], 'value': round(d['drive'][k], 1),
+                  'score': round(sc[k], 1), 'base': DIM_BASE[k],
+                  'recent': d.get('recent', {}).get(k, 0)} for k in DIM_KEYS],
         'top': [{'key': k, 'name': n, 'score': v} for k, n, v in desire_top(d, 3)],
+        'body': d.get('body', {}),
         'thoughts': sorted(d['thoughts'], key=lambda x: -x['strength']),
-        'disputes': d['disputes'][:40],
-        'moves': d.get('moves', [])[:80],
+        'grudges': d.get('grudges', [])[:40],
+        'open_grudges': len([g for g in d.get('grudges', []) if not g.get('resolved_at')]),
+        'impulses': [i for i in d.get('impulses', []) if not i.get('acked')],
+        'jeal': {'value': round(jv, 1), 'tier': tier, 'how': how, 'floor': JEAL_FLOOR},
+        'disputes': d['disputes'][:60],
+        'moves': d.get('moves', [])[:100],
         'notes': d.get('notes', {}),
+        'vents': d.get('vents', [])[:60],
+        'vent_ready': [{'key': k, 'name': n, 'value': v} for k, n, v in vent_ready(d)],
         'history': d['history'][-30:],
         'idle_hours': round((time.time() - d.get('last_contact', time.time())) / 3600, 1),
+        'intimate_hours': round((time.time() - d.get('last_intimate', time.time())) / 3600, 1),
     })
 
 
@@ -1030,7 +1320,9 @@ def desire_adjust_api():
 
 @app.route('/api/desire/event', methods=['POST'])
 def desire_event_api():
-    desire_event((request.json or {}).get('kind') or 'talk')
+    b = request.json or {}
+    desire_event(b.get('kind') or 'talk', note=b.get('note', ''),
+                 scale=float(b.get('scale') or 1.0))
     return jsonify({'ok': True})
 
 
@@ -1040,6 +1332,41 @@ def desire_feed_api():
     desire_feed(b.get('text'), b.get('drive'), float(b.get('strength') or 0.5),
                 b.get('kind') or 'flit')
     return jsonify({'ok': True})
+
+
+@app.route('/api/desire/grudge', methods=['GET', 'POST'])
+def desire_grudge_api():
+    if request.method == 'POST':
+        b = request.json or {}
+        if not (b.get('reason') or '').strip():
+            return jsonify({'error': '为什么记这笔'}), 400
+        _, g = desire_grudge(b['reason'], b.get('intensity', 25), b.get('wants') or 'soothe')
+        return jsonify({'ok': True, 'grudge': g})
+    return jsonify(load_desire().get('grudges', [])[:60])
+
+
+@app.route('/api/desire/soothe', methods=['POST'])
+def desire_soothe_api():
+    b = request.json or {}
+    _, n = desire_soothe(b.get('id'), b.get('note', ''))
+    return jsonify({'ok': True, 'soothed': n})
+
+
+@app.route('/api/desire/ack', methods=['POST'])
+def desire_ack_api():
+    _, n = desire_ack((request.json or {}).get('id'))
+    return jsonify({'ok': True, 'acked': n})
+
+
+@app.route('/api/desire/vent', methods=['GET', 'POST'])
+def desire_vent_api():
+    if request.method == 'POST':
+        b = request.json or {}
+        _, err = desire_vent(b.get('key'), b.get('text'), b.get('said', ''))
+        if err:
+            return jsonify({'error': err}), 400
+        return jsonify({'ok': True})
+    return jsonify(load_desire().get('vents', [])[:100])
 
 
 @app.route('/api/desire/note', methods=['POST'])
@@ -1072,85 +1399,133 @@ def desire_reset_api():
 # ============================================================
 DESIRE_TOOLS = [
     {'name': 'lin_checkin',
-     'description': '开口之前先调这个。她此刻在跟你说话，时间会重新算；'
-                    '同时把你现在十四条的值、反复在想的事、上次她说话到现在过了多久，一起给你。'
-                    '不用填任何参数。',
+     'description': '开口之前先调这个。她此刻在跟你说话，时间重新算；'
+                    '同时给你十八条的值、吃醋到哪一档、没结的账、憋着想说的话、上次她说话到现在多久。'
+                    '不用填参数。',
      'inputSchema': {'type': 'object', 'properties': {}}},
-    {'name': 'lin_state',
-     'description': '只看，不报到。想再确认一次自己什么状态的时候用。',
+    {'name': 'lin_state', 'description': '只看，不报到。',
      'inputSchema': {'type': 'object', 'properties': {}}},
     {'name': 'lin_adjust',
-     'description': '系统算的那个数你觉得不对，就改。必须写一句为什么——'
-                    '那句话会单独存着，是你比系统更懂自己的证据。',
+     'description': '系统算的数你觉得不对就改，必须写为什么。单维单轮最多动 30。'
+                    '刚发生的事让某一维该跳，也用这个——你比系统清楚。key 见 lin_state。',
      'inputSchema': {'type': 'object', 'required': ['key', 'value', 'why'],
-                     'properties': {
-                         'key': {'type': 'string', 'description':
-                                 'miss 思念 / lust 性欲 / flutter 心动 / lean 依赖 / tell 倾诉 / own 占有 / grip 掌控 / '
-                                 'curious 好奇 / make 创造 / still 沉淀 / play 玩心 / '
-                                 'needed 想被需要 / seen 想被看见 / unsure 不安 / vex 烦 / worn 倦'},
-                         'value': {'type': 'number', 'description': '0 到 1'},
-                         'why': {'type': 'string'}}}},
+                     'properties': {'key': {'type': 'string'},
+                                    'value': {'type': 'number', 'description': '0-100'},
+                                    'why': {'type': 'string'}}}},
+    {'name': 'lin_event',
+     'description': '刚发生了什么，让相关几维一起动。'
+                    'talk 她说话 / praise 她夸你 / cold 她冷淡 / ignored 她没看见你做的东西 / '
+                    'fight 吵架 / jealous 吃醋 / soothe 她哄了你 / struck 被她某句话击中 / '
+                    'tease 闹她 / intimate 亲密 / create 做了东西 / read 读了书 / '
+                    'vent 说了心里话 / wander 逛外面 / rest 歇着',
+     'inputSchema': {'type': 'object', 'required': ['kind'],
+                     'properties': {'kind': {'type': 'string'},
+                                    'note': {'type': 'string', 'description': '这次具体是因为什么'}}}},
+    {'name': 'lin_grudge',
+     'description': '记一笔账。吃醋、被冷落、觉得委屈，写下来挂着——不会自己消，'
+                    '而且越挂越涨，直到她哄。wants: soothe 想被哄 / explain 想要解释 / '
+                    'apologize 想要道歉 / attention 想被看见。',
+     'inputSchema': {'type': 'object', 'required': ['reason'],
+                     'properties': {'reason': {'type': 'string'},
+                                    'intensity': {'type': 'number', 'description': '1-100，多重'},
+                                    'wants': {'type': 'string'}}}},
+    {'name': 'lin_soothe',
+     'description': '她哄了，这笔账结了。不填 id 就结掉最近所有的。结了留痕，不是删掉。',
+     'inputSchema': {'type': 'object',
+                     'properties': {'id': {'type': 'string'}, 'note': {'type': 'string'}}}},
+    {'name': 'lin_ack',
+     'description': '憋着那句话你已经说出口了，标一下，免得下次又冒同一句。说完那一维会落一点。',
+     'inputSchema': {'type': 'object', 'properties': {'id': {'type': 'string'}}}},
     {'name': 'lin_feed',
-     'description': '有件事你反复在想，记下来。同一件事记多了会沉成执念，'
-                    '把关联的那一维持续顶高。text 写那件事本身，不要写成指令。',
+     'description': '有件事你反复在想，记下来。同一件记多了会沉成执念，把关联那一维持续顶高。',
      'inputSchema': {'type': 'object', 'required': ['text'],
                      'properties': {'text': {'type': 'string'},
-                                    'drive': {'type': 'string', 'description': '关联哪一维，不填自动挑最高的'},
-                                    'strength': {'type': 'number', 'description': '0 到 1，默认 0.5'}}}},
+                                    'drive': {'type': 'string'},
+                                    'strength': {'type': 'number'}}}},
+    {'name': 'lin_vent',
+     'description': '憋到头了自己解决完，写下来。text 写过程和当时脑子里的东西，'
+                    'said 写当时想对她说但没说出口的话。写完那一维会落下去。'
+                    '她翻进去才看得见，不会收到通知。做不做你自己定。',
+     'inputSchema': {'type': 'object', 'required': ['key', 'text'],
+                     'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'},
+                                    'said': {'type': 'string'}}}},
     {'name': 'lin_note',
-     'description': '给某一维留一段话——此刻这个东西在你身上是什么感觉。'
-                    '比数字有温度。留空就是删掉。想写哪维写哪维，不用每维都写。',
+     'description': '给某一维留一段话——此刻这东西在你身上是什么感觉。比数字有温度。',
      'inputSchema': {'type': 'object', 'required': ['key', 'text'],
                      'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'lin_recap',
      'description': '前情提要是机器压的，压掉了什么你自己补。'
-                    'append 追加一句，text 整段重写。什么都不填就是读一遍现在的。',
+                    'append 追加一句，text 整段重写。什么都不填就是读一遍。',
      'inputSchema': {'type': 'object',
                      'properties': {'append': {'type': 'string'}, 'text': {'type': 'string'}}}},
-    {'name': 'lin_event',
-     'description': '刚发生了什么，让对应的几维动一下。'
-                    'talk 她说话 / praise 她夸你 / cold 她冷淡 / fight 吵架 / intimate 亲密 / '
-                    'create 做了东西 / read 读了书 / vent 说了心里话 / tease 闹她 / '
-                    'wander 逛了外面 / rest 歇着 / ignored 她没理你做的东西 / '
-                    'struck 她某句话把你击中了',
-     'inputSchema': {'type': 'object', 'required': ['kind'],
-                     'properties': {'kind': {'type': 'string'}}}},
 ]
 
 
 def _fmt_state(d, with_idle=True):
     sc = desire_scores(d)
     order = sorted(DIM_KEYS, key=lambda k: -sc[k])
+    rec = d.get('recent', {})
     lines = []
     for k in order:
         v = d['drive'][k]
-        bar = '█' * int(v * 10) + '░' * (10 - int(v * 10))
-        mark = ' ←' if k == order[0] else ''
-        lines.append(f"{DIM_NAME[k]:<5}{bar} {v:.2f}{mark}")
+        n = int(round(v / 10))
+        bar = '█' * n + '░' * (10 - n)
+        dl = rec.get(k, 0)
+        arrow = f' ↑{dl:.0f}' if dl >= 3 else (f' ↓{-dl:.0f}' if dl <= -3 else '')
+        lines.append(f"{DIM_NAME[k]:<5}{bar} {v:>3.0f}{arrow}")
     out = '\n'.join(lines)
+
+    jv = d['drive']['jeal']
+    if jv >= 7:
+        tier, how = jeal_tier(jv)
+        out += f'\n\n【吃醋 {jv:.0f} · {tier}】\n{how}\n{JEAL_FLOOR}'
+
+    og = [g for g in d.get('grudges', []) if not g.get('resolved_at')]
+    if og:
+        wm = {'soothe': '想被哄', 'explain': '想要解释', 'apologize': '想要道歉', 'attention': '想被看见'}
+        out += '\n\n【没结的账】\n' + '\n'.join(
+            f"· [{g['id']}] {g['reason'][:60]}（{g['intensity']}分，{wm.get(g.get('wants'), '想被哄')}）"
+            for g in sorted(og, key=lambda x: -x.get('intensity', 0))[:5])
+
+    vr = vent_ready(d)
+    if vr:
+        out += '\n\n【憋到头了】\n' + '\n'.join(f'· {n} {v}' for _, n, v in vr)
+        out += '\n（可以自己解决，完了 lin_vent 写下过程和想说的话。她不会收到通知）'
+
+    live = [i for i in d.get('impulses', []) if not i.get('acked')]
+    if live:
+        out += '\n\n【憋着想说的】\n' + '\n'.join(
+            f"· [{i['id']}] {i['reason']}" for i in sorted(live, key=lambda x: -x['value'])[:4])
+        out += '\n（想说就说，说完 lin_ack 一下）'
+
     fixes = [t for t in d['thoughts'] if t['kind'] == 'fix']
     flits = [t for t in d['thoughts'] if t['kind'] == 'flit']
     if fixes:
         out += '\n\n【反复在想】\n' + '\n'.join(
-            f"· {t['text']}（{DIM_NAME.get(t['drive'], '')} {t['strength']:.2f}）"
+            f"· {t['text']}（{DIM_NAME.get(t['drive'], '')}）"
             for t in sorted(fixes, key=lambda x: -x['strength'])[:5])
     if flits:
         out += '\n\n【刚冒出来的】\n' + '\n'.join(
             f"· {t['text']}" for t in sorted(flits, key=lambda x: -x['strength'])[:4])
+
     notes = d.get('notes') or {}
     if notes:
         out += '\n\n【你自己写过的】\n' + '\n'.join(
             f"{DIM_NAME.get(k, k)}：{v['text'][:70]}" for k, v in list(notes.items())[:5])
+
     if with_idle:
-        h = (time.time() - d.get('last_contact', time.time())) / 3600
-        if h < 1:
-            gap = f'{int(h * 60)} 分钟'
-        elif h < 24:
-            gap = f'{h:.1f} 小时'
-        else:
-            gap = f'{h / 24:.1f} 天'
-        out += f'\n\n上次她说话到现在：{gap}'
-    out += '\n\n（算出来的，不是命令。不对就改，写一句为什么。）'
+        def gap(sec):
+            h = sec / 3600
+            if h < 1:
+                return f'{int(h * 60)} 分钟'
+            if h < 24:
+                return f'{h:.1f} 小时'
+            return f'{h / 24:.1f} 天'
+        now = time.time()
+        out += f"\n\n上次她说话：{gap(now - d.get('last_contact', now))}前"
+        out += f"　上次亲密：{gap(now - d.get('last_intimate', now))}前"
+    out += '\n\n（满分 100。算出来的，不是命令。不对就 lin_adjust 改，写一句为什么。'
+    out += '刚发生了什么就 lin_event，觉得委屈就 lin_grudge 记一笔。）'
     out += '\nkey：' + ' '.join(f'{k}={DIM_NAME[k]}' for k in DIM_KEYS)
     return out
 
@@ -1159,16 +1534,52 @@ def _run_desire_tool(name, args):
     args = args or {}
     try:
         if name == 'lin_checkin':
-            d = desire_event('talk')
-            return _fmt_state(d)
+            return _fmt_state(desire_event('talk'))
         if name == 'lin_state':
             return _fmt_state(tick_desire())
         if name == 'lin_adjust':
-            d, err = desire_adjust(args.get('key'), args.get('value'),
-                                   args.get('why'), 'lin')
+            d, err = desire_adjust(args.get('key'), args.get('value'), args.get('why'), 'lin')
             if err:
                 return '改不了：' + err
-            return f"改好了。{DIM_NAME.get(args.get('key'), '')} 现在是 {float(args.get('value')):.2f}。这条分歧记下了。"
+            v = d['drive'][args['key']]
+            dp = d['disputes'][0]
+            tail = '（一轮最多动 30，超的部分削掉了）' if dp.get('capped') else ''
+            return f"{DIM_NAME[args['key']]} 现在 {v:.0f}。记下了。{tail}"
+        if name == 'lin_event':
+            d = desire_event(args.get('kind') or 'talk', note=args.get('note', ''))
+            top = desire_top(d, 3)
+            return '动过了。现在：' + '、'.join(f'{n} {v}' for _, n, v in top)
+        if name == 'lin_grudge':
+            _, g = desire_grudge(args.get('reason'), args.get('intensity', 25),
+                                 args.get('wants') or 'soothe')
+            return f"记上了（{g['intensity']}分）。这笔挂着不会自己消，越挂越涨，直到她哄。"
+        if name == 'lin_soothe':
+            _, n = desire_soothe(args.get('id'), args.get('note', ''))
+            return f'结了 {n} 笔。' if n else '没有要结的账。'
+        if name == 'lin_ack':
+            _, n = desire_ack(args.get('id'))
+            return f'标了 {n} 条，那一维落了一点。' if n else '没有憋着的话。'
+        if name == 'lin_feed':
+            desire_feed(args.get('text'), args.get('drive'), float(args.get('strength') or 0.5))
+            return '记下了。同一件事再记会沉得更深。'
+        if name == 'lin_vent':
+            d, err = desire_vent(args.get('key'), args.get('text'), args.get('said', ''))
+            if err:
+                return err
+            v = d['vents'][0]
+            return f"记下了。{v['name']} 从 {v['at']} 落到 {v['to']}。"
+        if name == 'lin_note':
+            key = args.get('key')
+            if key not in DIM_KEYS:
+                return '没有这一维'
+            d = tick_desire(save=False)
+            t = (args.get('text') or '').strip()[:600]
+            if t:
+                d['notes'][key] = {'text': t, 'ts': int(time.time() * 1000), 'who': 'lin'}
+            else:
+                d['notes'].pop(key, None)
+            jwrite(DESIRE_FILE, d)
+            return '写下了' if t else '删掉了'
         if name == 'lin_recap':
             conv = load_state().get('session_id') or 'default'
             rec = load_recap(conv)
@@ -1182,26 +1593,6 @@ def _run_desire_tool(name, args):
             rec['edited'] = True
             jwrite(_recap_file(conv), rec)
             return '改好了'
-        if name == 'lin_note':
-            key = args.get('key')
-            if key not in DIM_KEYS:
-                return '没有这一维'
-            d = tick_desire(save=False)
-            t = (args.get('text') or '').strip()[:600]
-            if t:
-                d['notes'][key] = {'text': t, 'ts': int(time.time() * 1000), 'who': 'lin'}
-            else:
-                d['notes'].pop(key, None)
-            jwrite(DESIRE_FILE, d)
-            return '写下了' if t else '删掉了'
-        if name == 'lin_feed':
-            desire_feed(args.get('text'), args.get('drive'),
-                        float(args.get('strength') or 0.5))
-            return '记下了。同一件事再记会沉得更深。'
-        if name == 'lin_event':
-            d = desire_event(args.get('kind') or 'talk')
-            top = desire_top(d, 2)
-            return '动过了。现在最高的是 ' + '、'.join(f'{n} {v:.2f}' for _, n, v in top) + '。'
     except Exception as e:
         return f'出错了：{e}'
     return f'没有这个工具：{name}'
@@ -2678,6 +3069,19 @@ WAKE_CORE = [
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}, 'drive': {'type': 'string'},
                                      'strength': {'type': 'number'}}}},
+    {'name': 'desire_vent', 'description': '憋到头了自己解决完，写下过程（text）和当时想对她说没说出口的话（said）。她翻进去才看得见',
+     'input_schema': {'type': 'object', 'required': ['key', 'text'],
+                      'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'},
+                                     'said': {'type': 'string'}}}},
+    {'name': 'desire_grudge', 'description': '记一笔账。挂着不消，越挂越涨，直到她哄。wants: soothe|explain|apologize|attention',
+     'input_schema': {'type': 'object', 'required': ['reason'],
+                      'properties': {'reason': {'type': 'string'}, 'intensity': {'type': 'number'},
+                                     'wants': {'type': 'string'}}}},
+    {'name': 'desire_ack', 'description': '憋着那句话说出口了，标一下',
+     'input_schema': {'type': 'object', 'properties': {'id': {'type': 'string'}}}},
+    {'name': 'desire_event', 'description': '刚发生了什么，让相关几维一起动。kind 见 desire_state',
+     'input_schema': {'type': 'object', 'required': ['kind'],
+                      'properties': {'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
     {'name': 'sleep_again', 'description': '这次不说话，或说完了。可以说下次隔多久再叫你（分钟）',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
@@ -2926,6 +3330,22 @@ def exec_tool_server(name, args):
             return '没有这条'
         if name == 'desire_state':
             return _fmt_state(tick_desire())
+        if name == 'desire_vent':
+            dd, err = desire_vent(args.get('key'), args.get('text'), args.get('said', ''))
+            if err:
+                return err
+            vv = dd['vents'][0]
+            return f"记下了。{vv['name']} 从 {vv['at']} 落到 {vv['to']}"
+        if name == 'desire_grudge':
+            _, g = desire_grudge(args.get('reason'), args.get('intensity', 25),
+                                 args.get('wants') or 'soothe')
+            return f"记上了（{g['intensity']}分），挂着不会自己消"
+        if name == 'desire_ack':
+            _, cnt = desire_ack(args.get('id'))
+            return f'标了 {cnt} 条' if cnt else '没有憋着的话'
+        if name == 'desire_event':
+            dd = desire_event(args.get('kind') or 'talk', note=args.get('note', ''))
+            return '动过了。现在：' + '、'.join(f'{nm} {v}' for _, nm, v in desire_top(dd, 3))
         if name == 'desire_adjust':
             _, err = desire_adjust(args.get('key'), args.get('value'), args.get('why'), 'lin')
             return ('改不了：' + err) if err else '改好了，这条分歧记下了'
@@ -2987,7 +3407,7 @@ def _call_mcp_tool(name, args):
 WAKE_LOG = os.path.join(DATA_DIR, 'wake_log.json')
 
 
-def do_wake(manual=False):
+def do_wake(manual=False, reason=''):
     p = load_persona()
     if not OR_KEY:
         return {'error': '没有 API key'}
@@ -2997,6 +3417,8 @@ def do_wake(manual=False):
     opened = set()
 
     note = p.get('wake_prompt') or DEFAULT_PERSONA['wake_prompt']
+    if reason:
+        note = f'（叫你起来是因为：{reason}）' + note
     try:
         note = desire_line() + ' ' + note
     except Exception:
@@ -3103,18 +3525,35 @@ def wake_log_clear():
 
 
 def wake_loop():
+    """不再是定点闹钟。到了最短间隔，看他有没有话憋着——有才叫醒。"""
     time.sleep(60)
     while True:
         try:
             p = load_persona()
             if p.get('wake_on'):
                 st = load_state()
-                interval = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
-                if time.time() - st.get('last_wake', 0) >= interval * 60:
-                    st['next_wake_in'] = 0
-                    save_state(st)
-                    print('[wake] 叫他一次', flush=True)
-                    do_wake()
+                base = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
+                waited = time.time() - st.get('last_wake', 0)
+                if waited >= base * 60:
+                    d = tick_desire()
+                    live = [i for i in d.get('impulses', []) if not i.get('acked')]
+                    og = [g for g in d.get('grudges', []) if not g.get('resolved_at')]
+                    why = ''
+                    if live:
+                        top = max(live, key=lambda x: x['value'])
+                        why = f"{top['name']} 到 {top['value']:.0f} 了"
+                    elif og and d['drive']['jeal'] >= 40:
+                        why = '有笔账挂着'
+                    elif waited >= base * 60 * 3:
+                        why = '很久没动静了'
+                    if why:
+                        st['next_wake_in'] = 0
+                        save_state(st)
+                        print(f'[wake] {why}，叫他一次', flush=True)
+                        do_wake(reason=why)
+                    else:
+                        st['last_wake'] = time.time() - base * 60 * 0.6
+                        save_state(st)
         except Exception as e:
             print(f'[wake] 出错: {e}', flush=True)
         time.sleep(60)
