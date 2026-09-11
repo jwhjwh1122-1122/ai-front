@@ -614,3 +614,45 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .mt-sw.on{background:var(--accent);}
 .mt-sw::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .18s;box-shadow:0 1px 2px rgba(0,0,0,.2);}
 .mt-sw.on::after{transform:translateX(16px);}
+
+/* 欲望室 v2 */
+.dim-base{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--text-muted);opacity:.3;}
+.dim-v b{color:var(--accent);font-weight:600;}
+.jeal-card{background:var(--bg2);border:1px solid var(--accent);border-radius:14px;padding:14px 16px;margin:16px 0 4px;}
+.jeal-top{display:flex;align-items:baseline;justify-content:space-between;}
+.jeal-tier{font-size:14px;font-weight:600;color:var(--accent);letter-spacing:2px;}
+.jeal-v{font-size:24px;font-weight:600;color:var(--accent);}
+.jeal-how{font-size:13px;line-height:1.85;color:var(--text);margin-top:9px;}
+.jeal-floor{font-size:11.5px;line-height:1.7;color:var(--text-muted);margin-top:9px;padding-top:9px;border-top:1px solid var(--border);}
+.d-more{float:right;color:var(--accent);font-size:11px;letter-spacing:0;cursor:pointer;border:1px solid var(--border);border-radius:10px;padding:2px 11px;}
+.imp{background:var(--bg2);border:1px solid var(--accent);border-radius:12px;padding:11px 14px;margin-bottom:8px;}
+.imp-t{font-size:13.5px;color:var(--accent);font-weight:600;}
+.imp-r{font-size:12px;color:var(--text-muted);margin-top:4px;}
+.grudge{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:9px;}
+.gr-top{display:flex;align-items:center;gap:9px;}
+.gr-i{font-size:17px;font-weight:600;color:var(--accent);}
+.gr-w{font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:9px;padding:1px 9px;}
+.gr-r{font-size:14px;line-height:1.8;color:var(--text);margin-top:6px;}
+.gr-t{font-size:11px;color:var(--text-muted);margin-top:7px;}
+.gr-s{color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:9px;padding:2px 10px;margin-left:6px;}
+
+/* 出口 */
+.vent-hint{background:var(--bg2);border:1px dashed var(--accent);border-radius:12px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text);}
+.vent-hint b{color:var(--accent);font-size:17px;font-weight:600;}
+.vent-hint-s{font-size:11.5px;color:var(--text-muted);margin-top:7px;line-height:1.7;}
+.vent{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:15px 17px 13px;}
+.vent-top{display:flex;align-items:baseline;justify-content:space-between;}
+.vent-k{font-size:13px;color:var(--accent);letter-spacing:3px;}
+.vent-n{font-size:11px;color:var(--ink-soft);font-variant-numeric:tabular-nums;}
+.vent-b{font-size:14.5px;line-height:2;color:var(--ink);white-space:pre-wrap;margin-top:10px;}
+.vent-said{margin-top:12px;padding:11px 13px;background:var(--room-deep);border-radius:3px;}
+.vent-said-h{font-size:10.5px;color:var(--ink-soft);letter-spacing:2px;margin-bottom:6px;}
+.vent-said{font-size:14px;line-height:1.95;color:var(--ink);white-space:pre-wrap;}
+.vent-t{font-size:10px;color:var(--ink-soft);margin-top:10px;text-align:right;letter-spacing:1px;}
+
+/* 一条条冒出来时的等待点 */
+.typing-dots{display:inline-flex!important;align-items:center;gap:4px;padding:11px 16px!important;width:auto;}
+.typing-dots i{width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.45;animation:td 1.3s ease-in-out infinite;}
+.typing-dots i:nth-child(2){animation-delay:.18s;}
+.typing-dots i:nth-child(3){animation-delay:.36s;}
+@keyframes td{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-4px);opacity:.9}}
