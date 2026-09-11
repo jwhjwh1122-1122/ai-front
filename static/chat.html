@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=13">
+<link rel="stylesheet" href="/static/style.css?v=16">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -281,6 +281,13 @@ window.addEventListener('error', function (e) {
     </div>
 
     <div class="settings-card">
+      <div class="settings-label">共读服务</div>
+      <div class="settings-sub">书房里那个「共读」按钮打开的地址。留空就不显示那个按钮。</div>
+      <input class="mini-input" id="coread-url" style="margin-top:8px;" placeholder="https://readdd.zeabur.app" autocapitalize="off">
+      <button class="btn-ghost" id="btn-coread-save" style="width:100%;margin-top:8px;font-size:13px;padding:9px;">保存</button>
+    </div>
+
+    <div class="settings-card">
       <div class="settings-label">自己醒来</div>
       <div class="settings-sub">按间隔叫他一次。说不说、说什么、要不要去翻东西，全是他的。</div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;">
@@ -414,6 +421,7 @@ window.addEventListener('error', function (e) {
   <div class="room-head">
     <div><div class="room-title">书房</div><div class="room-sub" id="study-sub">—</div></div>
     <div class="room-acts">
+      <button class="room-btn" id="btn-coread">共 读</button>
       <button class="room-btn" id="btn-addbook">添 书</button>
       <button class="room-x" data-close="study">✕</button>
     </div>
@@ -491,6 +499,39 @@ window.addEventListener('error', function (e) {
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="addbook-modal">关掉</button>
       <button class="btn-solid" id="btn-book-paste">放上书架</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 共读（外部服务，嵌在里面） ============ -->
+<div class="room" id="coread" style="background:var(--bg);">
+  <div class="reader-head" style="background:var(--bg2);">
+    <div class="reader-book" id="coread-title">共读</div>
+    <div class="reader-size">
+      <span id="coread-reload" title="重新加载">↻</span>
+      <span id="coread-open" title="在浏览器打开">↗</span>
+      <span id="coread-close" style="margin-left:4px;">✕</span>
+    </div>
+  </div>
+  <div class="split">
+    <div class="split-top" style="position:relative;">
+      <iframe id="coread-frame" style="flex:1;width:100%;border:none;background:var(--bg);"
+        allow="clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+      <div id="coread-fail" style="display:none;position:absolute;inset:0;background:var(--bg);
+        align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:30px;text-align:center;">
+        <div style="font-size:14px;color:var(--text-muted);line-height:2;">
+          这个页面不让嵌进来<br><span style="font-size:12px;opacity:.75;">有些服务禁止被别的网页套着显示</span>
+        </div>
+        <button class="btn-solid" id="coread-fallback" style="padding:10px 26px;flex:none;">在浏览器打开</button>
+      </div>
+    </div>
+    <div class="split-bar" data-split="coread"><span id="split-hint-coread">收起</span></div>
+    <div class="split-chat" id="split-chat-coread">
+      <div class="split-msgs" id="split-msgs-coread"></div>
+      <div class="inputbar">
+        <textarea class="split-input" data-ctx="coread" placeholder="一起读，说点什么…" rows="1"></textarea>
+        <button class="send-btn" data-splitsend="coread">↑</button>
+      </div>
     </div>
   </div>
 </div>
@@ -598,7 +639,8 @@ window.addEventListener('error', function (e) {
     <div><div class="room-title" style="color:var(--text)">欲望室</div>
       <div class="room-sub" id="desire-sub" style="color:var(--text-muted)">—</div></div>
     <div class="room-acts">
-      <button class="room-btn" id="btn-moves" style="color:var(--text);border-color:var(--border)">怎么变的</button>
+      <button class="room-btn" id="btn-vents" style="color:var(--text);border-color:var(--border)">出 口</button>
+      <button class="room-btn" id="btn-moves" style="color:var(--text);border-color:var(--border)">入 口</button>
       <button class="room-x" data-close="desireroom" style="color:var(--text-muted)">✕</button>
     </div>
   </div>
@@ -611,7 +653,7 @@ window.addEventListener('error', function (e) {
     <div class="settings-sub" id="dim-now">—</div>
     <input type="range" id="dim-range" min="0" max="100" step="1" style="width:100%;margin-top:16px;accent-color:var(--accent);">
     <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px;">
-      <span>0</span><span id="dim-val" style="color:var(--accent);font-size:15px;font-weight:600;">—</span><span>1</span>
+      <span>0</span><span id="dim-val" style="color:var(--accent);font-size:19px;font-weight:600;">—</span><span>100</span>
     </div>
     <div class="settings-label" style="margin-top:14px;">为什么改</div>
     <textarea class="note-input" id="dim-why" placeholder="系统算的不对，因为…" style="height:70px;margin-top:6px;"></textarea>
@@ -638,6 +680,14 @@ window.addEventListener('error', function (e) {
   </div>
 </div>
 
+<div class="full" id="vent-panel">
+  <div class="full-head">
+    <div><div class="full-title">出 口</div><div class="full-count" id="vent-count"></div></div>
+    <div class="mem-close-btn" data-close-full="vent-panel">✕</div>
+  </div>
+  <div class="list-wrap" id="vent-list"></div>
+</div>
+
 <div class="full" id="dim-panel">
   <div class="full-head">
     <div><div class="full-title" id="dp-name">—</div><div class="full-count" id="dp-sub"></div></div>
@@ -660,7 +710,7 @@ window.addEventListener('error', function (e) {
 
 <div class="full" id="dispute-panel">
   <div class="full-head">
-    <div><div class="full-title">怎 么 变 的</div><div class="full-count" id="dispute-count"></div></div>
+    <div><div class="full-title">入 口</div><div class="full-count" id="dispute-count"></div></div>
     <div class="mem-close-btn" data-close-full="dispute-panel">✕</div>
   </div>
   <div class="list-wrap" id="dispute-list"></div>
@@ -946,7 +996,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=13"></script>
-<script src="/static/rooms.js?v=13"></script>
+<script src="/static/app.js?v=16"></script>
+<script src="/static/rooms.js?v=16"></script>
 </body>
 </html>
