@@ -271,6 +271,43 @@ async function saveTag() {
   refreshHome();
 }
 
+// ============ 共读（外部服务） ============
+function coreadUrl() {
+  return (localStorage.getItem('coread-url') || 'https://readdd.zeabur.app').trim();
+}
+let coreadTimer = null;
+function openCoread() {
+  const url = coreadUrl();
+  if (!url) { toast('还没设共读地址'); return; }
+  roomCtx = 'coread';
+  $('coread').classList.add('open');
+  $('coread-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0];
+  const f = $('coread-frame'), fail = $('coread-fail');
+  fail.style.display = 'none';
+  f.style.visibility = 'hidden';
+  let loaded = false;
+  f.onload = () => { loaded = true; f.style.visibility = 'visible'; };
+  f.src = url;
+  clearTimeout(coreadTimer);
+  // 被拒绝嵌套的时候 onload 不一定触发，超时就当失败
+  coreadTimer = setTimeout(() => {
+    if (loaded) return;
+    f.style.visibility = 'visible';
+    try {
+      // 跨域读不到内容是正常的，读得到但是空白才是被拒
+      if (!f.contentWindow || f.contentWindow.length === undefined) throw 0;
+    } catch (e) { }
+    fail.style.display = 'flex';
+  }, 6000);
+  renderSplit('coread');
+}
+function closeCoread() {
+  clearTimeout(coreadTimer);
+  $('coread').classList.remove('open');
+  $('coread-frame').src = 'about:blank';
+  roomCtx = 'reader';
+}
+
 // ============ 分屏 ============
 function renderSplit(which) {
   const box = $('split-msgs-' + which);
@@ -287,7 +324,14 @@ function renderSplit(which) {
     } else if (m.role === 'assistant') {
       const t = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
       if (!t) return;
-      const w = startAiBubble(idx); updateBubble(w, t, true, t, currentAiRow); currentBubble = null; currentAiRow = null;
+      const w = startAiBubble(idx);
+      const sg = splitSay(t);
+      if (sg.length > 1) sg.forEach(x => {
+        const b = document.createElement('div');
+        b.className = 'bubble ai'; b.dataset.seg = '1';
+        b.innerHTML = renderBubble(x); w.appendChild(b); currentBubble = b;
+      });
+      updateBubble(w, t, true, t, currentAiRow); currentBubble = null; currentAiRow = null;
     }
   });
   roomCtx = keep;
@@ -632,7 +676,7 @@ const DGROUP = [
   ['朝 她', ['miss', 'lust', 'flutter', 'lean', 'tell', 'own', 'grip']],
   ['朝 自 己', ['curious', 'make', 'still', 'play']],
   ['关 于 她 怎 么 看 他', ['needed', 'seen']],
-  ['消 耗 他 的', ['unsure', 'vex', 'worn']],
+  ['疼 的 那 些', ['hurt', 'jeal', 'unsure', 'vex', 'worn']],
 ];
 let dimEditing = null, desireData = null, dimViewing = null;
 
@@ -640,35 +684,38 @@ function DIMNAME(k) {
   const x = (desireData && desireData.dims || []).find(d => d.key === k);
   return x ? x.name : k;
 }
+function gapText(h) {
+  if (h < 1) return Math.round(h * 60) + ' 分钟';
+  if (h < 24) return h.toFixed(1) + ' 小时';
+  return (h / 24).toFixed(1) + ' 天';
+}
 function radarSvg(dims, topKey) {
-  const n = dims.length, R = 96, cx = 132, cy = 118;
+  const n = dims.length, R = 92, cx = 132, cy = 122;
   const pt = (i, r) => {
     const a = -Math.PI / 2 + i * 2 * Math.PI / n;
     return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
   };
   let g = '';
   [0.25, 0.5, 0.75, 1].forEach(f => {
-    const p = dims.map((_, i) => pt(i, R * f).map(v => v.toFixed(1)).join(',')).join(' ');
-    g += `<polygon class="rd-grid" points="${p}"/>`;
+    g += `<polygon class="rd-grid" points="${dims.map((_, i) => pt(i, R * f).map(v => v.toFixed(1)).join(',')).join(' ')}"/>`;
   });
   dims.forEach((_, i) => {
     const [x, y] = pt(i, R);
     g += `<line class="rd-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
   });
-  const area = dims.map((d, i) => pt(i, R * Math.max(0.02, d.value)).map(v => v.toFixed(1)).join(',')).join(' ');
-  g += `<polygon class="rd-area" points="${area}"/>`;
+  g += `<polygon class="rd-area" points="${dims.map((d, i) => pt(i, R * Math.max(0.02, d.value / 100)).map(v => v.toFixed(1)).join(',')).join(' ')}"/>`;
   dims.forEach((d, i) => {
-    const [x, y] = pt(i, R * Math.max(0.02, d.value));
-    if (d.key === topKey) g += `<circle class="rd-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`;
+    if (d.key !== topKey) return;
+    const [x, y] = pt(i, R * Math.max(0.02, d.value / 100));
+    g += `<circle class="rd-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"/>`;
   });
   dims.forEach((d, i) => {
-    const [x, y] = pt(i, R + 15);
-    const a = -Math.PI / 2 + i * 2 * Math.PI / n;
-    const cos = Math.cos(a);
+    const [x, y] = pt(i, R + 14);
+    const cos = Math.cos(-Math.PI / 2 + i * 2 * Math.PI / n);
     const anchor = Math.abs(cos) < 0.25 ? 'middle' : (cos > 0 ? 'start' : 'end');
     g += `<text class="rd-lab${d.key === topKey ? ' hot' : ''}" x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="${anchor}">${d.name}</text>`;
   });
-  return `<svg viewBox="0 0 264 236" width="100%" style="max-width:340px">${g}</svg>`;
+  return `<svg viewBox="0 0 264 244" width="100%" style="max-width:340px">${g}</svg>`;
 }
 
 async function openDesire() {
@@ -684,26 +731,60 @@ async function openDesire() {
   const topKey = (d.top[0] || {}).key;
   const notes = d.notes || {};
   const edited = new Set((d.disputes || []).slice(0, 40).map(x => x.key));
-  $('desire-sub').textContent = d.top.map(t => `${t.name} ${t.score.toFixed(2)}`).join(' · ');
+  const og = (d.grudges || []).filter(g => !g.resolved_at);
+  const vr = d.vent_ready || [];
+  $('desire-sub').textContent = d.top.map(t => `${t.name} ${Math.round(t.score)}`).join(' · ');
 
-  const idle = d.idle_hours < 1 ? Math.round(d.idle_hours * 60) + ' 分钟'
-    : (d.idle_hours < 24 ? d.idle_hours + ' 小时' : (d.idle_hours / 24).toFixed(1) + ' 天');
   let h = `<div class="radar">${radarSvg(d.dims, topKey)}</div>
-    <div class="d-idle">上次说话到现在 ${idle}</div>`;
+    <div class="d-idle">上次说话 ${gapText(d.idle_hours)}前　·　上次亲密 ${gapText(d.intimate_hours)}前</div>`;
+
+  if (d.jeal && d.jeal.value >= 7) {
+    h += `<div class="jeal-card">
+      <div class="jeal-top"><span class="jeal-tier">${esc(d.jeal.tier)}</span><span class="jeal-v">${Math.round(d.jeal.value)}</span></div>
+      <div class="jeal-how">${esc(d.jeal.how)}</div>
+      <div class="jeal-floor">${esc(d.jeal.floor)}</div></div>`;
+  }
+
+  if (vr.length) {
+    h += '<div class="d-sec">憋 到 头 了</div>';
+    h += `<div class="vent-hint">${vr.map(x => `${x.name} <b>${x.value}</b>`).join('　')}
+      <div class="vent-hint-s">系统提了一句，做不做他自己定。他扛完会写在「出口」里，不通知你。</div></div>`;
+  }
+  if ((d.impulses || []).length) {
+    h += '<div class="d-sec">憋 着 想 说 的</div>';
+    d.impulses.forEach(i => {
+      h += `<div class="imp"><div class="imp-t">${esc(i.name)} ${Math.round(i.value)}</div>
+        <div class="imp-r">${esc(i.reason)}</div></div>`;
+    });
+  }
+
+  if (og.length) {
+    const wm = { soothe: '想被哄', explain: '想要解释', apologize: '想要道歉', attention: '想被看见' };
+    h += `<div class="d-sec">没 结 的 账<span class="d-more" id="btn-soothe-all">哄哄他</span></div>`;
+    og.forEach(g => {
+      const ago = gapText((Date.now() - g.ts) / 3600000);
+      h += `<div class="grudge" data-gid="${g.id}">
+        <div class="gr-top"><span class="gr-i">${g.intensity}</span><span class="gr-w">${wm[g.wants] || '想被哄'}</span></div>
+        <div class="gr-r">${esc(g.reason)}</div>
+        <div class="gr-t">${ago}前记的　<span class="gr-s" data-soothe="${g.id}">这笔哄了</span></div></div>`;
+    });
+  }
 
   DGROUP.forEach(([title, keys]) => {
     h += `<div class="d-sec">${title}</div>`;
     keys.forEach(k => {
       const x = byKey[k]; if (!x) return;
       const boost = Math.max(0, x.score - x.value);
+      const rc = x.recent || 0;
       h += `<div class="dim${k === topKey ? ' hot' : ''}" data-dim="${k}">
         <div class="dim-top">
           <span class="dim-name">${x.name}${edited.has(k) ? '<span class="dim-edited">改过</span>' : ''}${notes[k] ? '<span class="dim-edited">✎</span>' : ''}</span>
-          <span class="dim-v">${x.value.toFixed(2)}${boost > .01 ? ` +${boost.toFixed(2)}` : ''}</span>
+          <span class="dim-v">${Math.round(x.value)}${rc >= 3 ? ` <b>↑${Math.round(rc)}</b>` : (rc <= -3 ? ` ↓${Math.round(-rc)}` : '')}</span>
         </div>
         <div class="dim-track">
-          <div class="dim-fill" style="width:${x.value * 100}%"></div>
-          ${boost > .01 ? `<div class="dim-boost" style="left:${x.value * 100}%;width:${Math.min(100 - x.value * 100, boost * 100)}%"></div>` : ''}
+          <div class="dim-base" style="left:${x.base}%"></div>
+          <div class="dim-fill" style="width:${x.value}%"></div>
+          ${boost > 1 ? `<div class="dim-boost" style="left:${x.value}%;width:${Math.min(100 - x.value, boost)}%"></div>` : ''}
         </div></div>`;
     });
   });
@@ -713,30 +794,39 @@ async function openDesire() {
   if (fixes.length) {
     h += '<div class="d-sec">反 复 在 想</div>';
     fixes.forEach(t => h += `<div class="d-thought fix"><div class="dt-text">${esc(t.text)}</div>
-      <div class="dt-meta"><span class="dt-kind">执念 · ${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`);
+      <div class="dt-meta"><span class="dt-kind">执念 · ${DIMNAME(t.drive)}</span><span>${(t.strength * 100).toFixed(0)}</span></div></div>`);
   }
   if (flits.length) {
     h += '<div class="d-sec">刚 冒 出 来 的</div>';
     flits.slice(0, 6).forEach(t => h += `<div class="d-thought"><div class="dt-text">${esc(t.text)}</div>
-      <div class="dt-meta"><span>${DIMNAME(t.drive)}</span><span>${t.strength.toFixed(2)}</span></div></div>`);
+      <div class="dt-meta"><span>${DIMNAME(t.drive)}</span><span>${(t.strength * 100).toFixed(0)}</span></div></div>`);
   }
   el.innerHTML = h;
   el.querySelectorAll('[data-dim]').forEach(row => row.onclick = () => openDimPanel(row.dataset.dim));
+  el.querySelectorAll('[data-soothe]').forEach(b => b.onclick = async e => {
+    e.stopPropagation();
+    const note = prompt('跟他说句什么？（可以留空）', '') ;
+    if (note === null) return;
+    await jpost('/api/desire/soothe', { id: b.dataset.soothe, note });
+    toast('哄好了'); openDesire(); refreshHome();
+  });
+  const all = $('btn-soothe-all');
+  if (all) all.onclick = async () => {
+    if (!confirm('把所有账都结了？')) return;
+    await jpost('/api/desire/soothe', {});
+    toast('都哄好了'); openDesire(); refreshHome();
+  };
 }
 
 function curveSvg(hist, key, color) {
   const w = 300, ht = 110, pad = 5, n = hist.length;
   if (n < 2) return '<div class="settings-sub" style="text-align:center;padding:30px 0;">还没有几天的数据</div>';
   let g = '';
-  [0, .5, 1].forEach(v => {
-    const y = pad + (1 - v) * (ht - pad * 2);
+  [0, 50, 100].forEach(v => {
+    const y = pad + (1 - v / 100) * (ht - pad * 2);
     g += `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
   });
-  const pts = hist.map((h, j) => {
-    const x = j / (n - 1) * w;
-    const y = pad + (1 - (h.drive[key] ?? 0)) * (ht - pad * 2);
-    return [x, y];
-  });
+  const pts = hist.map((h, j) => [j / (n - 1) * w, pad + (1 - (h.drive[key] ?? 0) / 100) * (ht - pad * 2)]);
   g += `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
   const last = pts[pts.length - 1];
   g += `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.2" fill="${color}"/>`;
@@ -751,8 +841,8 @@ async function openDimPanel(key) {
   $('dim-panel').classList.add('open');
   $('dp-name').textContent = x.name;
   const boost = Math.max(0, x.score - x.value);
-  $('dp-sub').textContent = boost > .01 ? `执念顶高了 ${boost.toFixed(2)}` : '';
-  $('dp-big').textContent = x.value.toFixed(2);
+  $('dp-sub').textContent = (boost > 1 ? `执念顶高了 ${Math.round(boost)}　` : '') + `基线 ${x.base}`;
+  $('dp-big').textContent = Math.round(x.value);
 
   const hist = (d.history || []).filter(h => h.drive && h.drive[key] !== undefined);
   $('dp-curve').innerHTML = curveSvg(hist, key, 'var(--accent)');
@@ -765,14 +855,13 @@ async function openDimPanel(key) {
   else { nb.className = 'dp-note empty'; nb.textContent = '他还没给这一维写过话。\n他想写的时候会自己写。'; }
 
   const mv = (d.moves || []).filter(m => (m.changes || []).some(c => c.key === key));
-  $('dp-moves').innerHTML = mv.length ? mv.slice(0, 30).map(m => {
+  $('dp-moves').innerHTML = mv.length ? mv.slice(0, 40).map(m => {
     const c = m.changes.find(c => c.key === key);
     const t = new Date(m.ts);
-    const up = c.to > c.from;
     return `<div class="mv">
       <div class="mv-t">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
       <div class="mv-b"><div class="mv-why">${esc(m.why)}${m.who !== 'sys' ? `<span class="mv-who">${m.who === 'lin' ? (CFG.name || '凛') : (CFG.call_user || '宝宝')}改的</span>` : ''}</div>
-        <div class="mv-d">${c.from.toFixed(2)} <b>${up ? '↑' : '↓'}</b> ${c.to.toFixed(2)}</div></div></div>`;
+        <div class="mv-d">${Math.round(c.from)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${Math.round(c.to)}</div></div></div>`;
   }).join('') : '<div class="settings-sub">还没有变过</div>';
 }
 
@@ -780,11 +869,34 @@ function openDim(x) {
   if (!x) return;
   dimEditing = x.key;
   $('dim-title').textContent = x.name;
-  $('dim-now').textContent = `系统算出来是 ${x.value.toFixed(2)}。你觉得不对就改，改了要写一句为什么。`;
-  $('dim-range').value = Math.round(x.value * 100);
-  $('dim-val').textContent = x.value.toFixed(2);
+  $('dim-now').textContent = `系统算出来是 ${Math.round(x.value)}。你觉得不对就改，改了要写一句为什么。`;
+  $('dim-range').value = Math.round(x.value);
+  $('dim-val').textContent = Math.round(x.value);
   $('dim-why').value = '';
   $('dim-modal').classList.add('open');
+}
+
+async function openVents() {
+  $('vent-panel').classList.add('open');
+  const el = $('vent-list');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">读一下…</div>';
+  let list = [];
+  try { list = await jget('/api/desire/vent'); } catch (e) { }
+  $('vent-count').textContent = list.length ? `${list.length} 次` : '';
+  if (!list.length) {
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还是空的<br><br>他憋到头、又自己扛过去的时候<br>会写在这里</div>';
+    return;
+  }
+  el.innerHTML = list.map(v => {
+    const t = new Date(v.ts);
+    return `<div class="vent">
+      <div class="vent-top"><span class="vent-k">${esc(v.name)}</span>
+        <span class="vent-n">${v.at} → ${v.to}</span></div>
+      <div class="vent-b">${esc(v.text)}</div>
+      ${v.said ? `<div class="vent-said"><div class="vent-said-h">没说出口的</div>${esc(v.said)}</div>` : ''}
+      <div class="vent-t">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+    </div>`;
+  }).join('');
 }
 
 async function openMoves() {
@@ -798,10 +910,7 @@ async function openMoves() {
   }
   const list = d.moves || [];
   $('dispute-count').textContent = list.length ? `${list.length} 次` : '';
-  if (!list.length) {
-    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有动过</div>';
-    return;
-  }
+  if (!list.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有动过</div>'; return; }
   el.innerHTML = list.map(m => {
     const t = new Date(m.ts);
     const who = m.who === 'lin' ? (CFG.name || '凛') : (m.who === 'user' ? (CFG.call_user || '宝宝') : '');
@@ -809,7 +918,7 @@ async function openMoves() {
       <div class="dp-head">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}${who ? ` · ${who}改的` : ''}</div>
       <div class="dp-why" style="border:none;padding:0;margin:0;">${esc(m.why)}</div>
       <div class="mv-d" style="margin-top:7px;">${(m.changes || []).map(c =>
-        `${c.name} ${c.from.toFixed(2)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${c.to.toFixed(2)}`).join('　')}</div>
+        `${c.name} ${Math.round(c.from)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${Math.round(c.to)}`).join('　')}</div>
     </div>`;
   }).join('');
 }
@@ -1127,7 +1236,7 @@ async function boot() {
   loadBalance();
   loadRecapCount();
   loadUpstream();
-  bindSplit('reader'); bindSplit('stage');
+  bindSplit('reader'); bindSplit('stage'); bindSplit('coread');
   startKeepalive();
 }
 async function loadUpstream() {
@@ -1327,6 +1436,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 书房
   $('btn-addbook').onclick = () => $('addbook-modal').classList.add('open');
+  $('btn-coread').onclick = openCoread;
+  $('coread-close').onclick = closeCoread;
+  $('coread-reload').onclick = () => { const u = coreadUrl(); $('coread-frame').src = 'about:blank'; setTimeout(() => $('coread-frame').src = u, 60); $('coread-fail').style.display = 'none'; };
+  $('coread-open').onclick = () => window.open(coreadUrl(), '_blank');
+  $('coread-fallback').onclick = () => window.open(coreadUrl(), '_blank');
+  $('coread-url').value = localStorage.getItem('coread-url') || '';
+  $('btn-coread-save').onclick = () => {
+    const v = $('coread-url').value.trim();
+    if (v) localStorage.setItem('coread-url', v); else localStorage.removeItem('coread-url');
+    $('btn-coread').style.display = v || 'https://readdd.zeabur.app' ? '' : 'none';
+    toast('存好了');
+  };
   $('btn-book-search').onclick = async () => {
     const q = $('book-search-input').value.trim(); if (!q) return;
     const box = $('book-results'); box.innerHTML = '<div class="settings-sub">找找看…</div>';
@@ -1482,7 +1603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const why = $('dim-why').value.trim();
     if (!why) { toast('要写一句为什么'); return; }
     const r = await jpost('/api/desire/adjust', {
-      key: dimEditing, value: $('dim-range').value / 100, why, who: 'user'
+      key: dimEditing, value: Number($('dim-range').value), why, who: 'user'
     });
     if (r.error) { toast(r.error); return; }
     $('dim-modal').classList.remove('open');
@@ -1492,6 +1613,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toast('改了，记下来了');
   };
   $('btn-moves').onclick = openMoves;
+  $('btn-vents').onclick = openVents;
   $('btn-dp-edit').onclick = () => {
     const x = (desireData.dims || []).find(v => v.key === dimViewing);
     if (x) openDim(x);
