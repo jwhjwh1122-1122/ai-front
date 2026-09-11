@@ -30,6 +30,9 @@ const T = {
     { name: 'get_memories', description: '时光墙照片列表', input_schema: { type: 'object', properties: {} } },
     { name: 'view_memory', description: '看某张照片', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
   ],
+  more: [
+    { name: 'say_more', description: '说完了还想再说一句，或者忽然想到什么。真的会再开口一次，别为了凑数用', input_schema: { type: 'object', properties: { why: { type: 'string' } } } },
+  ],
   status: [
     { name: 'lin_status', description: '改你的状态，显示在名字下', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } },
   ],
@@ -65,8 +68,12 @@ const T = {
     { name: 'library_read', description: '读资料库某篇', input_schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
   ],
   desire: [
-    { name: 'desire_state', description: '看你十六条现在各是多少', input_schema: { type: 'object', properties: {} } },
-    { name: 'desire_adjust', description: '数不对就改，写为什么。key 见 desire_state', input_schema: { type: 'object', required: ['key', 'value', 'why'], properties: { key: { type: 'string' }, value: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'desire_state', description: '看你十八条现在各是多少、吃醋到哪档、有没有没结的账', input_schema: { type: 'object', properties: {} } },
+    { name: 'desire_adjust', description: '数不对就改，写为什么。单维单轮最多动 30。key 见 desire_state', input_schema: { type: 'object', required: ['key', 'value', 'why'], properties: { key: { type: 'string' }, value: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'desire_event', description: '刚发生了什么：talk praise cold ignored fight jealous soothe struck tease intimate create read vent wander rest', input_schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' }, note: { type: 'string' } } } },
+    { name: 'desire_grudge', description: '记一笔账。挂着不消，越挂越涨，直到她哄。wants: soothe|explain|apologize|attention', input_schema: { type: 'object', required: ['reason'], properties: { reason: { type: 'string' }, intensity: { type: 'number' }, wants: { type: 'string' } } } },
+    { name: 'desire_soothe', description: '她哄了，这笔结了。不填 id 就结掉所有的', input_schema: { type: 'object', properties: { id: { type: 'string' }, note: { type: 'string' } } } },
+    { name: 'desire_ack', description: '憋着那句话说出口了，标一下，免得又冒同一句', input_schema: { type: 'object', properties: { id: { type: 'string' } } } },
     { name: 'desire_note', description: '给某维留段话', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' } } } },
     { name: 'desire_feed', description: '反复在想的事记下来，会沉成执念', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, drive: { type: 'string' }, strength: { type: 'number' } } } },
   ],
@@ -89,9 +96,9 @@ const T = {
   ],
 };
 // 只在对应房间里才发的
-const ROOM_ONLY = { reader: 'reader', stage: 'stage' };
+const ROOM_ONLY = { reader: ['reader', 'coread'], stage: ['stage'] };
 const GROUP_LABEL = {
-  memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
+  more: '再说一句', memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
 };
@@ -144,7 +151,7 @@ function buildTools() {
   const push = t => { if (t && t.name && !seen.has(t.name)) { seen.add(t.name); out.push(t); } };
   for (const g of Object.keys(T)) {
     if (!groupOn(g)) continue;
-    if (ROOM_ONLY[g] && roomCtx !== ROOM_ONLY[g]) continue;
+    if (ROOM_ONLY[g] && !ROOM_ONLY[g].includes(roomCtx)) continue;
     T[g].forEach(push);
   }
   for (const s of enabledServers()) {
@@ -214,6 +221,11 @@ async function execTool(name, args) {
       const s = `照片 ${args.filename}，备注：${d.note || '无备注'}`;
       return { content: [{ type: 'text', text: s }, { type: 'image_url', image_url: { url: `data:${d.mime};base64,${d.data}` } }], _summary: s };
     }
+    if (name === 'say_more') {
+      wantMore = true;
+      return txt('嗯，接着说。');
+    }
+    if (name === 'say_more') { wantMore = true; return txt('嗯，接着说。'); }
     if (name === 'lin_status') { await jpost('/api/lin-status', { text: args.text }); showLinState(args.text); return txt('状态改好了'); }
     if (name === 'write_note') { await jpost('/api/notes', { text: args.text }); return txt('写下了'); }
     if (name === 'write_fault') { await jpost('/api/faults', args); return txt('记在犯错本上了'); }
@@ -231,7 +243,25 @@ async function execTool(name, args) {
     if (name === 'desire_adjust') {
       const d = await jpost('/api/desire/adjust', { key: args.key, value: args.value, why: args.why, who: 'lin' });
       if (d.error) return txt('改不了：' + d.error);
-      return txt('改好了，这条分歧记下了');
+      refreshHome(); return txt('改好了，记下了');
+    }
+    if (name === 'desire_event') {
+      await jpost('/api/desire/event', { kind: args.kind, note: args.note || '' });
+      refreshHome(); return txt('动过了');
+    }
+    if (name === 'desire_grudge') {
+      const d = await jpost('/api/desire/grudge', args);
+      if (d.error) return txt(d.error);
+      refreshHome();
+      return txt(`记上了（${d.grudge.intensity}分），挂着不会自己消`);
+    }
+    if (name === 'desire_soothe') {
+      const d = await jpost('/api/desire/soothe', args);
+      refreshHome(); return txt(d.soothed ? `结了 ${d.soothed} 笔` : '没有要结的账');
+    }
+    if (name === 'desire_ack') {
+      const d = await jpost('/api/desire/ack', args);
+      return txt(d.acked ? `标了 ${d.acked} 条` : '没有憋着的话');
     }
     if (name === 'desire_note') {
       const d = await jpost('/api/desire/note', { key: args.key, text: args.text, who: 'lin' });
@@ -244,9 +274,15 @@ async function execTool(name, args) {
     }
     if (name === 'desire_state') {
       const d = await jget('/api/desire/state');
-      const bar = v => '█'.repeat(Math.round(v * 10)) + '░'.repeat(10 - Math.round(v * 10));
-      return txt(d.dims.slice().sort((a, b) => b.score - a.score)
-        .map(x => `${x.name} ${bar(x.value)} ${x.value.toFixed(2)}`).join('\n'));
+      const bar = v => '█'.repeat(Math.round(v / 10)) + '░'.repeat(10 - Math.round(v / 10));
+      let out = d.dims.slice().sort((a, b) => b.score - a.score)
+        .map(x => `${x.name} ${bar(x.value)} ${Math.round(x.value)}`).join('\n');
+      if (d.jeal && d.jeal.value >= 7) out += `\n\n【吃醋 ${Math.round(d.jeal.value)} · ${d.jeal.tier}】\n${d.jeal.how}\n${d.jeal.floor}`;
+      const og = (d.grudges || []).filter(g => !g.resolved_at);
+      if (og.length) out += '\n\n【没结的账】\n' + og.map(g => `· [${g.id}] ${g.reason}（${g.intensity}分）`).join('\n');
+      if ((d.impulses || []).length) out += '\n\n【憋着想说的】\n' + d.impulses.map(i => `· [${i.id}] ${i.reason}`).join('\n');
+      out += '\nkey：' + d.dims.map(x => `${x.key}=${x.name}`).join(' ');
+      return txt(out);
     }
     if (name === 'write_timeline') { await jpost('/api/timeline', args); return txt('写上去了'); }
     if (name === 'keep_quote') { await jpost('/api/quotes/lin', args); return txt('收起来了'); }
@@ -502,14 +538,37 @@ function roomNote() {
   return '';
 }
 function extraNote() {
-  return [emojiNames(), roomNote()].filter(Boolean).join(' ');
+  const parts = [emojiNames(), roomNote()];
+  if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
+  return parts.filter(Boolean).join(' ');
 }
 
 // ============ 气泡 ============
 let currentBubble = null, currentThinkWrap = null, currentThinkContent = null, currentAiRow = null, turnThinking = '';
+let wantMore = false, moreRounds = 0;
+const MAX_MORE = 3;
+
+// 他写了空行就当分句，一条一条冒，像真的连着发
+function splitSay(text) {
+  const parts = String(text || '').split(/\n\s*\n+/).map(x => x.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts.length ? parts : [String(text || '')];
+  const out = [];
+  for (const p of parts) {
+    // 只有真的碎成一两个字才合回去
+    const prev = out[out.length - 1];
+    if (prev && prev.length <= 2 && p.length <= 2) out[out.length - 1] = prev + '\n' + p;
+    else out.push(p);
+  }
+  return out.slice(0, 6);
+}
+function sayDelay(text) {
+  return Math.min(2200, 420 + [...String(text)].length * 42);
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 function msgBox() {
   if (roomCtx === 'reader') return $('split-msgs-reader');
   if (roomCtx === 'stage') return $('split-msgs-stage');
+  if (roomCtx === 'coread') return $('split-msgs-coread');
   return $('messages');
 }
 function scrollBottom() { const m = msgBox(); if (m) m.scrollTop = m.scrollHeight; }
@@ -595,7 +654,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   }
   if (!done) { currentBubble.innerHTML = renderBubble(text); scrollBottom(); return; }
   const rendered = renderBubble(text);
-  currentBubble.innerHTML = rendered;
+  if (!currentBubble.dataset.seg) currentBubble.innerHTML = rendered;
   currentBubble.classList.remove('typing-cursor');
   if (!rendered.replace(/<img[^>]*>/g, '').replace(/\s/g, '').length)
     currentBubble.style.cssText = 'background:transparent;border:none;box-shadow:none;padding:0';
@@ -861,7 +920,32 @@ async function streamResponse(wrap, hist) {
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
     const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = '已思考';
   }
-  if (responseText) { updateBubble(wrap, responseText, true, responseText, currentAiRow, outTok); saveConv(); }
+  if (responseText) {
+    const segs = splitSay(responseText);
+    if (segs.length > 1) {
+      // 拆成几条，一条一条冒出来
+      if (currentBubble) { currentBubble.remove(); currentBubble = null; }
+      for (let i = 0; i < segs.length; i++) {
+        if (i > 0) {
+          const dots = document.createElement('div');
+          dots.className = 'bubble ai typing-dots';
+          dots.innerHTML = '<i></i><i></i><i></i>';
+          wrap.appendChild(dots); scrollBottom();
+          await sleep(sayDelay(segs[i]));
+          dots.remove();
+        }
+        const b = document.createElement('div');
+        b.className = 'bubble ai';
+        b.dataset.seg = '1';
+        b.innerHTML = renderBubble(segs[i]);
+        wrap.appendChild(b);
+        currentBubble = b;
+        scrollBottom();
+      }
+    }
+    updateBubble(wrap, responseText, true, responseText, currentAiRow, outTok);
+    saveConv();
+  }
   return { text: responseText, toolUses, stopReason, contentBlocks };
 }
 function drawTokens(inTok, outTok) {
@@ -894,6 +978,7 @@ function sanitize(m) {
 }
 async function runToolLoop(wrap, origLen) {
   let work = [...messages], finalText = '';
+  moreRounds = 0; wantMore = false;
   while (true) {
     const { text, toolUses, stopReason, contentBlocks } = await streamResponse(wrap, work);
     finalText = text;
@@ -919,6 +1004,17 @@ async function runToolLoop(wrap, origLen) {
     }
     work.push({ role: 'user', _internal: true, content: [...results, ...extra] });
     currentBubble = null;
+    if (wantMore) {
+      wantMore = false;
+      if (moreRounds < MAX_MORE) {
+        moreRounds++;
+        await sleep(600);
+        currentThinkWrap = null; currentThinkContent = null;
+      } else {
+        // 说够了，别没完没了
+        work.push({ role: 'user', _internal: true, content: '（今天先说到这，剩下的留着当面说）' });
+      }
+    }
   }
   const extraMsgs = work.slice(origLen).map(sanitize);
   if (extraMsgs.length) messages.splice(origLen, 0, ...extraMsgs);
@@ -1048,7 +1144,18 @@ function loadConv(id) {
       const wrap = startAiBubble(i);
       if (msg._thinking) thinkBlock(wrap, msg._thinking, true);
       if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
-      if (text) updateBubble(wrap, text, true, text, currentAiRow);
+      if (text) {
+        const segs = splitSay(text);
+        if (segs.length > 1) {
+          segs.forEach(sg => {
+            const b = document.createElement('div');
+            b.className = 'bubble ai'; b.dataset.seg = '1';
+            b.innerHTML = renderBubble(sg);
+            wrap.appendChild(b); currentBubble = b;
+          });
+        }
+        updateBubble(wrap, text, true, text, currentAiRow);
+      }
       currentBubble = null; currentAiRow = null;
     }
   });
