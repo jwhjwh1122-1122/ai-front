@@ -212,7 +212,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <div class="prog"><span id="p-cur">0:00</span><div class="bar" id="p-bar"><div class="f" id="p-fill"></div><div class="dot" id="p-dot"></div></div><span id="p-dur">0:00</span></div>
     <div class="prog-sub">无损音质</div>
     <div class="ctrl">
-      <button class="cb mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
+      <button class="cb mode" id="c-mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
       <button class="cb side" id="c-prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7zM8 5v14H6V5z"/></svg></button>
       <button class="cb main" id="c-main"><svg viewBox="0 0 24 24" id="c-main-ic"><path d="M8 5v14l11-7z"/></svg></button>
       <button class="cb side" id="c-next"><svg viewBox="0 0 24 24"><path d="M6 5v14l9-7zM16 5v14h2V5z"/></svg></button>
@@ -233,7 +233,39 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 <script>
 const $=id=>document.getElementById(id);const audio=$('audio');
 let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
+let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
 function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
+
+// 播放队列
+function setQueue(songs,startIndex){
+  queue=songs.slice();qIndex=startIndex;
+  playSong(queue[qIndex]);
+}
+function addNext(song){
+  if(!queue.length){queue=[song];qIndex=0;playSong(song);return;}
+  queue.splice(qIndex+1,0,song);
+  toast(song.name+' 已加到下一首');
+}
+function playNext(){
+  if(!queue.length)return;
+  if(loopMode===1){playSong(queue[qIndex]);return;} // 单曲循环
+  if(loopMode===2){qIndex=Math.floor(Math.random()*queue.length);} // 随机
+  else{qIndex=(qIndex+1)%queue.length;} // 列表循环
+  playSong(queue[qIndex]);
+}
+function playPrev(){
+  if(!queue.length)return;
+  qIndex=(qIndex-1+queue.length)%queue.length;
+  playSong(queue[qIndex]);
+}
+function toast(msg){
+  let t=document.getElementById('_toast');
+  if(!t){t=document.createElement('div');t.id='_toast';
+    t.style.cssText='position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(40,44,52,.92);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;z-index:99;transition:opacity .3s;';
+    document.body.appendChild(t);}
+  t.textContent=msg;t.style.opacity='1';
+  clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',1600);
+}
 
 // ── 页面切换 ──
 function collapse(){collapsed=true;$('play-page').classList.add('hid');refreshMini();}
@@ -241,25 +273,72 @@ function expand(){collapsed=false;$('play-page').classList.remove('hid');}
 $('btn-down').onclick=collapse;
 
 // ── 我的/搜索 tab ──
-function showTab(t){
+function showTab(t,keep){
   document.querySelectorAll('.lp-tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
   $('search-box').style.display=t==='search'?'block':'none';
+  if(keep)return;
   if(t==='mine')renderMine();else{$('lp-body').innerHTML='<div class="hint">搜一首想听的歌</div>';setTimeout(()=>$('q').focus(),100);}
 }
 document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
 
-function renderMine(){
-  const items=[
-    {ic:'<path d="M12 21s-7-4.35-9.5-8.5C1 10 2 6.5 5.5 6.5c2 0 3 1.2 3.5 2 .5-.8 1.5-2 3.5-2C16 6.5 17 10 15.5 12.5 13 16.65 12 21 12 21z"/>',nm:'我喜欢的音乐',sub:'红心歌单',act:'liked'},
-    {ic:'<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',nm:'听歌排行',sub:'累计听歌',act:'rank'},
-    {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',sub:'',act:'recent'},
-    {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',sub:'云盘上传',act:'cloud'},
+async function renderMine(){
+  $('lp-body').innerHTML='<div class="hint">加载中…</div>';
+  const fixed=[
+    {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
+    {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
   ];
-  let h='<div style="font-size:12px;color:#9298a0;padding:4px 2px 10px;">我的音乐（个人数据待接后端）</div>';
-  h+=items.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div>${it.sub?'<div class="sub">'+it.sub+'</div>':''}</div></div>`).join('');
-  h+='<div style="font-size:12px;color:#9298a0;padding:14px 2px 8px;">创建的歌单</div><div class="hint" style="padding:16px;">歌单列表要接后端个人接口<br>下一步做</div>';
+  let h='';
+  // 拉歌单
+  try{
+    const r=await fetch('/api/music/my/playlists').then(r=>r.json());
+    if(r.ok&&r.playlists.length){
+      // 固定入口(最近/网盘)
+      h+=fixed.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div></div></div>`).join('');
+      h+='<div style="font-size:12px;color:#9298a0;padding:16px 2px 6px;">我的歌单</div>';
+      h+=r.playlists.map(p=>{
+        const cover=p.cover?`<img src="${p.cover}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0;">`:`<div class="mine-ic">♪</div>`;
+        return `<div class="mine-item" data-pl="${p.id}" data-name="${p.name.replace(/"/g,'')}">${cover}<div class="mine-tx"><div class="nm">${p.name}</div><div class="sub">${p.count} 首</div></div></div>`;
+      }).join('');
+    }else{h+='<div class="hint">'+(r.error||'没拿到歌单')+'</div>';}
+  }catch(e){h+='<div class="hint">出错：'+e+'</div>';}
   $('lp-body').innerHTML=h;
-  document.querySelectorAll('.mine-item').forEach(el=>el.onclick=()=>alert('「'+el.querySelector('.nm').textContent+'」要接后端个人数据，下一步做'));
+  document.querySelectorAll('.mine-item[data-pl]').forEach(el=>el.onclick=()=>openPlaylist(el.dataset.pl,el.dataset.name));
+  document.querySelectorAll('.mine-item[data-act]').forEach(el=>el.onclick=()=>{
+    const a=el.dataset.act;
+    if(a==='recent')openList('/api/music/my/recent','最近播放');
+    else if(a==='cloud')openList('/api/music/my/cloud','音乐网盘');
+  });
+}
+// 打开歌单 → 显示里面的歌
+async function openPlaylist(pid,name){
+  $('lp-body').innerHTML='<div class="hint">加载歌单…</div>';
+  showTab('mine',true);
+  try{
+    const r=await fetch('/api/music/playlist?id='+pid).then(r=>r.json());
+    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
+    renderSongList(r.songs,name||r.name,r.songs);
+  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
+}
+async function openList(url,name){
+  $('lp-body').innerHTML='<div class="hint">加载…</div>';showTab('mine',true);
+  try{
+    const r=await fetch(url).then(r=>r.json());
+    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
+    renderSongList(r.songs,name,r.songs);
+  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
+}
+// 渲染歌曲列表(点歌→整个列表成为队列,从这首开始放)
+function renderSongList(songs,title,queue){
+  if(!songs.length){$('lp-body').innerHTML='<div class="hint">'+title+'：空的</div>';return;}
+  let h='<div style="display:flex;align-items:center;gap:8px;padding:4px 2px 12px;"><span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span><span style="font-size:17px;font-weight:700;">'+title+'</span><span style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>';
+  h+=songs.map((s,i)=>`<div class="res" data-i="${i}"><div style="width:22px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">${i+1}</div><div class="i"><div class="nm">${s.name}</div><div class="ar">${s.artist}</div></div><div class="go" data-add="${i}">＋</div></div>`).join('');
+  $('lp-body').innerHTML=h;
+  $('pl-back').onclick=()=>renderMine();
+  document.querySelectorAll('.res[data-i]').forEach(el=>{
+    const i=+el.dataset.i;
+    el.querySelector('.i').onclick=()=>{setQueue(queue,i);expand();};
+    el.querySelector('[data-add]').onclick=(e)=>{e.stopPropagation();addNext(queue[i]);};
+  });
 }
 
 // ── 搜索 ──
@@ -274,9 +353,11 @@ async function doSearch(){
     if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
     if(!r.songs.length){$('lp-body').innerHTML='<div class="hint">没搜到</div>';return;}
     $('lp-body').innerHTML='';
-    r.songs.forEach(s=>{const d=document.createElement('div');d.className='res';
-      d.innerHTML='<img src="'+(s.cover||'')+'" onerror="this.style.opacity=.25"><div class="i"><div class="nm">'+s.name+'</div><div class="ar">'+s.artist+'</div></div><div class="go">＋</div>';
-      d.onclick=()=>{playSong(s);expand();};$('lp-body').appendChild(d);});
+    r.songs.forEach((s,i)=>{const d=document.createElement('div');d.className='res';
+      d.innerHTML='<img src="'+(s.cover||'')+'" onerror="this.style.opacity=.25"><div class="i"><div class="nm">'+s.name+'</div><div class="ar">'+s.artist+'</div></div><div class="go" data-add>＋</div>';
+      d.querySelector('.i').onclick=()=>{setQueue(r.songs,i);expand();};
+      d.querySelector('[data-add]').onclick=(e)=>{e.stopPropagation();addNext(s);};
+      $('lp-body').appendChild(d);});
   }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
 }
 
@@ -321,6 +402,20 @@ $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onc
 $('mini').addEventListener('click',e=>{if(e.target.closest('.mp')||e.target.closest('.ml'))return;expand();});
 $('btn-heart').onclick=()=>$('btn-heart').classList.toggle('liked');
 $('c-list').onclick=()=>{showQueue();};
+// 上一首/下一首(iPod轮 + 底部控件)
+$('c-prev').onclick=playPrev;$('c-next').onclick=playNext;
+$('w-prev').onclick=playPrev;$('w-next').onclick=playNext;
+// 循环模式切换
+$('c-mode').onclick=()=>{
+  loopMode=(loopMode+1)%3;
+  const ics=['<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
+    '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="15" font-size="8" fill="currentColor" stroke="none" text-anchor="middle">1</text>',
+    '<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'];
+  $('c-mode').querySelector('svg').innerHTML=ics[loopMode];
+  toast(['列表循环','单曲循环','随机播放'][loopMode]);
+};
+// 放完自动下一首
+audio.addEventListener('ended',()=>{playNext();});
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
 function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);if(lyView){lastLy=-1;updLyric(audio.currentTime);}}
