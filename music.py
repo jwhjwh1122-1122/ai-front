@@ -421,6 +421,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             out['public_search_count'] = len((jj.get('result', {}) or {}).get('songs', []) or [])
         except Exception as e:
             out['public_search_error'] = str(e)[:150]
+        # 试取音频流
+        try:
+            hits = nc.search('晴天 周杰伦', 1)
+            if hits:
+                sid = hits[0]['id']
+                url = nc.song_url(sid)
+                out['stream_test_song'] = hits[0]['name']
+                out['stream_test_has_url'] = bool(url)
+                out['stream_test_url_head'] = (url or '')[:60]
+            else:
+                out['stream_test'] = '搜索无结果'
+        except Exception as e:
+            out['stream_test_error'] = str(e)[:150]
         return jsonify(out)
 
     @app.route('/api/music/logout', methods=['POST'])
@@ -444,7 +457,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     @app.route('/api/music/url', methods=['GET'])
     def music_url():
-        """返回音频直链。前端 <audio> 直接用，或走缓存代理。"""
+        """返回音频直链。前端 <audio> 直接用网易云直链（不走代理，更稳）。"""
         err = _need_crypto()
         if err:
             return err
@@ -455,11 +468,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             url = nc.song_url(sid, int(request.args.get('br', 320000)))
             if not url:
                 return jsonify({'ok': False, 'error': '拿不到音频，可能要会员或版权受限'})
-            # 用缓存代理，避免网易云直链跨域/过期
-            return jsonify({'ok': True, 'url': f'/api/music/stream?id={sid}',
-                            'direct': url})
+            # 直接给网易云直链，让浏览器自己放（http 的话换 https）
+            if url.startswith('http://'):
+                url = 'https://' + url[len('http://'):]
+            return jsonify({'ok': True, 'url': url, 'direct': url})
         except Exception as e:
-            return jsonify({'ok': False, 'error': str(e)[:120]})
+            return jsonify({'ok': False, 'error': str(e)[:150]})
 
     @app.route('/api/music/stream', methods=['GET'])
     def music_stream():
