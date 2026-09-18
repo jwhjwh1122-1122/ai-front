@@ -1,433 +1,726 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>一起听</title>
-<style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
-html,body{height:100%;}
-body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
-  background:linear-gradient(180deg,#fbfcfd,#eef1f4);color:#2b2f36;overflow:hidden;position:fixed;inset:0;display:flex;flex-direction:column;}
-.page{position:absolute;inset:0;display:flex;flex-direction:column;
-  padding:calc(env(safe-area-inset-top) + 8px) 22px calc(env(safe-area-inset-bottom) + 14px);
-  transition:transform .34s cubic-bezier(.3,.7,.3,1);background:linear-gradient(180deg,#fbfcfd,#eef1f4);}
+# -*- coding: utf-8 -*-
+"""
+网易云音乐模块 —— 一起听 + 推歌 + MCP
+挂进 app.py：  from music import register_music; register_music(app)
 
-/* ===== 播放页 ===== */
-#play-page{z-index:2;}
-#play-page.hid{transform:translateY(100%);}
-.top{display:flex;align-items:center;justify-content:space-between;height:44px;flex-shrink:0;}
-.top .down{width:30px;height:30px;color:#3a3f47;display:grid;place-items:center;background:none;border:none;padding:0;}
-.top .down svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
-.top .ttl{font-size:16px;font-weight:500;color:#2b2f36;}
-.top .share{width:24px;height:24px;color:#3a3f47;}
-.ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0 8px;}
-.ipod{width:min(66vw,244px);aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
-  background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
-  box-shadow:0 3px 3px rgba(255,255,255,1) inset,-3px 0 7px rgba(255,255,255,.85) inset,
-    0 -5px 12px rgba(165,172,184,.55) inset,4px 5px 9px rgba(165,172,184,.4) inset,
-    0 34px 60px -22px rgba(50,60,80,.6),0 14px 28px -12px rgba(50,60,80,.42);
-  display:flex;flex-direction:column;}
+设计：
+  · 扫码登录：手机网易云 App 扫一下就登上，cookie 自动拿、自动存，过期了重新扫
+  · 搜歌 / 取音频：走你自己账号（会员音质），音频缓存到本地再喂前端
+  · 推歌队列：凛(前端) 或 claude.ai(MCP) 往队列塞指令 → 前端每几秒轮询 → iPod 自动播
+  · eapi/weapi 两套加密都用纯 Python 实现（Docker 镜像的加密过时，直接自己算更稳）
+"""
+import os, json, time, hashlib, base64, secrets, threading, urllib.parse
+import requests
 
-.screen{margin-top:5.5%;border-radius:4px;overflow:hidden;border:1px solid #a8adb6;
-  background:#e8ebee;box-shadow:0 1px 3px rgba(0,0,0,.22) inset,0 1px 0 rgba(255,255,255,.6);}
-.scr-top{display:flex;align-items:center;justify-content:space-between;padding:4px 7px;
-  background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
-.scr-top b{font-size:10px;font-weight:600;color:#40454d;}
-.scr-top .r{display:flex;align-items:center;gap:4px;}
-.scr-top .pz{color:#4a90d9;font-size:8px;letter-spacing:-1px;}
-.scr-top .bt{width:17px;height:9px;border:1px solid #5a6068;border-radius:2px;padding:1px;position:relative;}
-.scr-top .bt::after{content:"";display:block;height:100%;width:72%;background:#5cb85c;border-radius:1px;}
-.scr-top .bt::before{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:2px;height:4px;background:#5a6068;border-radius:0 1px 1px 0;}
-.scr-body{display:flex;gap:8px;padding:8px;background:#f5f7f8;}
-.scr-cover{width:33%;aspect-ratio:1;border-radius:2px;object-fit:cover;background:#d5dae0;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.15);}
-.scr-meta{flex:1;min-width:0;padding-top:1px;}
-.scr-meta .nm{font-size:13px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .ar{font-size:11px;color:#525860;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .al{font-size:10px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-prog{display:flex;align-items:center;gap:5px;padding:0 8px 8px;background:#f5f7f8;font-size:8px;color:#6a7078;}
-.scr-track{flex:1;height:8px;border-radius:4px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.08) inset;}
-.scr-fill{height:100%;width:0%;background:linear-gradient(#8fc4f0,#4a90d9);border-radius:3px;box-shadow:0 -1px 1px rgba(255,255,255,.3) inset;}
-.wheel-box{flex:1;display:flex;align-items:center;justify-content:center;}
-.wheel{width:65%;aspect-ratio:1;border-radius:50%;position:relative;
-  background:
-    radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e0e3e6 32%,#c8ccd1 58%,#b2b7bd 82%,#a4a9b1 100%);
-  box-shadow:
-    0 5px 14px rgba(70,78,95,.4),
-    0 2px 0 rgba(255,255,255,1) inset,
-    0 -5px 12px rgba(120,128,142,.5) inset,
-    0 5px 10px rgba(255,255,255,.85) inset;
-  display:grid;place-items:center;}
-.wheel::before{content:"";position:absolute;inset:0;border-radius:50%;
-  background:radial-gradient(circle at 50% 26%,rgba(255,255,255,.65),transparent 46%);pointer-events:none;}
-.wheel::after{content:"";position:absolute;inset:6%;border-radius:50%;
-  box-shadow:0 2px 5px rgba(100,108,122,.28) inset,0 -2px 4px rgba(255,255,255,.7) inset,
-    0 0 0 1px rgba(150,156,166,.18);pointer-events:none;}
-.wheel .menu{position:absolute;top:8%;font-size:10px;font-weight:600;color:#868b93;letter-spacing:2px;z-index:1;}
-.wheel .wi{position:absolute;color:#7d828b;z-index:1;}
-.wheel .wi svg{width:17px;height:17px;fill:currentColor;}
-.wheel .wi.prev{left:11%;top:50%;transform:translateY(-50%);}
-.wheel .wi.next{right:11%;top:50%;transform:translateY(-50%);}
-.wheel .wi.play{bottom:9.5%;}
-.wheel .center{width:39%;aspect-ratio:1;border-radius:50%;border:none;z-index:1;
-  background:radial-gradient(circle at 50% 34%,#ffffff 0%,#f0f2f4 52%,#dadde1 100%);
-  box-shadow:0 3px 8px rgba(90,100,120,.38),0 2px 0 rgba(255,255,255,1) inset,
-    0 -3px 6px rgba(150,156,168,.4) inset;}
-.wbtn{position:absolute;width:30%;height:30%;background:none;border:none;}
-.wbtn.m{top:0;left:35%;} .wbtn.p{left:0;top:35%;} .wbtn.n{right:0;top:35%;} .wbtn.y{bottom:0;left:35%;}
-.below{flex-shrink:0;}
-.b-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
-.b-title{font-size:20px;font-weight:700;color:#20262c;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.b-artist{font-size:13px;color:#8a9098;margin-top:5px;display:flex;align-items:center;gap:7px;}
-.b-follow{font-size:11px;color:#8a9098;border:1px solid #d5dae0;border-radius:9px;padding:1px 8px;}
-.b-social{display:flex;align-items:center;gap:18px;flex-shrink:0;}
-.b-heart{color:#9298a0;background:none;border:none;}
-.b-heart svg path{fill:none;stroke:currentColor;stroke-width:1.7;}
-.b-heart.liked{color:#ec4141;}
-.b-heart.liked svg path{fill:currentColor;stroke:none;}
-.b-heart svg{width:26px;height:26px;fill:currentColor;}
-.b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
-.prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:2px;}
-.prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
-.prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
-.prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);}
-.prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:7px;}
-.ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding:0 2px;}
-.cb{background:none;border:none;color:#3a3f47;display:grid;place-items:center;}
-.cb svg{fill:currentColor;}
-.cb.mode svg,.cb.list svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
-.cb.side svg{width:30px;height:30px;}
-.cb.main svg{width:52px;height:52px;}
+try:
+    from Crypto.Cipher import AES
+    from Crypto.PublicKey import RSA
+    from Crypto.Util.number import bytes_to_long
+    _HAS_CRYPTO = True
+except Exception:
+    _HAS_CRYPTO = False
 
-/* ===== 歌词覆盖 ===== */
-.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;
-  padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;}
-.lyric-view.on{display:flex;}
-.ly-scroll{flex:1;overflow-y:auto;text-align:center;padding:16vh 8px 26vh;scrollbar-width:none;}
-.ly-scroll::-webkit-scrollbar{display:none;}
-.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 6px;transition:all .3s;}
-.ly-line.cur{font-size:19px;color:#20262c;font-weight:700;}
-.ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
-.ly-line.cur .tr{color:#5a6068;}
-.ly-empty{color:#b0b6be;font-size:14px;padding-top:36vh;}
+# ── 常量 ────────────────────────────────────────────────────────────────
+EAPI_KEY = b'e82ckenh8dichen8'
+WEAPI_KEY = b'0CoJUm6Qyw8W8jud'
+WEAPI_IV = b'0102030405060708'
+WEAPI_PUBKEY = '010001'
+WEAPI_MODULUS = ('00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7'
+                 'b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280'
+                 '104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932'
+                 '575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b'
+                 '3ece0462db0a22b8e7')
 
-/* ===== 列表页(搜索+我的) ===== */
-#list-page{z-index:1;padding-bottom:0;}
-.lp-top{display:flex;align-items:center;gap:14px;height:44px;flex-shrink:0;}
-.lp-tab{font-size:19px;font-weight:700;color:#b6bcc4;}
-.lp-tab.on{color:#20262c;}
-.lp-search{margin:14px 0;position:relative;}
-.lp-search input{width:100%;padding:11px 14px 11px 40px;border-radius:20px;border:none;background:#e9ecef;font-size:15px;outline:none;color:#2b2f36;}
-.lp-search .ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9298a0;width:18px;height:18px;}
-.lp-body{flex:1;overflow-y:auto;scrollbar-width:none;padding-bottom:80px;}
-.lp-body::-webkit-scrollbar{display:none;}
-.mine-item{display:flex;align-items:center;gap:13px;padding:11px 2px;}
-.mine-item:active{opacity:.6;}
-.mine-ic{width:46px;height:46px;border-radius:10px;background:#e9ecef;display:grid;place-items:center;color:#5a6068;flex-shrink:0;}
-.mine-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;}
-.mine-tx{flex:1;min-width:0;}
-.mine-tx .nm{font-size:16px;color:#20262c;}
-.mine-tx .sub{font-size:12px;color:#9298a0;margin-top:3px;}
-.res{display:flex;align-items:center;gap:11px;padding:9px 2px;}
-.res:active{opacity:.6;}
-.res img{width:44px;height:44px;border-radius:7px;object-fit:cover;background:#d8dce2;flex-shrink:0;}
-.res .i{flex:1;min-width:0;}
-.res .i .nm{font-size:15px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.res .go{color:#ec4141;font-size:22px;}
-.hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
+# 模拟 iPhone 网易云客户端的设备信息（eapi 写操作需要）
+DEVICE_INFO = ('osver=16.2; deviceId=ACDE3DF64CFE5DD5FA8E392FB1C28888923F82011B4775A226BB; '
+               'os=iPhone OS; appver=9.0.90; versioncode=140; buildver=1784467000; '
+               'resolution=1920x1080; channel=distribution; mobilename=iPhone')
+UA_IOS = 'NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)'
+UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 
-/* ===== 迷你播放条 ===== */
-.mini{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);
-  height:56px;border-radius:28px;background:rgba(255,255,255,.92);backdrop-filter:blur(16px);
-  box-shadow:0 6px 20px -6px rgba(60,70,90,.3);display:none;align-items:center;gap:11px;padding:6px 12px 6px 6px;z-index:5;}
-.mini.show{display:flex;}
-.mini img{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#d8dce2;animation:spin 12s linear infinite;animation-play-state:paused;}
-.mini.playing img{animation-play-state:running;}
-@keyframes spin{to{transform:rotate(360deg);}}
-.mini .mt{flex:1;min-width:0;}
-.mini .mt .nm{font-size:14px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.mini .mt .ar{font-size:11px;color:#9298a0;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.mini .mp{width:34px;height:34px;color:#3a3f47;background:none;border:none;display:grid;place-items:center;}
-.mini .mp svg{width:26px;height:26px;fill:currentColor;}
-.mini .ml{width:30px;height:30px;color:#5a6068;background:none;border:none;}
-.mini .ml svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;}
-</style>
-</head>
-<body>
-<audio id="audio"></audio>
 
-<!-- 列表页 -->
-<div class="page" id="list-page">
-  <div class="lp-top">
-    <span class="lp-tab on" id="tab-mine" data-tab="mine">我的</span>
-    <span class="lp-tab" id="tab-search" data-tab="search">搜索</span>
-  </div>
-  <div class="lp-search" id="search-box" style="display:none;">
-    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-    <input id="q" placeholder="搜歌名 / 歌手" enterkeyhint="search">
-  </div>
-  <div class="lp-body" id="lp-body"></div>
-</div>
+# ── 加密 ────────────────────────────────────────────────────────────────
+def _pad(data: bytes) -> bytes:
+    n = 16 - len(data) % 16
+    return data + bytes([n] * n)
 
-<!-- 播放页 -->
-<div class="page" id="play-page">
-  <div class="top">
-    <button class="down" id="btn-down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-    <div class="ttl" id="top-title">一起听</div>
-    <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M12 3v13M8 7l4-4 4 4"/></svg>
-  </div>
-  <div class="ipod-box">
-    <div class="ipod" id="ipod-tap">
-      <div class="screen">
-        <div class="scr-top"><b>Now Playing</b><div class="r"><span class="pz" id="scr-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
-        <div class="scr-body">
-          <img class="scr-cover" id="scr-cover" src="" alt="">
-          <div class="scr-meta"><div class="nm" id="scr-nm">还没有歌</div><div class="ar" id="scr-ar">去搜一首</div><div class="al" id="scr-al"></div></div>
-        </div>
-        <div class="scr-prog"><span id="scr-cur">0:00</span><div class="scr-track"><div class="scr-fill" id="scr-fill"></div></div><span id="scr-rem">0:00</span></div>
-      </div>
-      <div class="wheel-box"><div class="wheel">
-        <span class="menu">MENU</span>
-        <span class="wi prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-8-7zM8 5v14H6V5z"/></svg></span>
-        <span class="wi next"><svg viewBox="0 0 24 24"><path d="M6 5v14l8-7zM16 5v14h2V5z"/></svg></span>
-        <span class="wi play"><svg viewBox="0 0 24 24"><path d="M8 5v14l9-7z"/><path d="M4 5h1.5v14H4z"/></svg></span>
-        <button class="center" id="w-center"></button>
-        <button class="wbtn m" id="w-menu"></button><button class="wbtn p" id="w-prev"></button>
-        <button class="wbtn n" id="w-next"></button><button class="wbtn y" id="w-play"></button>
-      </div></div>
-    </div>
-  </div>
-  <div class="below">
-    <div class="b-head">
-      <div style="min-width:0;flex:1;">
-        <div class="b-title" id="b-title">还没有歌</div>
-        <div class="b-artist"><span id="b-artist">向下收起，去搜一首</span><span class="b-follow" style="display:none">关注</span></div>
-      </div>
-      <div class="b-social">
-        <button class="b-heart" id="btn-heart"><svg viewBox="0 0 24 24"><path d="M12 20.3l-1.45-1.32C5.4 14.24 2 11.16 2 7.38 2 4.3 4.42 2 7.5 2c1.74 0 3.41.81 4.5 2.09C13.09 2.81 14.76 2 16.5 2 19.58 2 22 4.3 22 7.38c0 3.78-3.4 6.86-8.55 11.61L12 20.3z"/></svg></button>
-        <button class="b-cmt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
-      </div>
-    </div>
-    <div class="prog"><span id="p-cur">0:00</span><div class="bar" id="p-bar"><div class="f" id="p-fill"></div><div class="dot" id="p-dot"></div></div><span id="p-dur">0:00</span></div>
-    <div class="prog-sub">无损音质</div>
-    <div class="ctrl">
-      <button class="cb mode" id="c-mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
-      <button class="cb side" id="c-prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7zM8 5v14H6V5z"/></svg></button>
-      <button class="cb main" id="c-main"><svg viewBox="0 0 24 24" id="c-main-ic"><path d="M8 5v14l11-7z"/></svg></button>
-      <button class="cb side" id="c-next"><svg viewBox="0 0 24 24"><path d="M6 5v14l9-7zM16 5v14h2V5z"/></svg></button>
-      <button class="cb list" id="c-list"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6l1 1M3 12h.01M3 18h.01"/></svg></button>
-    </div>
-  </div>
-  <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div></div>
-</div>
 
-<!-- 迷你条 -->
-<div class="mini" id="mini">
-  <img id="mini-cover" src="">
-  <div class="mt"><div class="nm" id="mini-nm">—</div><div class="ar" id="mini-ar">—</div></div>
-  <button class="mp" id="mini-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-  <button class="ml"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
-</div>
+def eapi_encrypt(url: str, text: str) -> str:
+    """eapi 加密：一起听、切歌、加歌、心跳走这个。AES-128-ECB。"""
+    msg = f"nobody{url}use{text}md5forencrypt"
+    dig = hashlib.md5(msg.encode()).hexdigest()
+    data = f"{url}-36cd479b6b5-{text}-36cd479b6b5-{dig}"
+    enc = AES.new(EAPI_KEY, AES.MODE_ECB).encrypt(_pad(data.encode()))
+    return enc.hex().upper()
 
-<script>
-const $=id=>document.getElementById(id);const audio=$('audio');
-let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
-let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
-function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
 
-// 播放队列
-function setQueue(songs,startIndex){
-  queue=songs.slice();qIndex=startIndex;
-  playSong(queue[qIndex]);
-}
-function addNext(song){
-  if(!queue.length){queue=[song];qIndex=0;playSong(song);return;}
-  queue.splice(qIndex+1,0,song);
-  toast(song.name+' 已加到下一首');
-}
-function playNext(){
-  if(!queue.length)return;
-  if(loopMode===1){playSong(queue[qIndex]);return;} // 单曲循环
-  if(loopMode===2){qIndex=Math.floor(Math.random()*queue.length);} // 随机
-  else{qIndex=(qIndex+1)%queue.length;} // 列表循环
-  playSong(queue[qIndex]);
-}
-function playPrev(){
-  if(!queue.length)return;
-  qIndex=(qIndex-1+queue.length)%queue.length;
-  playSong(queue[qIndex]);
-}
-function toast(msg){
-  let t=document.getElementById('_toast');
-  if(!t){t=document.createElement('div');t.id='_toast';
-    t.style.cssText='position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(40,44,52,.92);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;z-index:99;transition:opacity .3s;';
-    document.body.appendChild(t);}
-  t.textContent=msg;t.style.opacity='1';
-  clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',1600);
-}
+def _aes_cbc(text: bytes, key: bytes) -> str:
+    enc = AES.new(key, AES.MODE_CBC, WEAPI_IV).encrypt(_pad(text))
+    return base64.b64encode(enc).decode()
 
-// ── 页面切换 ──
-function collapse(){collapsed=true;$('play-page').classList.add('hid');refreshMini();}
-function expand(){collapsed=false;$('play-page').classList.remove('hid');}
-$('btn-down').onclick=collapse;
 
-// ── 我的/搜索 tab ──
-function showTab(t,keep){
-  document.querySelectorAll('.lp-tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
-  $('search-box').style.display=t==='search'?'block':'none';
-  if(keep)return;
-  if(t==='mine')renderMine();else{$('lp-body').innerHTML='<div class="hint">搜一首想听的歌</div>';setTimeout(()=>$('q').focus(),100);}
-}
-document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
+def _rsa_encrypt(text: str) -> str:
+    """weapi 的 RSA：无填充裸 RSA。"""
+    text_rev = text[::-1]
+    n = int(WEAPI_MODULUS, 16)
+    e = int(WEAPI_PUBKEY, 16)
+    m = bytes_to_long(text_rev.encode())
+    c = pow(m, e, n)
+    return format(c, 'x').zfill(256)
 
-async function renderMine(){
-  $('lp-body').innerHTML='<div class="hint">加载中…</div>';
-  const fixed=[
-    {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
-    {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
-  ];
-  let h='';
-  // 拉歌单
-  try{
-    const r=await fetch('/api/music/my/playlists').then(r=>r.json());
-    if(r.ok&&r.playlists.length){
-      // 固定入口(最近/网盘)
-      h+=fixed.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div></div></div>`).join('');
-      h+='<div style="font-size:12px;color:#9298a0;padding:16px 2px 6px;">我的歌单</div>';
-      h+=r.playlists.map(p=>{
-        const cover=p.cover?`<img src="${p.cover}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0;">`:`<div class="mine-ic">♪</div>`;
-        return `<div class="mine-item" data-pl="${p.id}" data-name="${p.name.replace(/"/g,'')}">${cover}<div class="mine-tx"><div class="nm">${p.name}</div><div class="sub">${p.count} 首</div></div></div>`;
-      }).join('');
-    }else{h+='<div class="hint">'+(r.error||'没拿到歌单')+'</div>';}
-  }catch(e){h+='<div class="hint">出错：'+e+'</div>';}
-  $('lp-body').innerHTML=h;
-  document.querySelectorAll('.mine-item[data-pl]').forEach(el=>el.onclick=()=>openPlaylist(el.dataset.pl,el.dataset.name));
-  document.querySelectorAll('.mine-item[data-act]').forEach(el=>el.onclick=()=>{
-    const a=el.dataset.act;
-    if(a==='recent')openList('/api/music/my/recent','最近播放');
-    else if(a==='cloud')openList('/api/music/my/cloud','音乐网盘');
-  });
-}
-// 打开歌单 → 显示里面的歌
-async function openPlaylist(pid,name){
-  $('lp-body').innerHTML='<div class="hint">加载歌单…</div>';
-  showTab('mine',true);
-  try{
-    const r=await fetch('/api/music/playlist?id='+pid).then(r=>r.json());
-    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
-    renderSongList(r.songs,name||r.name,r.songs);
-  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
-}
-async function openList(url,name){
-  $('lp-body').innerHTML='<div class="hint">加载…</div>';showTab('mine',true);
-  try{
-    const r=await fetch(url).then(r=>r.json());
-    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
-    renderSongList(r.songs,name,r.songs);
-  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
-}
-// 渲染歌曲列表(点歌→整个列表成为队列,从这首开始放)
-function renderSongList(songs,title,queue){
-  if(!songs.length){$('lp-body').innerHTML='<div class="hint">'+title+'：空的</div>';return;}
-  let h='<div style="display:flex;align-items:center;gap:8px;padding:4px 2px 12px;"><span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span><span style="font-size:17px;font-weight:700;">'+title+'</span><span style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>';
-  h+=songs.map((s,i)=>`<div class="res" data-i="${i}"><div style="width:22px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">${i+1}</div><div class="i"><div class="nm">${s.name}</div><div class="ar">${s.artist}</div></div><div class="go" data-add="${i}">＋</div></div>`).join('');
-  $('lp-body').innerHTML=h;
-  $('pl-back').onclick=()=>renderMine();
-  document.querySelectorAll('.res[data-i]').forEach(el=>{
-    const i=+el.dataset.i;
-    el.querySelector('.i').onclick=()=>{setQueue(queue,i);expand();};
-    el.querySelector('[data-add]').onclick=(e)=>{e.stopPropagation();addNext(queue[i]);};
-  });
-}
 
-// ── 搜索 ──
-let searchTimer;
-$('q').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(doSearch,400);});
-$('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
-async function doSearch(){
-  const q=$('q').value.trim();if(!q){$('lp-body').innerHTML='<div class="hint">搜一首想听的歌</div>';return;}
-  $('lp-body').innerHTML='<div class="hint">搜索中…</div>';
-  try{
-    const r=await fetch('/api/music/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
-    if(!r.songs.length){$('lp-body').innerHTML='<div class="hint">没搜到</div>';return;}
-    $('lp-body').innerHTML='';
-    r.songs.forEach((s,i)=>{const d=document.createElement('div');d.className='res';
-      d.innerHTML='<img src="'+(s.cover||'')+'" onerror="this.style.opacity=.25"><div class="i"><div class="nm">'+s.name+'</div><div class="ar">'+s.artist+'</div></div><div class="go" data-add>＋</div>';
-      d.querySelector('.i').onclick=()=>{setQueue(r.songs,i);expand();};
-      d.querySelector('[data-add]').onclick=(e)=>{e.stopPropagation();addNext(s);};
-      $('lp-body').appendChild(d);});
-  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
-}
+def weapi_encrypt(payload: dict) -> dict:
+    """weapi 加密：发私信走这个。两次 AES-CBC + RSA。"""
+    text = json.dumps(payload, separators=(',', ':'))
+    sec = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                  for _ in range(16))
+    params = _aes_cbc(_aes_cbc(text.encode(), WEAPI_KEY).encode(), sec.encode())
+    enc_sec = _rsa_encrypt(sec)
+    return {'params': params, 'encSecKey': enc_sec}
 
-// ── 播放 ──
-async function playSong(s){
-  cur=s;$('scr-nm').textContent=s.name;$('scr-ar').textContent=s.artist;$('scr-al').textContent=s.album||'';
-  $('b-title').textContent=s.name;$('b-artist').textContent=s.artist;
-  document.querySelector('.b-follow').style.display='';$('top-title').textContent='我喜欢的音乐';
-  if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
-  $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
-  try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
-  loadLyric(s.id);refreshMini();
-}
-function showQueue(){
-  if(!cur){alert('还没有歌');return;}
-  alert('当前播放：\n'+cur.name+' - '+cur.artist+'\n\n(播放队列功能完善中，现在是单曲)');
-}
-function refreshMini(){const isCollapsed=$('play-page').classList.contains('hid');$('mini').classList.toggle('show',isCollapsed&&!!cur);}
 
-async function loadLyric(id){
-  lyrics=[];lastLy=-1;$('ly-scroll').innerHTML='<div class="ly-empty">加载歌词…</div>';
-  try{const r=await fetch('/api/music/lyric?id='+id).then(r=>r.json());const trMap={};
-    (r.tlyric||'').split('\n').forEach(l=>{const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/);if(m){const t=(+m[1])*60+(+m[2])+(+m[3])/1000;trMap[Math.round(t)]=m[4].trim();}});
-    (r.lyric||'').split('\n').forEach(l=>{const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/);if(m){const t=(+m[1])*60+(+m[2])+(+m[3])/1000;const text=m[4].trim();if(text)lyrics.push({t,text,tr:trMap[Math.round(t)]||''});}});
-    renderLyric();
-  }catch(e){}
-}
-function renderLyric(){if(!lyrics.length){$('ly-scroll').innerHTML='<div class="ly-empty">这首歌没有歌词</div>';return;}
-  $('ly-scroll').innerHTML=lyrics.map((l,i)=>'<div class="ly-line" data-i="'+i+'">'+l.text+(l.tr?'<div class="tr">'+l.tr+'</div>':'')+'</div>').join('');}
-function updLyric(t){if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t)i=j;else break;}
-  if(i===lastLy)return;lastLy=i;document.querySelectorAll('.ly-line').forEach((el,j)=>el.classList.toggle('cur',j===i));
-  if(lyView){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});}}
+# ── 凭证管理（扫码登录拿到的 cookie 存这里）──────────────────────────────
+class MusicStore:
+    """凭证 + 推歌队列 + 歌单 的持久化。传进来 data_dir 和 jread/jwrite。"""
+    def __init__(self, data_dir, jread, jwrite):
+        self.dir = data_dir
+        self.jread = jread
+        self.jwrite = jwrite
+        self.cred_file = os.path.join(data_dir, 'music_cred.json')
+        self.remote_file = os.path.join(data_dir, 'music_remote.json')
+        self.cache_dir = os.path.join(data_dir, 'music_cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self._qr = {}  # 扫码临时态：{key, unikey, created}
 
-audio.addEventListener('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
-  $('scr-fill').style.width=p+'%';$('p-fill').style.width=p+'%';$('p-dot').style.left=p+'%';
-  $('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);$('p-cur').textContent=fmt(t);$('p-dur').textContent=fmt(d);updLyric(t);});
-audio.addEventListener('play',()=>{$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
-audio.addEventListener('pause',()=>{$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
+    # cookie：优先环境变量 NETEASE_COOKIE，其次扫码登录存的
+    def cookie(self) -> str:
+        env = (os.environ.get('NETEASE_COOKIE') or '').strip()
+        if env:
+            return env
+        d = self.jread(self.cred_file, {})
+        return d.get('cookie', '') if isinstance(d, dict) else ''
 
-function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused?audio.play():audio.pause();}
-$('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
-$('mini').addEventListener('click',e=>{if(e.target.closest('.mp')||e.target.closest('.ml'))return;expand();});
-$('btn-heart').onclick=()=>$('btn-heart').classList.toggle('liked');
-$('c-list').onclick=()=>{showQueue();};
-// 上一首/下一首(iPod轮 + 底部控件)
-$('c-prev').onclick=playPrev;$('c-next').onclick=playNext;
-$('w-prev').onclick=playPrev;$('w-next').onclick=playNext;
-// 循环模式切换
-$('c-mode').onclick=()=>{
-  loopMode=(loopMode+1)%3;
-  const ics=['<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
-    '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="15" font-size="8" fill="currentColor" stroke="none" text-anchor="middle">1</text>',
-    '<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'];
-  $('c-mode').querySelector('svg').innerHTML=ics[loopMode];
-  toast(['列表循环','单曲循环','随机播放'][loopMode]);
-};
-// 放完自动下一首
-audio.addEventListener('ended',()=>{playNext();});
-$('w-center').onclick=()=>{collapse();showTab('search');};
-$('w-menu').onclick=()=>toggleLyric();
-function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);if(lyView){lastLy=-1;updLyric(audio.currentTime);}}
-$('ipod-tap').addEventListener('click',e=>{if(e.target.closest('.wheel'))return;if(e.target.closest('.screen'))toggleLyric();});
-$('lyric-view').addEventListener('click',()=>toggleLyric());
-$('p-bar').addEventListener('click',e=>{if(!audio.duration)return;const r=$('p-bar').getBoundingClientRect();audio.currentTime=(e.clientX-r.left)/r.width*audio.duration;});
+    def account(self) -> dict:
+        d = self.jread(self.cred_file, {})
+        return d.get('account', {}) if isinstance(d, dict) else {}
 
-let lastSeq=0;
-setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
-  if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}else if(c.action==='stop')audio.pause();}}catch(e){}},5000);
+    def save_cred(self, cookie: str, account: dict):
+        self.jwrite(self.cred_file, {'cookie': cookie, 'account': account,
+                                     'saved_at': int(time.time())})
 
-showTab('mine');
-</script>
-</body>
-</html>
+    def clear_cred(self):
+        self.jwrite(self.cred_file, {})
+
+    # 推歌队列（只留最新一条指令 + 序号，前端比序号决定要不要执行）
+    def push_command(self, cmd: dict):
+        cur = self.jread(self.remote_file, {})
+        seq = (cur.get('seq', 0) if isinstance(cur, dict) else 0) + 1
+        cmd = dict(cmd)
+        cmd['seq'] = seq
+        cmd['ts'] = int(time.time() * 1000)
+        self.jwrite(self.remote_file, cmd)
+        return cmd
+
+    def latest_command(self) -> dict:
+        return self.jread(self.remote_file, {}) or {}
+
+
+# ── 网易云 API 客户端 ────────────────────────────────────────────────────
+class NeteaseClient:
+    def __init__(self, store: MusicStore):
+        self.store = store
+
+    def _headers(self, pc=False, extra_cookie=''):
+        ck = self.store.cookie()
+        if extra_cookie:
+            ck = (ck + '; ' + extra_cookie) if ck else extra_cookie
+        return {
+            'User-Agent': UA_PC if pc else UA_IOS,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cookie': ck,
+            'Referer': 'https://music.163.com',
+        }
+
+    def eapi(self, path: str, payload: dict, timeout=12):
+        """path 形如 /api/xxx。自动换成 /eapi/ 发出去。写操作 body 要带 header:{}。"""
+        payload = dict(payload)
+        payload.setdefault('header', '{}')
+        text = json.dumps(payload, separators=(',', ':'))
+        params = eapi_encrypt(path, text)
+        url = 'https://interface.music.163.com/eapi/' + path[len('/api/'):]
+        ck = (DEVICE_INFO + '; ' + self.store.cookie()).strip('; ')
+        r = requests.post(url, data={'params': params},
+                          headers={'User-Agent': UA_IOS,
+                                   'Content-Type': 'application/x-www-form-urlencoded',
+                                   'Cookie': ck},
+                          timeout=timeout)
+        try:
+            return r.json()
+        except Exception:
+            return {'code': r.status_code, 'raw': r.text[:200]}
+
+    def weapi(self, path: str, payload: dict, timeout=12):
+        """path 形如 /weapi/xxx。发私信走这个。"""
+        payload = dict(payload)
+        payload['csrf_token'] = self._csrf()
+        body = weapi_encrypt(payload)
+        url = 'https://music.163.com' + path
+        r = requests.post(url, data=body,
+                          headers=self._headers(pc=True, extra_cookie='os=pc'),
+                          timeout=timeout)
+        try:
+            return r.json()
+        except Exception:
+            return {'code': r.status_code, 'raw': r.text[:200]}
+
+    def _csrf(self):
+        for kv in self.store.cookie().split(';'):
+            kv = kv.strip()
+            if kv.startswith('__csrf='):
+                return kv[len('__csrf='):]
+        return ''
+
+    # ── 扫码登录 ──────────────────────────────────────────────────────────
+    def qr_key(self):
+        """第一步：拿一个 unikey。"""
+        r = requests.post('https://music.163.com/weapi/login/qrcode/unikey',
+                          data=weapi_encrypt({'type': 1}),
+                          headers=self._headers(pc=True), timeout=12)
+        j = r.json()
+        return j.get('unikey', '')
+
+    def qr_img_url(self, unikey):
+        return 'https://music.163.com/login?codekey=' + unikey
+
+    def qr_check(self, unikey):
+        """轮询扫码状态。800=过期 801=等待扫 802=待确认 803=成功(带cookie)。"""
+        r = requests.post('https://music.163.com/weapi/login/qrcode/client/login',
+                          data=weapi_encrypt({'key': unikey, 'type': 1}),
+                          headers=self._headers(pc=True), timeout=12)
+        code = r.json().get('code', 0)
+        cookie = ''
+        if code == 803:
+            # 从 Set-Cookie 拼完整 cookie
+            parts = []
+            for c in r.raw.headers.getlist('Set-Cookie') if hasattr(r.raw.headers, 'getlist') else r.headers.get('Set-Cookie', '').split(','):
+                seg = c.split(';')[0].strip()
+                if '=' in seg and any(seg.startswith(k) for k in ('MUSIC_U', 'MUSIC_A', '__csrf', 'NMTID', '__remember_me')):
+                    parts.append(seg)
+            cookie = '; '.join(parts)
+        return code, cookie
+
+    # ── 搜歌 / 取流 / 歌词 ────────────────────────────────────────────────
+    def search(self, keyword, limit=20):
+        # eapi 带登录态搜索，诊断证明稳定能搜到
+        j = self.eapi('/api/cloudsearch/pc',
+                      {'s': keyword, 'type': 1, 'limit': limit, 'offset': 0})
+        songs = (j.get('result', {}) or {}).get('songs', []) or []
+        return self._fmt_songs(songs)
+
+    def _fmt_songs(self, songs, plain=False):
+        out = []
+        for s in songs:
+            if plain:
+                # 老接口字段：artists / album
+                out.append({
+                    'id': s['id'], 'name': s['name'],
+                    'artist': ' / '.join(a['name'] for a in s.get('artists', [])),
+                    'album': (s.get('album') or {}).get('name', ''),
+                    'cover': (s.get('album') or {}).get('picUrl', ''),
+                    'duration': s.get('duration', 0),
+                })
+            else:
+                out.append({
+                    'id': s['id'], 'name': s['name'],
+                    'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
+                    'album': (s.get('al') or {}).get('name', ''),
+                    'cover': (s.get('al') or {}).get('picUrl', ''),
+                    'duration': s.get('dt', 0),
+                })
+        return out
+
+    def _old_search_removed(self, keyword, limit=20):
+        r = requests.post('https://music.163.com/weapi/cloudsearch/get/web',
+                          data=weapi_encrypt({'s': keyword, 'type': 1, 'limit': limit, 'offset': 0}),
+                          headers=self._headers(pc=True), timeout=12)
+        j = r.json()
+        out = []
+        for s in (j.get('result', {}) or {}).get('songs', []) or []:
+            out.append({
+                'id': s['id'],
+                'name': s['name'],
+                'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
+                'album': (s.get('al') or {}).get('name', ''),
+                'cover': (s.get('al') or {}).get('picUrl', ''),
+                'duration': s.get('dt', 0),
+            })
+        return out
+
+    def song_url(self, song_id, br=320000):
+        """取音频直链。用你账号，会员歌也能拿。"""
+        j = self.eapi('/api/song/enhance/player/url',
+                      {'ids': f'[{song_id}]', 'br': br})
+        data = (j.get('data') or [{}])[0]
+        return data.get('url', '')
+
+    def song_detail(self, song_id):
+        r = requests.post('https://music.163.com/weapi/v3/song/detail',
+                          data=weapi_encrypt({'c': json.dumps([{'id': song_id}])}),
+                          headers=self._headers(pc=True), timeout=12)
+        songs = r.json().get('songs', [])
+        if not songs:
+            return None
+        s = songs[0]
+        return {'id': s['id'], 'name': s['name'],
+                'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
+                'album': (s.get('al') or {}).get('name', ''),
+                'cover': (s.get('al') or {}).get('picUrl', ''),
+                'duration': s.get('dt', 0)}
+
+    def lyric(self, song_id):
+        r = requests.post('https://music.163.com/weapi/song/lyric',
+                          data=weapi_encrypt({'id': song_id, 'lv': -1, 'tv': -1}),
+                          headers=self._headers(pc=True), timeout=12)
+        j = r.json()
+        return {'lyric': (j.get('lrc') or {}).get('lyric', ''),
+                'tlyric': (j.get('tlyric') or {}).get('lyric', '')}
+
+    def similar(self, song_id):
+        """漫游用：拿相似歌。"""
+        try:
+            j = self.eapi('/api/v1/discovery/simiSong',
+                          {'songid': song_id, 'limit': 10, 'offset': 0})
+            out = []
+            for s in j.get('songs', []) or []:
+                out.append({'id': s['id'], 'name': s['name'],
+                            'artist': ' / '.join(a['name'] for a in s.get('artists', []))})
+            return out
+        except Exception:
+            return []
+
+    # ── 个人数据（登录后）────────────────────────────────────────────────
+    def uid(self):
+        """从账号或登录态拿 userId。多路兜底。"""
+        acc = self.store.account()
+        if acc.get('userId'):
+            return acc['userId']
+        # 路1: eapi nuser/account
+        try:
+            j = self.eapi('/api/nuser/account/get', {})
+            prof = j.get('profile') or {}
+            if prof.get('userId'):
+                st = {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                      'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+                self.store.save_cred(self.store.cookie(), st)
+                return st['userId']
+        except Exception:
+            pass
+        # 路2: weapi login_status
+        st = self.login_status()
+        if st and st.get('userId'):
+            self.store.save_cred(self.store.cookie(), st)
+            return st['userId']
+        return ''
+
+    def login_status(self):
+        """确认当前 cookie 还活着、拿账号信息。eapi 优先。"""
+        try:
+            j = self.eapi('/api/w/nuser/account/get', {})
+            prof = j.get('profile')
+            if prof and prof.get('userId'):
+                return {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                        'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+        except Exception:
+            pass
+        try:
+            r = requests.post('https://music.163.com/weapi/w/nuser/account/get',
+                              data=weapi_encrypt({}),
+                              headers=self._headers(pc=True), timeout=12)
+            j = r.json()
+            prof = j.get('profile')
+            if prof and prof.get('userId'):
+                return {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                        'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+        except Exception:
+            pass
+        return None
+
+    def my_playlists(self):
+        """我的歌单列表（自建 + 收藏）。第一个通常是'我喜欢的音乐'。"""
+        uid = self.uid()
+        if not uid:
+            return []
+        j = self.eapi('/api/user/playlist', {'uid': uid, 'limit': 100, 'offset': 0})
+        out = []
+        for p in j.get('playlist', []) or []:
+            out.append({
+                'id': p['id'], 'name': p['name'],
+                'cover': p.get('coverImgUrl', ''),
+                'count': p.get('trackCount', 0),
+                'is_mine': str(p.get('userId', '')) == str(uid),
+                'special': p.get('specialType', 0),  # 5 = 我喜欢的音乐
+            })
+        return out
+
+    def playlist_songs(self, pid, limit=500):
+        """歌单里的所有歌。"""
+        j = self.eapi('/api/v6/playlist/detail', {'id': pid, 'n': limit, 's': 0})
+        pl = j.get('playlist', {}) or {}
+        tracks = pl.get('tracks', []) or []
+        # tracks 可能只返回部分，用 trackIds 补全
+        ids = [t['id'] for t in (pl.get('trackIds', []) or [])]
+        out = self._fmt_songs(tracks)
+        if len(out) < len(ids):
+            # 剩下的用 song/detail 批量补
+            have = {s['id'] for s in out}
+            need = [i for i in ids if i not in have][:limit]
+            for k in range(0, len(need), 100):
+                batch = need[k:k+100]
+                jj = self.eapi('/api/v3/song/detail',
+                               {'c': json.dumps([{'id': i} for i in batch])})
+                out += self._fmt_songs(jj.get('songs', []) or [])
+        return {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
+                'count': pl.get('trackCount', len(out)), 'songs': out}
+
+    def recent_plays(self, limit=100):
+        """最近播放。"""
+        try:
+            j = self.eapi('/api/play-record/song/list', {'limit': limit})
+            out = []
+            for r in j.get('data', {}).get('list', []) or j.get('list', []) or []:
+                s = r.get('resourceInfo') or r.get('data') or r.get('song') or r
+                if s.get('id'):
+                    out.append({'id': s['id'], 'name': s.get('name', ''),
+                                'artist': ' / '.join(a['name'] for a in (s.get('ar') or s.get('artists') or [])),
+                                'cover': (s.get('al') or s.get('album') or {}).get('picUrl', '')})
+            return out
+        except Exception:
+            return []
+
+    def cloud_songs(self, limit=200):
+        """音乐云盘。"""
+        try:
+            j = self.eapi('/api/v1/cloud', {'limit': limit, 'offset': 0})
+            out = []
+            for r in j.get('data', []) or []:
+                sid = r.get('songId') or (r.get('simpleSong') or {}).get('id')
+                nm = r.get('songName') or (r.get('simpleSong') or {}).get('name', '')
+                ar = r.get('artist') or ' / '.join(a['name'] for a in ((r.get('simpleSong') or {}).get('ar') or []))
+                if sid:
+                    out.append({'id': sid, 'name': nm, 'artist': ar, 'cover': ''})
+            return out
+        except Exception:
+            return []
+
+    def artist_songs(self, artist_id, limit=50):
+        """歌手热门歌。"""
+        try:
+            j = self.eapi('/api/v1/artist/songs',
+                          {'id': artist_id, 'order': 'hot', 'limit': limit, 'offset': 0})
+            return self._fmt_songs(j.get('songs', []) or [])
+        except Exception:
+            return []
+
+
+# ── 路由注册 ────────────────────────────────────────────────────────────
+def register_music(app, data_dir=None, jread=None, jwrite=None,
+                   auth_token=None):
+    """挂到 app 上。auth_token 用于 MCP 推歌的鉴权（可选）。"""
+    from flask import request, jsonify, Response, send_file
+
+    if data_dir is None:
+        data_dir = os.environ.get('DATA_DIR') or os.path.join(os.path.dirname(__file__), 'data')
+    if jread is None:
+        def jread(p, d):
+            try:
+                with open(p, encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                return d
+    if jwrite is None:
+        def jwrite(p, o):
+            with open(p, 'w', encoding='utf-8') as f:
+                json.dump(o, f, ensure_ascii=False)
+
+    store = MusicStore(data_dir, jread, jwrite)
+    nc = NeteaseClient(store)
+
+    def _need_crypto():
+        if not _HAS_CRYPTO:
+            return jsonify({'ok': False, 'error': '服务器缺 pycryptodome，装一下：pip install pycryptodome'}), 500
+        return None
+
+    # ── 扫码登录 ──────────────────────────────────────────────────────────
+    @app.route('/api/music/qr/new', methods=['POST'])
+    def music_qr_new():
+        err = _need_crypto()
+        if err:
+            return err
+        try:
+            unikey = nc.qr_key()
+            if not unikey:
+                return jsonify({'ok': False, 'error': '拿二维码失败'})
+            return jsonify({'ok': True, 'unikey': unikey,
+                            'qr_url': nc.qr_img_url(unikey)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:120]})
+
+    @app.route('/api/music/qr/check', methods=['POST'])
+    def music_qr_check():
+        err = _need_crypto()
+        if err:
+            return err
+        unikey = (request.json or {}).get('unikey', '')
+        if not unikey:
+            return jsonify({'ok': False, 'error': '缺 unikey'})
+        try:
+            code, cookie = nc.qr_check(unikey)
+            if code == 803 and cookie:
+                store.save_cred(cookie, {})
+                acc = nc.login_status()
+                if acc:
+                    store.save_cred(cookie, acc)
+                return jsonify({'ok': True, 'code': 803, 'account': acc or {}})
+            return jsonify({'ok': True, 'code': code})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:120]})
+
+    @app.route('/api/music/account', methods=['GET'])
+    def music_account():
+        acc = store.account()
+        if acc and acc.get('userId'):
+            return jsonify({'ok': True, 'logged_in': True, 'account': acc})
+        return jsonify({'ok': True, 'logged_in': False})
+
+    @app.route('/api/music/diag', methods=['GET'])
+    def music_diag():
+        """诊断：cookie 读到没、登录态、各接口原始返回。"""
+        out = {'has_crypto': _HAS_CRYPTO}
+        ck = store.cookie()
+        out['cookie_len'] = len(ck)
+        out['cookie_has_music_u'] = 'MUSIC_U=' in ck
+        out['cookie_has_csrf'] = '__csrf=' in ck
+        out['csrf_value'] = nc._csrf()[:8] + '...' if nc._csrf() else ''
+        # 试登录态
+        try:
+            acc = nc.login_status()
+            out['login_status'] = acc or 'None'
+        except Exception as e:
+            out['login_status_error'] = str(e)[:150]
+        # 试 eapi 搜索
+        try:
+            j = nc.eapi('/api/cloudsearch/pc',
+                        {'s': '晴天', 'type': 1, 'limit': 3, 'offset': 0})
+            out['eapi_search_code'] = j.get('code')
+            out['eapi_search_count'] = len((j.get('result', {}) or {}).get('songs', []) or [])
+            out['eapi_raw_keys'] = list(j.keys())[:6]
+        except Exception as e:
+            out['eapi_search_error'] = str(e)[:150]
+        # 试公开搜索
+        try:
+            r = requests.get('https://music.163.com/api/search/get/web',
+                             params={'s': '晴天', 'type': 1, 'limit': 3},
+                             headers={'User-Agent': UA_PC, 'Referer': 'https://music.163.com'},
+                             timeout=12)
+            jj = r.json()
+            out['public_search_code'] = jj.get('code')
+            out['public_search_count'] = len((jj.get('result', {}) or {}).get('songs', []) or [])
+        except Exception as e:
+            out['public_search_error'] = str(e)[:150]
+        # 试取音频流
+        try:
+            hits = nc.search('晴天 周杰伦', 1)
+            if hits:
+                sid = hits[0]['id']
+                url = nc.song_url(sid)
+                out['stream_test_song'] = hits[0]['name']
+                out['stream_test_has_url'] = bool(url)
+                out['stream_test_url_head'] = (url or '')[:60]
+            else:
+                out['stream_test'] = '搜索无结果'
+        except Exception as e:
+            out['stream_test_error'] = str(e)[:150]
+        return jsonify(out)
+
+    @app.route('/api/music/logout', methods=['POST'])
+    def music_logout():
+        store.clear_cred()
+        return jsonify({'ok': True})
+
+    # ── 个人数据路由 ──────────────────────────────────────────────────────
+    @app.route('/api/music/my/playlists', methods=['GET'])
+    def music_my_playlists():
+        try:
+            return jsonify({'ok': True, 'playlists': nc.my_playlists()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/playlist', methods=['GET'])
+    def music_playlist():
+        pid = request.args.get('id', '')
+        if not pid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            return jsonify({'ok': True, **nc.playlist_songs(pid)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/my/recent', methods=['GET'])
+    def music_my_recent():
+        try:
+            return jsonify({'ok': True, 'songs': nc.recent_plays()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/my/cloud', methods=['GET'])
+    def music_my_cloud():
+        try:
+            return jsonify({'ok': True, 'songs': nc.cloud_songs()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/artist', methods=['GET'])
+    def music_artist():
+        aid = request.args.get('id', '')
+        if not aid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            return jsonify({'ok': True, 'songs': nc.artist_songs(aid)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/diag2', methods=['GET'])
+    def music_diag2():
+        """诊断个人数据能不能取到。"""
+        out = {}
+        # 直接看几个身份接口的原始返回
+        try:
+            j = nc.eapi('/api/nuser/account/get', {})
+            out['eapi_account_code'] = j.get('code')
+            out['eapi_account_has_profile'] = bool(j.get('profile'))
+            out['eapi_account_uid'] = (j.get('profile') or {}).get('userId', '')
+            out['eapi_account_keys'] = list(j.keys())[:8]
+        except Exception as e:
+            out['eapi_account_error'] = str(e)[:150]
+        try:
+            r = requests.post('https://music.163.com/weapi/w/nuser/account/get',
+                              data=weapi_encrypt({}), headers=nc._headers(pc=True), timeout=12)
+            j = r.json()
+            out['weapi_account_code'] = j.get('code')
+            out['weapi_account_uid'] = (j.get('profile') or {}).get('userId', '')
+        except Exception as e:
+            out['weapi_account_error'] = str(e)[:150]
+        try:
+            out['uid'] = nc.uid()
+        except Exception as e:
+            out['uid_error'] = str(e)[:120]
+        try:
+            pls = nc.my_playlists()
+            out['playlists_count'] = len(pls)
+            out['playlists_head'] = [p['name'] for p in pls[:5]]
+        except Exception as e:
+            out['playlists_error'] = str(e)[:150]
+        return jsonify(out)
+        err = _need_crypto()
+        if err:
+            return err
+        q = request.args.get('q', '').strip()
+        if not q:
+            return jsonify({'ok': False, 'error': '空搜索'})
+        try:
+            return jsonify({'ok': True, 'songs': nc.search(q, int(request.args.get('limit', 20)))})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:120]})
+
+    @app.route('/api/music/url', methods=['GET'])
+    def music_url():
+        """返回音频直链。前端 <audio> 直接用网易云直链（不走代理，更稳）。"""
+        err = _need_crypto()
+        if err:
+            return err
+        sid = request.args.get('id', '')
+        if not sid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            url = nc.song_url(sid, int(request.args.get('br', 320000)))
+            if not url:
+                return jsonify({'ok': False, 'error': '拿不到音频，可能要会员或版权受限'})
+            # 直接给网易云直链，让浏览器自己放（http 的话换 https）
+            if url.startswith('http://'):
+                url = 'https://' + url[len('http://'):]
+            return jsonify({'ok': True, 'url': url, 'direct': url})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/stream', methods=['GET'])
+    def music_stream():
+        """缓存代理：第一次去网易云下，之后走本地缓存。"""
+        err = _need_crypto()
+        if err:
+            return err
+        sid = request.args.get('id', '')
+        cache = os.path.join(store.cache_dir, f'{sid}.mp3')
+        if not (os.path.exists(cache) and os.path.getsize(cache) > 1000):
+            try:
+                url = nc.song_url(sid)
+                if not url:
+                    return jsonify({'ok': False, 'error': '无音源'}), 404
+                r = requests.get(url, headers={'User-Agent': UA_IOS}, timeout=30, stream=True)
+                with open(cache, 'wb') as f:
+                    for chunk in r.iter_content(8192):
+                        f.write(chunk)
+            except Exception as e:
+                return jsonify({'ok': False, 'error': str(e)[:120]}), 500
+        return send_file(cache, mimetype='audio/mpeg', conditional=True)
+
+    @app.route('/api/music/lyric', methods=['GET'])
+    def music_lyric():
+        err = _need_crypto()
+        if err:
+            return err
+        sid = request.args.get('id', '')
+        try:
+            return jsonify({'ok': True, **nc.lyric(sid)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:120]})
+
+    # ── 推歌队列（凛/claude.ai 推 → 前端轮询播）──────────────────────────
+    def _check_token():
+        if not auth_token:
+            return True
+        t = request.headers.get('X-Chat-Token') or request.args.get('token', '')
+        return t == auth_token
+
+    @app.route('/api/music/remote', methods=['GET'])
+    def music_remote_get():
+        """前端每几秒轮询：看有没有新指令。"""
+        return jsonify({'ok': True, 'command': store.latest_command()})
+
+    @app.route('/api/music/remote', methods=['POST'])
+    def music_remote_post():
+        """推一首歌 / 切歌 / 停。凛前端 or claude.ai MCP 都调这个。
+        body: {action:'play'|'stop', query?, id?, title?, sleep_minutes?}"""
+        if not _check_token():
+            return jsonify({'ok': False, 'error': '鉴权失败'}), 403
+        b = request.json or {}
+        action = b.get('action', 'play')
+        if action == 'stop':
+            cmd = store.push_command({'action': 'stop'})
+            return jsonify({'ok': True, 'command': cmd})
+        # play：给了 id 直接播；给了 query 就先搜再播最佳
+        song = None
+        if b.get('id'):
+            song = nc.song_detail(b['id'])
+        elif b.get('query'):
+            hits = nc.search(b['query'], 5)
+            song = hits[0] if hits else None
+        if not song:
+            return jsonify({'ok': False, 'error': '没找到歌'})
+        cmd = store.push_command({
+            'action': 'play', 'id': song['id'], 'name': song['name'],
+            'artist': song['artist'], 'cover': song.get('cover', ''),
+            'sleep_minutes': b.get('sleep_minutes', 0),
+        })
+        return jsonify({'ok': True, 'command': cmd, 'song': song})
+
+    return store, nc
