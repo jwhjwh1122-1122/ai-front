@@ -511,7 +511,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _audio, _dur, ...rest } = m;
+    const { _internal, _thinking, _audio, _dur, _call, _callmark, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -911,6 +911,13 @@ async function streamResponse(wrap, hist) {
   abortController = null;
   totalTokens = inTok + outTok;
   drawTokens(inTok, outTok);
+  // 记一笔，自己的账自己算
+  if (inTok || outTok) {
+    jpost('/api/ledger', {
+      model: currentModel, in: inTok, out: outTok, cached: lastCacheRead,
+      where: roomCtx ? 'room' : 'chat'
+    }).catch(() => { });
+  }
   if (thinkingText) turnThinking += (turnThinking ? '\n\n' : '') + thinkingText;
   const keys = Object.keys(blocks).map(Number).sort((a, b) => a - b);
   const contentBlocks = keys.map(k => { const { _json, _rb, ...c } = blocks[k]; return c; });
@@ -1132,12 +1139,20 @@ function loadConv(id) {
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
   messages.forEach((msg, i) => {
+    if (msg._callmark) {
+      const d = document.createElement('div');
+      d.className = 'call-mark';
+      d.textContent = '☏ ' + String(msg.content || '').replace(/[（）]/g, '');
+      msgBox().appendChild(d);
+      return;
+    }
     if (msg.role === 'tool' || msg._internal) return;
     if (msg.role === 'user' && Array.isArray(msg.content) && msg.content.some(c => c && c.type === 'tool_result')) return;
     if (msg.role === 'user') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : '');
       const img = Array.isArray(msg.content) ? msg.content.find(c => c.type === 'image_url') : null;
       addUserBubble(text, img?.image_url?.url || null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null);
+      if (msg._call) { const b = msgBox().lastElementChild?.querySelector('.bubble'); if (b) b.classList.add('in-call'); }
     } else if (msg.role === 'assistant') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
       if (!text && !msg._thinking) return;
