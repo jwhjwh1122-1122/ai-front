@@ -315,6 +315,94 @@ class NeteaseClient:
         except Exception:
             return []
 
+    # ── 个人数据（登录后）────────────────────────────────────────────────
+    def uid(self):
+        """从账号或登录态拿 userId。"""
+        acc = self.store.account()
+        if acc.get('userId'):
+            return acc['userId']
+        st = self.login_status()
+        if st and st.get('userId'):
+            self.store.save_cred(self.store.cookie(), st)
+            return st['userId']
+        return ''
+
+    def my_playlists(self):
+        """我的歌单列表（自建 + 收藏）。第一个通常是'我喜欢的音乐'。"""
+        uid = self.uid()
+        if not uid:
+            return []
+        j = self.eapi('/api/user/playlist', {'uid': uid, 'limit': 100, 'offset': 0})
+        out = []
+        for p in j.get('playlist', []) or []:
+            out.append({
+                'id': p['id'], 'name': p['name'],
+                'cover': p.get('coverImgUrl', ''),
+                'count': p.get('trackCount', 0),
+                'is_mine': str(p.get('userId', '')) == str(uid),
+                'special': p.get('specialType', 0),  # 5 = 我喜欢的音乐
+            })
+        return out
+
+    def playlist_songs(self, pid, limit=500):
+        """歌单里的所有歌。"""
+        j = self.eapi('/api/v6/playlist/detail', {'id': pid, 'n': limit, 's': 0})
+        pl = j.get('playlist', {}) or {}
+        tracks = pl.get('tracks', []) or []
+        # tracks 可能只返回部分，用 trackIds 补全
+        ids = [t['id'] for t in (pl.get('trackIds', []) or [])]
+        out = self._fmt_songs(tracks)
+        if len(out) < len(ids):
+            # 剩下的用 song/detail 批量补
+            have = {s['id'] for s in out}
+            need = [i for i in ids if i not in have][:limit]
+            for k in range(0, len(need), 100):
+                batch = need[k:k+100]
+                jj = self.eapi('/api/v3/song/detail',
+                               {'c': json.dumps([{'id': i} for i in batch])})
+                out += self._fmt_songs(jj.get('songs', []) or [])
+        return {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
+                'count': pl.get('trackCount', len(out)), 'songs': out}
+
+    def recent_plays(self, limit=100):
+        """最近播放。"""
+        try:
+            j = self.eapi('/api/play-record/song/list', {'limit': limit})
+            out = []
+            for r in j.get('data', {}).get('list', []) or j.get('list', []) or []:
+                s = r.get('resourceInfo') or r.get('data') or r.get('song') or r
+                if s.get('id'):
+                    out.append({'id': s['id'], 'name': s.get('name', ''),
+                                'artist': ' / '.join(a['name'] for a in (s.get('ar') or s.get('artists') or [])),
+                                'cover': (s.get('al') or s.get('album') or {}).get('picUrl', '')})
+            return out
+        except Exception:
+            return []
+
+    def cloud_songs(self, limit=200):
+        """音乐云盘。"""
+        try:
+            j = self.eapi('/api/v1/cloud', {'limit': limit, 'offset': 0})
+            out = []
+            for r in j.get('data', []) or []:
+                sid = r.get('songId') or (r.get('simpleSong') or {}).get('id')
+                nm = r.get('songName') or (r.get('simpleSong') or {}).get('name', '')
+                ar = r.get('artist') or ' / '.join(a['name'] for a in ((r.get('simpleSong') or {}).get('ar') or []))
+                if sid:
+                    out.append({'id': sid, 'name': nm, 'artist': ar, 'cover': ''})
+            return out
+        except Exception:
+            return []
+
+    def artist_songs(self, artist_id, limit=50):
+        """歌手热门歌。"""
+        try:
+            j = self.eapi('/api/v1/artist/songs',
+                          {'id': artist_id, 'order': 'hot', 'limit': limit, 'offset': 0})
+            return self._fmt_songs(j.get('songs', []) or [])
+        except Exception:
+            return []
+
 
 # ── 路由注册 ────────────────────────────────────────────────────────────
 def register_music(app, data_dir=None, jread=None, jwrite=None,
@@ -441,9 +529,73 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         store.clear_cred()
         return jsonify({'ok': True})
 
-    # ── 搜歌 / 取流 / 歌词 ────────────────────────────────────────────────
-    @app.route('/api/music/search', methods=['GET'])
-    def music_search():
+    # ── 个人数据路由 ──────────────────────────────────────────────────────
+    @app.route('/api/music/my/playlists', methods=['GET'])
+    def music_my_playlists():
+        try:
+            return jsonify({'ok': True, 'playlists': nc.my_playlists()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/playlist', methods=['GET'])
+    def music_playlist():
+        pid = request.args.get('id', '')
+        if not pid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            return jsonify({'ok': True, **nc.playlist_songs(pid)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/my/recent', methods=['GET'])
+    def music_my_recent():
+        try:
+            return jsonify({'ok': True, 'songs': nc.recent_plays()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/my/cloud', methods=['GET'])
+    def music_my_cloud():
+        try:
+            return jsonify({'ok': True, 'songs': nc.cloud_songs()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/artist', methods=['GET'])
+    def music_artist():
+        aid = request.args.get('id', '')
+        if not aid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            return jsonify({'ok': True, 'songs': nc.artist_songs(aid)})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/diag2', methods=['GET'])
+    def music_diag2():
+        """诊断个人数据能不能取到。"""
+        out = {}
+        try:
+            out['uid'] = nc.uid()
+        except Exception as e:
+            out['uid_error'] = str(e)[:120]
+        try:
+            pls = nc.my_playlists()
+            out['playlists_count'] = len(pls)
+            out['playlists_head'] = [p['name'] for p in pls[:5]]
+        except Exception as e:
+            out['playlists_error'] = str(e)[:150]
+        try:
+            rec = nc.recent_plays(5)
+            out['recent_count'] = len(rec)
+        except Exception as e:
+            out['recent_error'] = str(e)[:120]
+        try:
+            cl = nc.cloud_songs(5)
+            out['cloud_count'] = len(cl)
+        except Exception as e:
+            out['cloud_error'] = str(e)[:120]
+        return jsonify(out)
         err = _need_crypto()
         if err:
             return err
