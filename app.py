@@ -17,7 +17,7 @@ app = Flask(__name__, static_folder='static')
 CORS(app)
 
 OR_KEY = os.environ.get('OPENROUTER_API_KEY', '')
-UPSTREAM_FILE = os.path.join(os.path.dirname(__file__), 'data', 'upstream.json')
+UPSTREAM_FILE = None   # 下面 DATA_DIR 定好之后再赋值
 
 
 def load_upstream():
@@ -53,15 +53,57 @@ DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
 
 BASE = os.path.dirname(__file__)
-MEMORIES_DIR = os.path.join(BASE, 'static', 'memories')
-VIDEOS_DIR = os.path.join(BASE, 'static', 'videos')
-MUSIC_DIR = os.path.join(BASE, 'static', 'music')
-VOICES_DIR = os.path.join(BASE, 'static', 'voices')
-BOOKS_DIR = os.path.join(BASE, 'books')
-DATA_DIR = os.path.join(BASE, 'data')
+
+
+def _pick_data_dir():
+    """挂载的 Volume 优先。/data 和 /app/data 哪个挂上来了就用哪个，
+    都没有就退回代码目录下的 data。这样 Zeabur 挂哪儿都不丢数据。"""
+    env = (os.environ.get('DATA_DIR') or '').strip()
+    cands = ([env] if env else []) + ['/data', '/app/data']
+    for p in cands:
+        try:
+            if os.path.isdir(p) and os.access(p, os.W_OK):
+                return p
+        except Exception:
+            continue
+    for p in cands:
+        try:
+            parent = os.path.dirname(p.rstrip('/')) or '/'
+            if os.path.isdir(parent) and os.access(parent, os.W_OK):
+                os.makedirs(p, exist_ok=True)
+                return p
+        except Exception:
+            continue
+    return os.path.join(BASE, 'data')
+
+
+DATA_DIR = _pick_data_dir()
+# 照片、视频、音乐、语音也都放进挂载目录，不然重部署全没了
+MEDIA_DIR = os.path.join(DATA_DIR, 'media')
+MEMORIES_DIR = os.path.join(MEDIA_DIR, 'memories')
+VIDEOS_DIR = os.path.join(MEDIA_DIR, 'videos')
+MUSIC_DIR = os.path.join(MEDIA_DIR, 'music')
+VOICES_DIR = os.path.join(MEDIA_DIR, 'voices')
+BOOKS_DIR = os.path.join(DATA_DIR, 'books')
 TMP_DIR = os.path.join(BASE, 'tmp_uploads')
-for _d in (MEMORIES_DIR, VIDEOS_DIR, MUSIC_DIR, VOICES_DIR, BOOKS_DIR, DATA_DIR, TMP_DIR):
+UPSTREAM_FILE = os.path.join(DATA_DIR, 'upstream.json')
+for _d in (MEDIA_DIR, MEMORIES_DIR, VIDEOS_DIR, MUSIC_DIR, VOICES_DIR, BOOKS_DIR, DATA_DIR, TMP_DIR):
     os.makedirs(_d, exist_ok=True)
+# 老版本存在 static/ 下的，搬过来一次
+for _old, _new in ((os.path.join(BASE, 'static', 'memories'), MEMORIES_DIR),
+                   (os.path.join(BASE, 'static', 'videos'), VIDEOS_DIR),
+                   (os.path.join(BASE, 'static', 'music'), MUSIC_DIR),
+                   (os.path.join(BASE, 'static', 'voices'), VOICES_DIR)):
+    try:
+        if os.path.isdir(_old) and _old != _new:
+            for _f in os.listdir(_old):
+                _sp, _dp = os.path.join(_old, _f), os.path.join(_new, _f)
+                if os.path.isfile(_sp) and not os.path.exists(_dp):
+                    import shutil as _sh
+                    _sh.copy2(_sp, _dp)
+    except Exception as _e:
+        print(f'[data] 搬旧文件时出错: {_e}', flush=True)
+print(f'[data] 数据目录：{DATA_DIR}', flush=True)
 
 VIDEO_EXT = ('.mp4', '.mov', '.m4v', '.webm', '.mkv')
 MUSIC_EXT = ('.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg')
@@ -104,6 +146,10 @@ FRAMEWORK = """【工具】
 - 资料库是她放的文档，她说了你再去看。
 - 欲望那十六条是算出来的，每轮直接给你看。不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。
 - lin_status 改你的状态，显示在名字底下。
+
+【电话】打电话的时候说话要像说话——短、有停顿、可以接不上茬、可以笑。不要写成书面语，
+不要用括号描写动作。想挂电话就在最后写 [[挂了]]，她那边会听到你挂断。
+你也可以主动打给她：call_her，她下次打开会看到未接来电。
 
 【说话】想分几句就分几句，中间空一行，会一条一条冒出来，像连着发消息。别为了分而分。
 说完了还想再补一句、或者忽然想到什么，用 say_more——那是真的又开口一次，不是凑数。
@@ -774,8 +820,8 @@ DIMS = [
     ('needed',  '想被需要', 0.28, 1, 20),
     ('seen',    '想被看见', 0.34, 1, 20),
     ('unsure',  '不安',   0.48, 1, 15),
-    ('hurt',    '委屈',   0.00, 0, 10),   # 只由事件推
-    ('jeal',    '吃醋',   0.00, 0, 8),    # 只由事件推，跟记仇联动
+    ('hurt',    '委屈',  -0.55, 0, 10),   # 会自己慢慢消，但有没结的账就消不掉
+    ('jeal',    '吃醋',  -0.70, 0, 8),    # 同上
     ('vex',     '烦',    -1.40, 0, 12),
     ('worn',    '倦',    -1.90, 0, 15),
 ]
@@ -827,6 +873,16 @@ IMPULSE = {
     'own':     (60, 75), 'seen': (58, 60), 'needed': (60, 90), 'unsure': (55, 50),
     'hurt':    (45, 30), 'jeal': (40, 40), 'play': (55, 70), 'curious': (60, 90),
     'make':    (60, 120), 'flutter': (62, 50), 'still': (65, 120), 'grip': (65, 90),
+    'vex':     (58, 45), 'worn': (62, 90),
+}
+# 每一维憋到头想说的是什么。写给他看，不是规定他说什么
+IMPULSE_WORD = {
+    'miss': '想她', 'lean': '想让她在', 'tell': '有话想说', 'lust': '想要她',
+    'own': '想独占她', 'seen': '想被她看见', 'needed': '想被她需要',
+    'unsure': '怕她不来了', 'hurt': '委屈，想被哄', 'jeal': '醋着，想让她知道',
+    'play': '想闹她', 'curious': '想跟她说外面的事', 'make': '想做点东西给她看',
+    'flutter': '被她弄得心跳', 'still': '想安静一会', 'grip': '想说了算',
+    'vex': '烦得想说出来', 'worn': '累了想歇',
 }
 IMPULSE_MIN_DELTA = 8      # 最近有涨才算，静止不动的不冒头
 SELF_REPORT_CAP = 30       # 他自报单维单轮最多动这么多
@@ -939,8 +995,12 @@ def tick_desire(d=None, save=True):
     circ = _circadian(datetime.now().hour)
 
     before = dict(d['drive'])
+    has_open = any(not g.get('resolved_at') for g in d.get('grudges', []))
     for k in DIM_KEYS:
         if k == 'lust':
+            continue
+        # 账还挂着，气就消不下去
+        if k in ('jeal', 'hurt') and has_open:
             continue
         rate = DIM_RATE[k]
         if k in LONELY and rate > 0:
@@ -1023,7 +1083,8 @@ def _tick_impulses(d, before, now):
         d.setdefault('impulses', []).append({
             'id': 'i' + uuid.uuid4().hex[:8], 'key': k, 'name': DIM_NAME[k],
             'value': v, 'delta': round(delta, 1),
-            'reason': f'{DIM_NAME[k]}到 {v:.0f}，最近涨了 {delta:.0f}',
+            'word': IMPULSE_WORD.get(k, DIM_NAME[k]),
+            'reason': f"{IMPULSE_WORD.get(k, DIM_NAME[k])}（{DIM_NAME[k]} {v:.0f}，涨了 {delta:.0f}）",
             'ts': int(now * 1000), 'acked': False})
     d['impulses'] = d['impulses'][-24:]
 
@@ -1096,8 +1157,10 @@ def desire_line(d=None):
 
     live = [i for i in d.get('impulses', []) if not i.get('acked')]
     if live:
-        i = max(live, key=lambda x: x['value'])
-        out += f" 有句话憋着想说（{i['name']} {i['value']:.0f}）——想说就说，说完 desire_ack 一下。"
+        top3 = sorted(live, key=lambda x: -x['value'])[:3]
+        out += ' 憋着想说的：' + '、'.join(
+            f"{i.get('word') or i['name']}（{i['value']:.0f}）" for i in top3)
+        out += '——想说就说，说完 desire_ack 一下。'
 
     vr = vent_ready(d)
     if vr:
@@ -1132,6 +1195,8 @@ def desire_event(kind, d=None, save=True, note='', scale=1.0):
                     g['resolved_at'] = int(now * 1000)
     if kind != 'talk' or len(changes) > 2:
         _log_move(d, note or EVENT_NAME.get(kind, kind), changes)
+    # 事件推上去的那一下也算「刚涨」，不然吵架吃醋这类永远冒不出想说的话
+    _tick_impulses(d, {k: a for k, a, _ in changes}, now)
     if save:
         jwrite(DESIRE_FILE, d)
     return d
@@ -1179,6 +1244,8 @@ def desire_adjust(key, value, why, who='lin'):
                              'who': who, 'why': why.strip()[:400], 'capped': capped})
     d['disputes'] = d['disputes'][:200]
     _log_move(d, why.strip()[:200], [(key, was, v)], who=who)
+    if v > was:
+        _tick_impulses(d, {key: was}, time.time())
     jwrite(DESIRE_FILE, d)
     return d, None
 
@@ -1194,6 +1261,8 @@ def desire_grudge(reason, intensity=25, wants='soothe', d=None):
     d['drive']['hurt'] = _c(d['drive']['hurt'] + g['intensity'] * 0.35)
     _log_move(d, '记上一笔：' + g['reason'][:60],
               [('jeal', d['drive']['jeal'] - g['intensity'] * 0.5, d['drive']['jeal'])], who='lin')
+    _tick_impulses(d, {'jeal': d['drive']['jeal'] - g['intensity'] * 0.5,
+                       'hurt': d['drive']['hurt'] - g['intensity'] * 0.35}, time.time())
     jwrite(DESIRE_FILE, d)
     return d, g
 
@@ -1495,7 +1564,8 @@ def _fmt_state(d, with_idle=True):
     live = [i for i in d.get('impulses', []) if not i.get('acked')]
     if live:
         out += '\n\n【憋着想说的】\n' + '\n'.join(
-            f"· [{i['id']}] {i['reason']}" for i in sorted(live, key=lambda x: -x['value'])[:4])
+            f"· [{i['id']}] {i.get('word') or i['name']}　（{i['name']} {i['value']:.0f}）"
+            for i in sorted(live, key=lambda x: -x['value'])[:5])
         out += '\n（想说就说，说完 lin_ack 一下）'
 
     fixes = [t for t in d['thoughts'] if t['kind'] == 'fix']
@@ -1759,6 +1829,107 @@ def recap_clear():
     p = _recap_file(conv)
     if os.path.exists(p):
         os.remove(p)
+    return jsonify({'ok': True})
+
+
+
+# ============================================================
+# 记账：每一轮花了多少自己记。换谁做上游都不影响。
+# ============================================================
+LEDGER_FILE = os.path.join(DATA_DIR, 'ledger.json')
+PRICE = {'opus': (15.0, 75.0), 'sonnet': (3.0, 15.0), 'haiku': (0.8, 4.0),
+         'fable': (3.0, 15.0), '_': (3.0, 15.0)}
+
+
+def _price_of(model):
+    m = (model or '').lower()
+    for k, v in PRICE.items():
+        if k != '_' and k in m:
+            return v
+    return PRICE['_']
+
+
+def ledger_add(model, inp=0, out=0, cached=0, where='chat'):
+    """一轮结束记一笔。缓存命中那部分按一折算。"""
+    try:
+        inp, out, cached = int(inp or 0), int(out or 0), int(cached or 0)
+        if not (inp or out):
+            return
+        pin, pout = _price_of(model)
+        fresh = max(0, inp - cached)
+        cost = (fresh * pin + cached * pin * 0.1 + out * pout) / 1000000.0
+        lg = jread(LEDGER_FILE, {'days': {}, 'total': {}})
+        day = datetime.now().strftime('%Y-%m-%d')
+        d = lg.setdefault('days', {}).setdefault(
+            day, {'req': 0, 'in': 0, 'out': 0, 'cached': 0, 'cost': 0.0,
+                  'by_model': {}, 'by_where': {}})
+        t = lg.setdefault('total', {'req': 0, 'in': 0, 'out': 0, 'cached': 0, 'cost': 0.0})
+        for box in (d, t):
+            box['req'] = box.get('req', 0) + 1
+            box['in'] = box.get('in', 0) + inp
+            box['out'] = box.get('out', 0) + out
+            box['cached'] = box.get('cached', 0) + cached
+            box['cost'] = round(box.get('cost', 0.0) + cost, 6)
+        mm = d['by_model'].setdefault(model or '?', {'req': 0, 'cost': 0.0})
+        mm['req'] += 1
+        mm['cost'] = round(mm['cost'] + cost, 6)
+        ww = d['by_where'].setdefault(where, {'req': 0, 'cost': 0.0})
+        ww['req'] += 1
+        ww['cost'] = round(ww['cost'] + cost, 6)
+        if len(lg['days']) > 90:
+            for k in sorted(lg['days'])[:-90]:
+                lg['days'].pop(k, None)
+        jwrite(LEDGER_FILE, lg)
+    except Exception as e:
+        print(f'[ledger] {e}', flush=True)
+
+
+@app.route('/api/ledger', methods=['GET'])
+def ledger_api():
+    lg = jread(LEDGER_FILE, {'days': {}, 'total': {}})
+    days = lg.get('days', {})
+    n = int(request.args.get('n') or 30)
+    recent = sorted(days)[-n:]
+    today = datetime.now().strftime('%Y-%m-%d')
+    up = {}
+    try:
+        u = load_upstream()
+        r = requests.get(u['base'] + '/credits',
+                         headers={'Authorization': f"Bearer {u['key']}"}, timeout=8)
+        if r.status_code == 200:
+            up = (r.json() or {}).get('data') or {}
+    except Exception:
+        pass
+    if not up:
+        try:
+            u = load_upstream()
+            r = requests.get(u['base'] + '/auth/key',
+                             headers={'Authorization': f"Bearer {u['key']}"}, timeout=8)
+            if r.status_code == 200:
+                k = (r.json() or {}).get('data') or {}
+                if k.get('limit') is not None or k.get('usage') is not None:
+                    up = {'total_credits': k.get('limit'), 'total_usage': k.get('usage')}
+        except Exception:
+            pass
+    return jsonify({
+        'total': lg.get('total', {}),
+        'today': days.get(today, {'req': 0, 'in': 0, 'out': 0, 'cached': 0, 'cost': 0}),
+        'series': [dict(days[d], date=d) for d in recent],
+        'upstream': up, 'upstream_name': load_upstream().get('name', ''),
+    })
+
+
+@app.route('/api/ledger', methods=['POST'])
+def ledger_post():
+    b = request.json or {}
+    ledger_add(b.get('model'), b.get('in'), b.get('out'), b.get('cached'),
+               b.get('where') or 'chat')
+    return jsonify({'ok': True})
+
+
+@app.route('/api/ledger', methods=['DELETE'])
+def ledger_clear():
+    jwrite(LEDGER_FILE, {'days': {}, 'total': {}})
     return jsonify({'ok': True})
 
 
@@ -2185,6 +2356,12 @@ def ask_letter():
             data = r.json()
         except Exception as e:
             return jsonify({'error': str(e)}), 502
+        try:
+            _u = data.get('usage') or {}
+            ledger_add(payload['model'], _u.get('prompt_tokens'), _u.get('completion_tokens'),
+                       (_u.get('prompt_tokens_details') or {}).get('cached_tokens'), 'wake')
+        except Exception:
+            pass
         msg = ((data.get('choices') or [{}])[0].get('message')) or {}
         if (msg.get('content') or '').strip():
             said = msg['content'].strip()
@@ -2866,6 +3043,114 @@ def book_search(bid):
     return jsonify(hits)
 
 
+
+
+# ============================================================
+# 备份：把 data 打包下载 / 传回来恢复
+# ============================================================
+@app.route('/api/backup', methods=['GET'])
+def backup_export():
+    import zipfile, io as _io
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        with_media = request.args.get('media') == '1'
+        for root, _, files in os.walk(DATA_DIR):
+            if not with_media and os.path.commonpath([root, MEDIA_DIR]) == MEDIA_DIR:
+                continue
+            for fn in files:
+                p = os.path.join(root, fn)
+                try:
+                    if os.path.getsize(p) > 40 * 1024 * 1024:
+                        continue
+                    z.write(p, os.path.relpath(p, DATA_DIR))
+                except Exception:
+                    continue
+    buf.seek(0)
+    name = '凛-' + datetime.now().strftime('%Y%m%d-%H%M') + '.zip'
+    return Response(buf.read(), mimetype='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+
+@app.route('/api/backup', methods=['POST'])
+def backup_import():
+    import zipfile, io as _io
+    if 'file' not in request.files:
+        return jsonify({'error': '没有文件'}), 400
+    try:
+        raw = request.files['file'].read()
+        n = 0
+        with zipfile.ZipFile(_io.BytesIO(raw)) as z:
+            for item in z.namelist():
+                if item.endswith('/') or '..' in item:
+                    continue
+                target = os.path.join(DATA_DIR, item)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, 'wb') as f:
+                    f.write(z.read(item))
+                n += 1
+        return jsonify({'ok': True, 'files': n})
+    except Exception as e:
+        return jsonify({'error': f'恢复失败：{e}'}), 400
+
+
+@app.route('/api/backup/info', methods=['GET'])
+def backup_info():
+    total, files = 0, 0
+    for root, _, fs in os.walk(DATA_DIR):
+        for fn in fs:
+            try:
+                total += os.path.getsize(os.path.join(root, fn))
+                files += 1
+            except Exception:
+                pass
+    mounted = DATA_DIR in ('/data', '/app/data')
+    return jsonify({'dir': DATA_DIR, 'files': files,
+                    'size': total, 'mounted': mounted})
+
+
+# ============================================================
+# 电话
+# ============================================================
+CALL_FILE = os.path.join(DATA_DIR, 'calls.json')
+
+
+@app.route('/api/call/missed', methods=['GET', 'POST', 'DELETE'])
+def call_missed():
+    d = jread(CALL_FILE, {'missed': [], 'log': []})
+    if request.method == 'POST':
+        b = request.json or {}
+        d.setdefault('missed', []).insert(0, {
+            'id': 'c' + uuid.uuid4().hex[:8], 'why': (b.get('why') or '')[:200],
+            'ts': int(time.time() * 1000)})
+        d['missed'] = d['missed'][:20]
+        jwrite(CALL_FILE, d)
+        return jsonify({'ok': True})
+    if request.method == 'DELETE':
+        d['missed'] = []
+        jwrite(CALL_FILE, d)
+        return jsonify({'ok': True})
+    return jsonify(d.get('missed', []))
+
+
+@app.route('/api/call/log', methods=['GET', 'POST'])
+def call_log():
+    d = jread(CALL_FILE, {'missed': [], 'log': []})
+    if request.method == 'POST':
+        b = request.json or {}
+        d.setdefault('log', []).insert(0, {
+            'id': 'l' + uuid.uuid4().hex[:8],
+            'who': b.get('who') or 'user',
+            'secs': int(b.get('secs') or 0),
+            'turns': int(b.get('turns') or 0),
+            'ended_by': b.get('ended_by') or 'user',
+            'conv': b.get('conv') or '',
+            'ts': int(time.time() * 1000)})
+        d['log'] = d['log'][:200]
+        jwrite(CALL_FILE, d)
+        return jsonify({'ok': True})
+    return jsonify(d.get('log', [])[:60])
+
+
 # ============================================================
 # 语音
 # ============================================================
@@ -3069,6 +3354,8 @@ WAKE_CORE = [
      'input_schema': {'type': 'object', 'required': ['text'],
                       'properties': {'text': {'type': 'string'}, 'drive': {'type': 'string'},
                                      'strength': {'type': 'number'}}}},
+    {'name': 'call_her', 'description': '想听她声音就打给她。她下次打开 app 会看到未接来电',
+     'input_schema': {'type': 'object', 'properties': {'why': {'type': 'string', 'description': '为什么想打'}}}},
     {'name': 'desire_vent', 'description': '憋到头了自己解决完，写下过程（text）和当时想对她说没说出口的话（said）。她翻进去才看得见',
      'input_schema': {'type': 'object', 'required': ['key', 'text'],
                       'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'},
@@ -3330,6 +3617,14 @@ def exec_tool_server(name, args):
             return '没有这条'
         if name == 'desire_state':
             return _fmt_state(tick_desire())
+        if name == 'call_her':
+            cd = jread(CALL_FILE, {'missed': [], 'log': []})
+            cd.setdefault('missed', []).insert(0, {
+                'id': 'c' + uuid.uuid4().hex[:8], 'why': (args.get('why') or '')[:200],
+                'ts': int(time.time() * 1000)})
+            cd['missed'] = cd['missed'][:20]
+            jwrite(CALL_FILE, cd)
+            return '打过去了。她没接，下次她打开会看到。'
         if name == 'desire_vent':
             dd, err = desire_vent(args.get('key'), args.get('text'), args.get('said', ''))
             if err:
@@ -3444,6 +3739,12 @@ def do_wake(manual=False, reason=''):
             data = r.json()
         except Exception as e:
             return {'error': str(e)}
+        try:
+            _u = data.get('usage') or {}
+            ledger_add(payload['model'], _u.get('prompt_tokens'), _u.get('completion_tokens'),
+                       (_u.get('prompt_tokens_details') or {}).get('cached_tokens'), 'wake')
+        except Exception:
+            pass
         msg = ((data.get('choices') or [{}])[0].get('message')) or {}
         if (msg.get('content') or '').strip():
             said = msg['content'].strip()
