@@ -724,7 +724,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .call-row{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 15px;display:flex;align-items:center;gap:12px;}
 .call-ico{width:34px;height:34px;border-radius:50%;background:var(--input-bg);display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--accent);flex-shrink:0;}
 .call-ico.miss{color:#e8506a;}
-.call-b{flex:1;min-width:0;}
+.call-b{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border-radius:16px;background:var(--bubble-ai);border:1px solid var(--bubble-border-ai);max-width:100%;}
+.msg-row.user .call-b{background:var(--bubble-user);border-color:var(--bubble-border-user);}
+.cb-ico{width:19px;height:19px;flex-shrink:0;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.cb-ico.miss{stroke:#e8506a;}
+.cb-ico .x{stroke:#e8506a;}
+.call-b span{font-size:13.5px;color:var(--text);line-height:1.3;}
 .call-t{font-size:14px;color:var(--text);}
 .call-s{font-size:11px;color:var(--text-muted);margin-top:3px;}
 /* 聊天里的通话标记 */
