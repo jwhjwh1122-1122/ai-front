@@ -96,7 +96,7 @@ const T = {
   ],
 };
 // 只在对应房间里才发的
-const ROOM_ONLY = { reader: ['reader', 'coread'], stage: ['stage'] };
+const ROOM_ONLY = { reader: ['reader', 'coread'], stage: ['stage', 'netease'] };
 const GROUP_LABEL = {
   more: '再说一句', memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
@@ -511,7 +511,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _audio, _dur, _call, _callmark, ...rest } = m;
+    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -539,6 +539,7 @@ function roomNote() {
 }
 function extraNote() {
   const parts = [emojiNames(), roomNote()];
+  if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
 }
@@ -569,6 +570,7 @@ function msgBox() {
   if (roomCtx === 'reader') return $('split-msgs-reader');
   if (roomCtx === 'stage') return $('split-msgs-stage');
   if (roomCtx === 'coread') return $('split-msgs-coread');
+  if (roomCtx === 'netease') return $('split-msgs-netease');
   return $('messages');
 }
 function scrollBottom() { const m = msgBox(); if (m) m.scrollTop = m.scrollHeight; }
@@ -596,6 +598,27 @@ function renderBubble(text) {
     html = html.split('[' + item.name + ']').join(`<img src="${item.data}" style="width:120px;display:block;margin:4px 0;" alt="${item.name}">`);
   });
   return html;
+}
+// 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
+function addCallBubble(info, idx) {
+  const mine = info.side !== 'lin';
+  const row = document.createElement('div');
+  row.className = 'msg-row' + (mine ? ' user' : '');
+  if (idx !== undefined) row.dataset.msgIdx = idx;
+  const av = mine ? localStorage.getItem('chat-avatar-user') : localStorage.getItem('chat-avatar-ai');
+  const ah = av
+    ? `<div class="msg-avatar${mine ? '' : ' msg-avatar-lin'} has-img"><img src="${av}"></div>`
+    : `<div class="msg-avatar${mine ? '' : ' msg-avatar-lin'}">${mine ? '' : (CFG.name || '凛')[0]}</div>`;
+  const ico = info.kind === 'missed'
+    ? '<svg viewBox="0 0 24 24" class="cb-ico miss"><path d="M4 15c4-4 12-4 16 0l-2.5 2.5a1.5 1.5 0 0 1-2 .1l-1.6-1.3a1.5 1.5 0 0 0-1-.3h-2.8a1.5 1.5 0 0 0-1 .3l-1.6 1.3a1.5 1.5 0 0 1-2-.1z"/><path d="M15 9l5-5M20 9l-5-5" class="x"/></svg>'
+    : '<svg viewBox="0 0 24 24" class="cb-ico"><path d="M4 15c4-4 12-4 16 0l-2.5 2.5a1.5 1.5 0 0 1-2 .1l-1.6-1.3a1.5 1.5 0 0 0-1-.3h-2.8a1.5 1.5 0 0 0-1 .3l-1.6 1.3a1.5 1.5 0 0 1-2-.1z"/></svg>';
+  row.innerHTML = `${ah}<div class="bubble-wrap">
+    <div class="bubble call-b ${mine ? 'user' : 'ai'}">${ico}<span>${esc(info.label)}</span></div>
+    <div style="display:flex;align-items:center;gap:4px;${mine ? 'justify-content:flex-end;' : ''}">
+      <span class="msg-time">${info.time || ''}</span></div></div>`;
+  row.querySelector('.call-b').onclick = () => { if (typeof openCallLog === 'function') openCallLog(); };
+  msgBox().appendChild(row);
+  scrollBottom();
 }
 function addUserBubble(text, imgData, idx, audio) {
   const row = document.createElement('div'); row.className = 'msg-row user';
@@ -1140,10 +1163,11 @@ function loadConv(id) {
   const keep = roomCtx; roomCtx = null;
   messages.forEach((msg, i) => {
     if (msg._callmark) {
-      const d = document.createElement('div');
-      d.className = 'call-mark';
-      d.textContent = '☏ ' + String(msg.content || '').replace(/[（）]/g, '');
-      msgBox().appendChild(d);
+      addCallBubble(msg._callinfo || {
+        label: String(msg.content || '').replace(/[（）]/g, ''),
+        side: 'user', kind: 'call',
+        time: new Date(msg._ts || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      }, i);
       return;
     }
     if (msg.role === 'tool' || msg._internal) return;
