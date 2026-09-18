@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>音乐测试</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif;
+         background: #0d0d12; color: #eee; padding: 20px; }
+  h2 { font-weight: 600; font-size: 18px; }
+  .row { display: flex; gap: 8px; margin: 14px 0; }
+  input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid #333;
+          background: #1a1a22; color: #eee; font-size: 15px; }
+  button { padding: 12px 18px; border-radius: 12px; border: none;
+           background: #c73e5a; color: #fff; font-size: 15px; font-weight: 600; }
+  button:active { opacity: .7; }
+  .status { font-size: 13px; color: #999; margin: 8px 0; min-height: 20px; }
+  .song { display: flex; align-items: center; gap: 12px; padding: 11px 10px;
+          border-radius: 12px; background: #17171f; margin-bottom: 8px; }
+  .song img { width: 46px; height: 46px; border-radius: 8px; object-fit: cover; background: #222; }
+  .song .info { flex: 1; min-width: 0; }
+  .song .nm { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song .ar { font-size: 12px; color: #999; margin-top: 3px; }
+  .song .play { background: #c73e5a; padding: 8px 14px; border-radius: 20px; font-size: 13px; }
+  .nowplay { position: sticky; bottom: 0; background: #1a1a22; border-radius: 14px;
+             padding: 14px; margin-top: 16px; border: 1px solid #333; }
+  .nowplay .t { font-size: 14px; margin-bottom: 8px; }
+  audio { width: 100%; }
+</style>
+</head>
+<body>
+  <h2>🎵 网易云测试</h2>
+  <div class="status" id="account">检查登录状态…</div>
+  <div class="row">
+    <input id="q" placeholder="搜歌名/歌手，如 晴天 周杰伦" enterkeyhint="search">
+    <button onclick="doSearch()">搜</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div id="list"></div>
+  <div class="nowplay" id="nowplay" style="display:none;">
+    <div class="t" id="np-title">—</div>
+    <audio id="audio" controls autoplay></audio>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function checkAccount() {
+  try {
+    const r = await fetch('/api/music/account').then(r => r.json());
+    if (r.logged_in) $('account').textContent = '✅ 已登录：' + (r.account.nickname || r.account.userId);
+    else $('account').textContent = '⚠️ 未登录（用环境变量 cookie 也能测放歌）';
+  } catch (e) { $('account').textContent = '状态检查失败：' + e; }
+}
+
+async function doSearch() {
+  const q = $('q').value.trim();
+  if (!q) return;
+  $('status').textContent = '搜索中…';
+  $('list').innerHTML = '';
+  try {
+    const r = await fetch('/api/music/search?q=' + encodeURIComponent(q)).then(r => r.json());
+    if (!r.ok) { $('status').textContent = '❌ ' + r.error; return; }
+    if (!r.songs.length) { $('status').textContent = '没搜到'; return; }
+    $('status').textContent = '找到 ' + r.songs.length + ' 首';
+    r.songs.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'song';
+      div.innerHTML = `<img src="${s.cover || ''}" onerror="this.style.opacity=.2">
+        <div class="info"><div class="nm">${s.name}</div><div class="ar">${s.artist}</div></div>
+        <div class="play">播放</div>`;
+      div.querySelector('.play').onclick = () => play(s);
+      $('list').appendChild(div);
+    });
+  } catch (e) { $('status').textContent = '❌ ' + e; }
+}
+
+async function play(s) {
+  $('nowplay').style.display = 'block';
+  $('np-title').textContent = '加载中… ' + s.name + ' - ' + s.artist;
+  try {
+    const r = await fetch('/api/music/url?id=' + s.id).then(r => r.json());
+    if (!r.ok) { $('np-title').textContent = '❌ ' + r.error; return; }
+    $('np-title').textContent = '▶️ ' + s.name + ' - ' + s.artist;
+    const a = $('audio');
+    a.src = r.url;   // 走缓存代理 /api/music/stream
+    a.play().catch(e => { $('np-title').textContent = '点一下播放键 ▶️ ' + s.name; });
+  } catch (e) { $('np-title').textContent = '❌ ' + e; }
+}
+
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+checkAccount();
+</script>
+</body>
+</html>
