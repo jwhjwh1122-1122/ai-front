@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=20">
+<link rel="stylesheet" href="/static/style.css?v=22">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -286,7 +286,10 @@ window.addEventListener('error', function (e) {
       <div class="settings-label">共读服务</div>
       <div class="settings-sub">书房里那个「共读」按钮打开的地址。留空就不显示那个按钮。</div>
       <input class="mini-input" id="coread-url" style="margin-top:8px;" placeholder="https://readdd.zeabur.app" autocapitalize="off">
-      <button class="btn-ghost" id="btn-coread-save" style="width:100%;margin-top:8px;font-size:13px;padding:9px;">保存</button>
+      <div class="settings-label" style="margin-top:12px;">音乐服务</div>
+      <div class="settings-sub">听音房里「网易云」打开的地址。留空就不显示。</div>
+      <input class="mini-input" id="netease-url" style="margin-top:8px;" placeholder="https://你的-eryu.zeabur.app" autocapitalize="off">
+      <button class="btn-ghost" id="btn-coread-save" style="width:100%;margin-top:10px;font-size:13px;padding:9px;">保存</button>
     </div>
 
     <div class="settings-card">
@@ -555,6 +558,42 @@ window.addEventListener('error', function (e) {
   <div class="list-wrap" id="calllog-list"></div>
 </div>
 
+<!-- ============ 网易云（外部服务） ============ -->
+<div class="room" id="netease" style="background:var(--bg);">
+  <div class="reader-head" style="background:var(--bg2);">
+    <div class="reader-book" id="netease-title">一起听</div>
+    <div class="reader-size">
+      <span id="netease-reload" title="重新加载">↻</span>
+      <span id="netease-open" title="在浏览器打开">↗</span>
+      <span id="netease-close" style="margin-left:4px;">✕</span>
+    </div>
+  </div>
+  <div class="split">
+    <div class="split-top" style="position:relative;">
+      <iframe id="netease-frame" style="flex:1;width:100%;border:none;background:var(--bg);"
+        allow="autoplay; clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+      <div id="netease-fail" style="display:none;position:absolute;inset:0;background:var(--bg);
+        align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:30px;text-align:center;">
+        <div style="font-size:14px;color:var(--text-muted);line-height:2;">
+          加载不出来<br><span style="font-size:12px;opacity:.75;">先去设置里填音乐服务的地址</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-ghost" id="netease-switch" style="padding:10px 18px;flex:none;font-size:13px;">换个方式试</button>
+          <button class="btn-solid" id="netease-fallback" style="padding:10px 22px;flex:none;">在浏览器打开</button>
+        </div>
+      </div>
+    </div>
+    <div class="split-bar" data-split="netease"><span id="split-hint-netease">收起</span></div>
+    <div class="split-chat" id="split-chat-netease">
+      <div class="split-msgs" id="split-msgs-netease"></div>
+      <div class="inputbar">
+        <textarea class="split-input" data-ctx="netease" placeholder="一起听，说点什么…" rows="1"></textarea>
+        <button class="send-btn" data-splitsend="netease">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ 共读（外部服务，嵌在里面） ============ -->
 <div class="room" id="coread" style="background:var(--bg);">
   <div class="reader-head" style="background:var(--bg2);">
@@ -572,9 +611,12 @@ window.addEventListener('error', function (e) {
       <div id="coread-fail" style="display:none;position:absolute;inset:0;background:var(--bg);
         align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:30px;text-align:center;">
         <div style="font-size:14px;color:var(--text-muted);line-height:2;">
-          这个页面不让嵌进来<br><span style="font-size:12px;opacity:.75;">有些服务禁止被别的网页套着显示</span>
+          这个页面加载不出来<br><span style="font-size:12px;opacity:.75;">可能是被拒绝嵌套，或者服务没起来</span>
         </div>
-        <button class="btn-solid" id="coread-fallback" style="padding:10px 26px;flex:none;">在浏览器打开</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-ghost" id="coread-switch" style="padding:10px 18px;flex:none;font-size:13px;">换个方式试</button>
+          <button class="btn-solid" id="coread-fallback" style="padding:10px 22px;flex:none;">在浏览器打开</button>
+        </div>
       </div>
     </div>
     <div class="split-bar" data-split="coread"><span id="split-hint-coread">收起</span></div>
@@ -605,6 +647,7 @@ window.addEventListener('error', function (e) {
   <div class="room-head">
     <div><div class="room-title">听音房</div><div class="room-sub" id="music-sub">—</div></div>
     <div class="room-acts">
+      <button class="room-btn" id="btn-netease">网易云</button>
       <button class="room-btn" id="btn-upload-music">放 碟</button>
       <button class="room-x" data-close="musicroom">✕</button>
     </div>
@@ -1068,7 +1111,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=20"></script>
-<script src="/static/rooms.js?v=20"></script>
+<script src="/static/app.js?v=22"></script>
+<script src="/static/rooms.js?v=22"></script>
 </body>
 </html>
