@@ -276,7 +276,7 @@ function coreadUrl() {
   return (localStorage.getItem('coread-url') || 'https://readdd.zeabur.app').trim();
 }
 let coreadTimer = null;
-function coreadViaProxy() { return localStorage.getItem('coread-direct') !== '1'; }
+function coreadViaProxy() { return localStorage.getItem('coread-proxy') === '1'; }
 
 async function openCoread() {
   const url = coreadUrl();
@@ -284,7 +284,7 @@ async function openCoread() {
   roomCtx = 'coread';
   $('coread').classList.add('open');
   $('coread-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0]
-    + (coreadViaProxy() ? '' : '　直连');
+    + (coreadViaProxy() ? '　代理' : '');
   const f = $('coread-frame'), fail = $('coread-fail');
   fail.style.display = 'none';
   f.style.visibility = 'hidden';
@@ -2118,9 +2118,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('coread-fallback').onclick = () => window.open(coreadUrl(), '_blank');
   const sw = $('coread-switch');
   if (sw) sw.onclick = () => {
-    const direct = localStorage.getItem('coread-direct') === '1';
-    localStorage.setItem('coread-direct', direct ? '0' : '1');
-    toast(direct ? '改回代理模式' : '改成直连');
+    const proxy = localStorage.getItem('coread-proxy') === '1';
+    localStorage.setItem('coread-proxy', proxy ? '0' : '1');
+    toast(proxy ? '改成直连' : '改回代理模式');
     $('coread-fail').style.display = 'none';
     openCoread();
   };
