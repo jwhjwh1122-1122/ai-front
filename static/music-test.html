@@ -2,95 +2,354 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>音乐测试</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>一起听</title>
 <style>
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif;
-         background: #0d0d12; color: #eee; padding: 20px; }
-  h2 { font-weight: 600; font-size: 18px; }
-  .row { display: flex; gap: 8px; margin: 14px 0; }
-  input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid #333;
-          background: #1a1a22; color: #eee; font-size: 15px; }
-  button { padding: 12px 18px; border-radius: 12px; border: none;
-           background: #c73e5a; color: #fff; font-size: 15px; font-weight: 600; }
-  button:active { opacity: .7; }
-  .status { font-size: 13px; color: #999; margin: 8px 0; min-height: 20px; }
-  .song { display: flex; align-items: center; gap: 12px; padding: 11px 10px;
-          border-radius: 12px; background: #17171f; margin-bottom: 8px; }
-  .song img { width: 46px; height: 46px; border-radius: 8px; object-fit: cover; background: #222; }
-  .song .info { flex: 1; min-width: 0; }
-  .song .nm { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .song .ar { font-size: 12px; color: #999; margin-top: 3px; }
-  .song .play { background: #c73e5a; padding: 8px 14px; border-radius: 20px; font-size: 13px; }
-  .nowplay { position: sticky; bottom: 0; background: #1a1a22; border-radius: 14px;
-             padding: 14px; margin-top: 16px; border: 1px solid #333; }
-  .nowplay .t { font-size: 14px; margin-bottom: 8px; }
-  audio { width: 100%; }
+:root{
+  --bg:#f0f0f3;--bg2:rgba(255,255,255,.75);--text:#2c2c3a;--text-muted:#888;
+  --accent:#9999bb;--border:rgba(180,180,200,.3);--input-bg:rgba(255,255,255,.7);
+  --paper:#f8f4ee;--room:#ece6dd;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb,var(--accent) 12%,transparent), transparent 42%),
+    radial-gradient(circle at 88% 8%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 40%),
+    var(--bg);
+  color:var(--text);overflow:hidden;position:fixed;inset:0;
+  display:flex;flex-direction:column;
+}
+
+/* ── 顶栏 ── */
+.top{display:flex;align-items:center;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top) + 12px) 18px 10px;flex-shrink:0;}
+.top .t{font-size:17px;font-weight:600;letter-spacing:2px;}
+.top .sub{font-size:11px;color:var(--text-muted);margin-top:2px;}
+.icbtn{width:36px;height:36px;border-radius:50%;border:none;background:var(--bg2);
+  color:var(--accent);font-size:17px;display:grid;place-items:center;
+  backdrop-filter:blur(10px);box-shadow:0 2px 8px var(--border);}
+
+/* ── 滚动区 ── */
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 18px 150px;}
+.scroll::-webkit-scrollbar{display:none;}
+
+/* ── iPod ── */
+.ipod-stage{display:flex;justify-content:center;padding:14px 0 22px;}
+.ipod{
+  width:238px;padding:20px 20px 26px;border-radius:26px;position:relative;
+  background:linear-gradient(155deg,#ffffff 0%,#f4f4f7 48%,#e8e8ee 100%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.9) inset,
+    0 22px 44px -20px rgba(60,60,90,.5),
+    0 6px 14px -8px rgba(60,60,90,.3);
+}
+/* 屏幕 */
+.ipod-screen{
+  border-radius:8px;padding:10px 11px;margin-bottom:22px;
+  background:linear-gradient(180deg,#e9edf0,#dfe4e8);
+  box-shadow:0 1px 2px rgba(255,255,255,.7) inset, 0 2px 6px rgba(0,0,0,.18) inset;
+  border:1px solid rgba(120,130,150,.35);
+}
+.scr-bar{display:flex;align-items:center;justify-content:space-between;
+  font-size:10px;color:#3a4550;margin-bottom:8px;font-weight:600;}
+.scr-bar .np{letter-spacing:.3px;}
+.scr-bar .batt{width:22px;height:10px;border:1px solid #566;border-radius:2px;position:relative;padding:1px;}
+.scr-bar .batt::after{content:"";display:block;height:100%;
+  width:var(--batt,70%);background:color-mix(in srgb,var(--accent) 70%,#4a5);border-radius:1px;}
+.scr-body{display:flex;gap:10px;align-items:center;min-height:64px;}
+.scr-cover{width:60px;height:60px;border-radius:5px;object-fit:cover;flex-shrink:0;
+  background:#c5ccd2 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="%237a8590" stroke-width="1.4"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>') center/22px no-repeat;}
+.scr-info{flex:1;min-width:0;}
+.scr-info .nm{font-size:13px;font-weight:700;color:#28323c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-info .ar{font-size:11px;color:#5a6570;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-info .idx{font-size:10px;color:#7a8590;margin-top:5px;}
+.scr-prog{margin-top:9px;display:flex;align-items:center;gap:6px;font-size:9px;color:#5a6570;}
+.scr-track{flex:1;height:5px;border-radius:3px;background:rgba(120,140,160,.35);overflow:hidden;}
+.scr-fill{height:100%;width:0%;background:color-mix(in srgb,var(--accent) 78%,#4a6);border-radius:3px;}
+
+/* 点击轮 */
+.wheel{width:172px;height:172px;border-radius:50%;margin:0 auto;position:relative;
+  background:radial-gradient(circle at 50% 40%,#fbfbfc,#e7e7ec 70%,#dcdce3);
+  box-shadow:0 1px 2px rgba(255,255,255,.9) inset, 0 -1px 3px rgba(0,0,0,.06) inset,
+    0 4px 10px -4px rgba(60,60,90,.35);
+  display:grid;place-items:center;}
+.wheel .lbl{position:absolute;font-size:10px;font-weight:700;color:#8a8f9a;letter-spacing:1px;}
+.wheel .lbl.menu{top:14px;}
+.wheel .lbl.prev{left:16px;top:50%;transform:translateY(-50%);font-size:15px;}
+.wheel .lbl.next{right:16px;top:50%;transform:translateY(-50%);font-size:15px;}
+.wheel .lbl.play{bottom:14px;font-size:15px;}
+.wheel-btn{position:absolute;width:44px;height:44px;border-radius:50%;background:transparent;border:none;}
+.wheel-btn.b-menu{top:6px;left:50%;transform:translateX(-50%);}
+.wheel-btn.b-prev{left:8px;top:50%;transform:translateY(-50%);}
+.wheel-btn.b-next{right:8px;top:50%;transform:translateY(-50%);}
+.wheel-btn.b-play{bottom:6px;left:50%;transform:translateX(-50%);}
+.center{width:58px;height:58px;border-radius:50%;
+  background:radial-gradient(circle at 50% 42%,#ffffff,#eaeaef 72%,#dedee5);
+  box-shadow:0 1px 2px rgba(255,255,255,.9) inset,0 2px 5px -1px rgba(60,60,90,.3);
+  border:none;display:grid;place-items:center;color:var(--accent);font-size:20px;}
+
+/* ── 网易云原生控件区(iPod下方) ── */
+.now{margin-top:4px;padding:0 4px;}
+.now-title{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.now-artist{font-size:13px;color:var(--text-muted);margin-top:3px;}
+.now-track{margin-top:16px;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text-muted);}
+.now-bar{flex:1;height:3px;border-radius:2px;background:var(--border);position:relative;cursor:pointer;}
+.now-bar-fill{position:absolute;left:0;top:0;height:100%;width:0%;border-radius:2px;background:var(--accent);}
+.now-bar-dot{position:absolute;top:50%;left:0%;width:11px;height:11px;border-radius:50%;
+  background:var(--accent);transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.2);}
+.now-ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding:0 4px;}
+.ctrl-b{background:none;border:none;color:var(--text);display:grid;place-items:center;}
+.ctrl-b svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.ctrl-b.main{width:58px;height:58px;border-radius:50%;background:var(--accent);color:#fff;}
+.ctrl-b.main svg{width:26px;height:26px;fill:currentColor;stroke:none;}
+
+/* ── 歌词 ── */
+.lyric{margin-top:22px;text-align:center;padding:0 10px;min-height:66px;}
+.lyric .cur{font-size:15px;font-weight:600;color:var(--text);line-height:1.6;}
+.lyric .nxt{font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;}
+.lyric .tr{font-size:11px;color:var(--text-muted);opacity:.7;margin-top:3px;}
+
+/* ── 搜索抽屉 ── */
+.sheet{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.3);
+  display:none;align-items:flex-end;backdrop-filter:blur(2px);}
+.sheet.open{display:flex;}
+.sheet-inner{width:100%;max-height:82vh;background:var(--bg);border-radius:20px 20px 0 0;
+  padding:16px 16px calc(env(safe-area-inset-bottom) + 16px);display:flex;flex-direction:column;}
+.sheet-grab{width:38px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 14px;}
+.search-row{display:flex;gap:8px;}
+.search-row input{flex:1;padding:12px 14px;border-radius:13px;border:1px solid var(--border);
+  background:var(--input-bg);color:var(--text);font-size:15px;outline:none;}
+.search-row button{padding:0 20px;border-radius:13px;border:none;background:var(--accent);
+  color:#fff;font-size:15px;font-weight:600;}
+.results{flex:1;overflow-y:auto;margin-top:14px;}
+.results::-webkit-scrollbar{display:none;}
+.res{display:flex;align-items:center;gap:11px;padding:9px 8px;border-radius:12px;}
+.res:active{background:var(--bg2);}
+.res img{width:44px;height:44px;border-radius:7px;object-fit:cover;background:var(--border);flex-shrink:0;}
+.res .info{flex:1;min-width:0;}
+.res .info .nm{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res .info .ar{font-size:12px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res .go{color:var(--accent);font-size:22px;}
+.hint{text-align:center;color:var(--text-muted);font-size:13px;padding:30px;}
 </style>
 </head>
 <body>
-  <h2>🎵 网易云测试</h2>
-  <div class="status" id="account">检查登录状态…</div>
-  <div class="row">
-    <input id="q" placeholder="搜歌名/歌手，如 晴天 周杰伦" enterkeyhint="search">
-    <button onclick="doSearch()">搜</button>
+<audio id="audio"></audio>
+
+<div class="top">
+  <div>
+    <div class="t">一起听</div>
+    <div class="sub" id="sub">未选歌</div>
   </div>
-  <div class="status" id="status"></div>
-  <div id="list"></div>
-  <div class="nowplay" id="nowplay" style="display:none;">
-    <div class="t" id="np-title">—</div>
-    <audio id="audio" controls autoplay></audio>
+  <button class="icbtn icbtn" id="btn-search">🔍</button>
+</div>
+
+<div class="scroll">
+  <!-- iPod -->
+  <div class="ipod-stage">
+    <div class="ipod">
+      <div class="ipod-screen">
+        <div class="scr-bar">
+          <span class="np" id="scr-np">Now Playing</span>
+          <span class="batt"></span>
+        </div>
+        <div class="scr-body">
+          <img class="scr-cover" id="scr-cover" src="" alt="">
+          <div class="scr-info">
+            <div class="nm" id="scr-nm">还没有歌</div>
+            <div class="ar" id="scr-ar">右上角搜一首</div>
+            <div class="idx" id="scr-idx"></div>
+          </div>
+        </div>
+        <div class="scr-prog">
+          <span id="scr-cur">0:00</span>
+          <div class="scr-track"><div class="scr-fill" id="scr-fill"></div></div>
+          <span id="scr-dur">0:00</span>
+        </div>
+      </div>
+      <div class="wheel">
+        <span class="lbl menu">MENU</span>
+        <span class="lbl prev">⏮</span>
+        <span class="lbl next">⏭</span>
+        <span class="lbl play">⏯</span>
+        <button class="wheel-btn b-menu" id="w-menu"></button>
+        <button class="wheel-btn b-prev" id="w-prev"></button>
+        <button class="wheel-btn b-next" id="w-next"></button>
+        <button class="wheel-btn b-play" id="w-play"></button>
+        <button class="center" id="w-center">♪</button>
+      </div>
+    </div>
   </div>
+
+  <!-- 网易云原生控件 -->
+  <div class="now">
+    <div class="now-title" id="now-title">还没有歌</div>
+    <div class="now-artist" id="now-artist">在上面搜一首歌，点开始听</div>
+    <div class="now-track">
+      <span id="now-cur">0:00</span>
+      <div class="now-bar" id="now-bar">
+        <div class="now-bar-fill" id="now-fill"></div>
+        <div class="now-bar-dot" id="now-dot"></div>
+      </div>
+      <span id="now-dur">0:00</span>
+    </div>
+    <div class="now-ctrl">
+      <button class="ctrl-b" id="c-shuffle" title="随机">
+        <svg viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+      </button>
+      <button class="ctrl-b" id="c-prev">
+        <svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8zM5 19V5"/></svg>
+      </button>
+      <button class="ctrl-b main" id="c-play">
+        <svg viewBox="0 0 24 24" id="c-play-icon"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="ctrl-b" id="c-next">
+        <svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8zM19 5v14"/></svg>
+      </button>
+      <button class="ctrl-b" id="c-list" title="播放列表">
+        <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      </button>
+    </div>
+    <div class="lyric" id="lyric">
+      <div class="cur" id="ly-cur"></div>
+      <div class="nxt" id="ly-nxt"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 搜索抽屉 -->
+<div class="sheet" id="sheet">
+  <div class="sheet-inner">
+    <div class="sheet-grab"></div>
+    <div class="search-row">
+      <input id="q" placeholder="搜歌名 / 歌手" enterkeyhint="search">
+      <button id="btn-do-search">搜</button>
+    </div>
+    <div class="results" id="results">
+      <div class="hint">搜一首想听的歌</div>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
+const audio = $('audio');
+let cur = null;        // 当前歌 {id,name,artist,cover}
+let lyrics = [];       // [{t, text, tr}]
+let API = '';          // 同源
 
-async function checkAccount() {
-  try {
-    const r = await fetch('/api/music/account').then(r => r.json());
-    if (r.logged_in) $('account').textContent = '✅ 已登录：' + (r.account.nickname || r.account.userId);
-    else $('account').textContent = '⚠️ 未登录（用环境变量 cookie 也能测放歌）';
-  } catch (e) { $('account').textContent = '状态检查失败：' + e; }
-}
+// 主题跟随父窗口（嵌进 app 时）
+try {
+  const pt = window.parent?.document?.body?.className || '';
+  if (pt) document.body.className = pt;
+} catch(e){}
 
-async function doSearch() {
-  const q = $('q').value.trim();
-  if (!q) return;
-  $('status').textContent = '搜索中…';
-  $('list').innerHTML = '';
-  try {
-    const r = await fetch('/api/music/search?q=' + encodeURIComponent(q)).then(r => r.json());
-    if (!r.ok) { $('status').textContent = '❌ ' + r.error; return; }
-    if (!r.songs.length) { $('status').textContent = '没搜到'; return; }
-    $('status').textContent = '找到 ' + r.songs.length + ' 首';
-    r.songs.forEach(s => {
-      const div = document.createElement('div');
-      div.className = 'song';
-      div.innerHTML = `<img src="${s.cover || ''}" onerror="this.style.opacity=.2">
+function fmt(s){ s=Math.max(0,s|0); return (s/60|0)+':'+String(s%60).padStart(2,'0'); }
+
+async function doSearch(){
+  const q = $('q').value.trim(); if(!q) return;
+  $('results').innerHTML = '<div class="hint">搜索中…</div>';
+  try{
+    const r = await fetch(API+'/api/music/search?q='+encodeURIComponent(q)).then(r=>r.json());
+    if(!r.ok){ $('results').innerHTML='<div class="hint">'+r.error+'</div>'; return; }
+    if(!r.songs.length){ $('results').innerHTML='<div class="hint">没搜到</div>'; return; }
+    $('results').innerHTML='';
+    r.songs.forEach(s=>{
+      const d=document.createElement('div'); d.className='res';
+      d.innerHTML=`<img src="${s.cover||''}" onerror="this.style.opacity=.25">
         <div class="info"><div class="nm">${s.name}</div><div class="ar">${s.artist}</div></div>
-        <div class="play">播放</div>`;
-      div.querySelector('.play').onclick = () => play(s);
-      $('list').appendChild(div);
+        <div class="go">＋</div>`;
+      d.onclick=()=>{ playSong(s); $('sheet').classList.remove('open'); };
+      $('results').appendChild(d);
     });
-  } catch (e) { $('status').textContent = '❌ ' + e; }
+  }catch(e){ $('results').innerHTML='<div class="hint">出错：'+e+'</div>'; }
 }
 
-async function play(s) {
-  $('nowplay').style.display = 'block';
-  $('np-title').textContent = '加载中… ' + s.name + ' - ' + s.artist;
-  try {
-    const r = await fetch('/api/music/url?id=' + s.id).then(r => r.json());
-    if (!r.ok) { $('np-title').textContent = '❌ ' + r.error; return; }
-    $('np-title').textContent = '▶️ ' + s.name + ' - ' + s.artist;
-    const a = $('audio');
-    a.src = r.url;   // 走缓存代理 /api/music/stream
-    a.play().catch(e => { $('np-title').textContent = '点一下播放键 ▶️ ' + s.name; });
-  } catch (e) { $('np-title').textContent = '❌ ' + e; }
+async function playSong(s){
+  cur = s;
+  $('scr-nm').textContent=s.name; $('scr-ar').textContent=s.artist;
+  $('now-title').textContent=s.name; $('now-artist').textContent=s.artist;
+  $('sub').textContent='加载中…';
+  if(s.cover) $('scr-cover').src=s.cover;
+  // 取流
+  try{
+    const r=await fetch(API+'/api/music/url?id='+s.id).then(r=>r.json());
+    if(!r.ok){ $('sub').textContent='✗ '+r.error; return; }
+    audio.src=r.url; await audio.play().catch(()=>{});
+    $('sub').textContent='♪ 正在听';
+  }catch(e){ $('sub').textContent='✗ '+e; }
+  loadLyric(s.id);
 }
 
-$('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-checkAccount();
+async function loadLyric(id){
+  lyrics=[]; $('ly-cur').textContent=''; $('ly-nxt').textContent='';
+  try{
+    const r=await fetch(API+'/api/music/lyric?id='+id).then(r=>r.json());
+    if(!r.ok||!r.lyric) return;
+    const trMap={};
+    (r.tlyric||'').split('\n').forEach(l=>{ const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/); if(m){ const t=(+m[1])*60+(+m[2])+(+m[3])/1000; trMap[Math.round(t)]=m[4].trim(); }});
+    r.lyric.split('\n').forEach(l=>{
+      const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/);
+      if(m){ const t=(+m[1])*60+(+m[2])+(+m[3])/1000; const text=m[4].trim();
+        if(text) lyrics.push({t, text, tr:trMap[Math.round(t)]||''}); }
+    });
+  }catch(e){}
+}
+
+function updLyric(t){
+  if(!lyrics.length) return;
+  let i=0; for(let j=0;j<lyrics.length;j++){ if(lyrics[j].t<=t) i=j; else break; }
+  $('ly-cur').textContent=lyrics[i]?.text||'';
+  $('ly-nxt').innerHTML=(lyrics[i]?.tr?'<span class="tr">'+lyrics[i].tr+'</span>':'')
+    + (lyrics[i+1]?'<div>'+lyrics[i+1].text+'</div>':'');
+}
+
+// audio 事件
+audio.addEventListener('timeupdate',()=>{
+  const t=audio.currentTime, d=audio.duration||0;
+  const p=d?t/d*100:0;
+  $('scr-fill').style.width=p+'%'; $('now-fill').style.width=p+'%'; $('now-dot').style.left=p+'%';
+  $('scr-cur').textContent=fmt(t); $('now-cur').textContent=fmt(t);
+  $('scr-dur').textContent=fmt(d); $('now-dur').textContent=fmt(d);
+  updLyric(t);
+});
+audio.addEventListener('play',()=>{ $('c-play-icon').innerHTML='<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>'; });
+audio.addEventListener('pause',()=>{ $('c-play-icon').innerHTML='<path d="M8 5v14l11-7z"/>'; });
+
+// 控制
+function togglePlay(){ if(!cur) { $('sheet').classList.add('open'); return; } audio.paused?audio.play():audio.pause(); }
+$('c-play').onclick=togglePlay;
+$('w-play').onclick=togglePlay;
+$('w-center').onclick=()=>$('sheet').classList.add('open');
+$('c-list').onclick=()=>$('sheet').classList.add('open');
+$('btn-search').onclick=()=>$('sheet').classList.add('open');
+$('btn-do-search').onclick=doSearch;
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter')doSearch(); });
+$('sheet').addEventListener('click',e=>{ if(e.target===$('sheet'))$('sheet').classList.remove('open'); });
+
+// 进度拖动
+$('now-bar').addEventListener('click',e=>{
+  if(!audio.duration)return;
+  const r=$('now-bar').getBoundingClientRect();
+  audio.currentTime=(e.clientX-r.left)/r.width*audio.duration;
+});
+
+// 推歌轮询（凛/claude.ai 推的歌自动播）
+let lastSeq=0;
+setInterval(async()=>{
+  try{
+    const r=await fetch(API+'/api/music/remote').then(r=>r.json());
+    const c=r.command;
+    if(c&&c.seq&&c.seq!==lastSeq){
+      lastSeq=c.seq;
+      if(c.action==='play'&&c.id){
+        playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});
+      }else if(c.action==='stop'){ audio.pause(); }
+    }
+  }catch(e){}
+},5000);
 </script>
 </body>
 </html>
