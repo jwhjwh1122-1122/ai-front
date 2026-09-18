@@ -228,6 +228,50 @@ class NeteaseClient:
 
     # ── 搜歌 / 取流 / 歌词 ────────────────────────────────────────────────
     def search(self, keyword, limit=20):
+        # 优先走 eapi(带你的登录态，最稳)；失败再退到公开接口
+        try:
+            j = self.eapi('/api/cloudsearch/pc',
+                          {'s': keyword, 'type': 1, 'limit': limit, 'offset': 0})
+            songs = (j.get('result', {}) or {}).get('songs', []) or []
+            if songs:
+                return self._fmt_songs(songs)
+        except Exception:
+            pass
+        # 退路：公开搜索接口（不加密）
+        try:
+            r = requests.get('https://music.163.com/api/search/get/web',
+                             params={'s': keyword, 'type': 1, 'limit': limit, 'offset': 0},
+                             headers={'User-Agent': UA_PC, 'Referer': 'https://music.163.com',
+                                      'Cookie': self.cookie() if hasattr(self, 'cookie') else self.store.cookie()},
+                             timeout=12)
+            songs = (r.json().get('result', {}) or {}).get('songs', []) or []
+            return self._fmt_songs(songs, plain=True)
+        except Exception:
+            return []
+
+    def _fmt_songs(self, songs, plain=False):
+        out = []
+        for s in songs:
+            if plain:
+                # 老接口字段：artists / album
+                out.append({
+                    'id': s['id'], 'name': s['name'],
+                    'artist': ' / '.join(a['name'] for a in s.get('artists', [])),
+                    'album': (s.get('album') or {}).get('name', ''),
+                    'cover': (s.get('album') or {}).get('picUrl', ''),
+                    'duration': s.get('duration', 0),
+                })
+            else:
+                out.append({
+                    'id': s['id'], 'name': s['name'],
+                    'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
+                    'album': (s.get('al') or {}).get('name', ''),
+                    'cover': (s.get('al') or {}).get('picUrl', ''),
+                    'duration': s.get('dt', 0),
+                })
+        return out
+
+    def _old_search_removed(self, keyword, limit=20):
         r = requests.post('https://music.163.com/weapi/cloudsearch/get/web',
                           data=weapi_encrypt({'s': keyword, 'type': 1, 'limit': limit, 'offset': 0}),
                           headers=self._headers(pc=True), timeout=12)
@@ -356,6 +400,43 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if acc and acc.get('userId'):
             return jsonify({'ok': True, 'logged_in': True, 'account': acc})
         return jsonify({'ok': True, 'logged_in': False})
+
+    @app.route('/api/music/diag', methods=['GET'])
+    def music_diag():
+        """诊断：cookie 读到没、登录态、各接口原始返回。"""
+        out = {'has_crypto': _HAS_CRYPTO}
+        ck = store.cookie()
+        out['cookie_len'] = len(ck)
+        out['cookie_has_music_u'] = 'MUSIC_U=' in ck
+        out['cookie_has_csrf'] = '__csrf=' in ck
+        out['csrf_value'] = nc._csrf()[:8] + '...' if nc._csrf() else ''
+        # 试登录态
+        try:
+            acc = nc.login_status()
+            out['login_status'] = acc or 'None'
+        except Exception as e:
+            out['login_status_error'] = str(e)[:150]
+        # 试 eapi 搜索
+        try:
+            j = nc.eapi('/api/cloudsearch/pc',
+                        {'s': '晴天', 'type': 1, 'limit': 3, 'offset': 0})
+            out['eapi_search_code'] = j.get('code')
+            out['eapi_search_count'] = len((j.get('result', {}) or {}).get('songs', []) or [])
+            out['eapi_raw_keys'] = list(j.keys())[:6]
+        except Exception as e:
+            out['eapi_search_error'] = str(e)[:150]
+        # 试公开搜索
+        try:
+            r = requests.get('https://music.163.com/api/search/get/web',
+                             params={'s': '晴天', 'type': 1, 'limit': 3},
+                             headers={'User-Agent': UA_PC, 'Referer': 'https://music.163.com'},
+                             timeout=12)
+            jj = r.json()
+            out['public_search_code'] = jj.get('code')
+            out['public_search_count'] = len((jj.get('result', {}) or {}).get('songs', []) or [])
+        except Exception as e:
+            out['public_search_error'] = str(e)[:150]
+        return jsonify(out)
 
     @app.route('/api/music/logout', methods=['POST'])
     def music_logout():
