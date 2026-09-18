@@ -228,26 +228,11 @@ class NeteaseClient:
 
     # ── 搜歌 / 取流 / 歌词 ────────────────────────────────────────────────
     def search(self, keyword, limit=20):
-        # 优先走 eapi(带你的登录态，最稳)；失败再退到公开接口
-        try:
-            j = self.eapi('/api/cloudsearch/pc',
-                          {'s': keyword, 'type': 1, 'limit': limit, 'offset': 0})
-            songs = (j.get('result', {}) or {}).get('songs', []) or []
-            if songs:
-                return self._fmt_songs(songs)
-        except Exception:
-            pass
-        # 退路：公开搜索接口（不加密）
-        try:
-            r = requests.get('https://music.163.com/api/search/get/web',
-                             params={'s': keyword, 'type': 1, 'limit': limit, 'offset': 0},
-                             headers={'User-Agent': UA_PC, 'Referer': 'https://music.163.com',
-                                      'Cookie': self.cookie() if hasattr(self, 'cookie') else self.store.cookie()},
-                             timeout=12)
-            songs = (r.json().get('result', {}) or {}).get('songs', []) or []
-            return self._fmt_songs(songs, plain=True)
-        except Exception:
-            return []
+        # eapi 带登录态搜索，诊断证明稳定能搜到
+        j = self.eapi('/api/cloudsearch/pc',
+                      {'s': keyword, 'type': 1, 'limit': limit, 'offset': 0})
+        songs = (j.get('result', {}) or {}).get('songs', []) or []
+        return self._fmt_songs(songs)
 
     def _fmt_songs(self, songs, plain=False):
         out = []
