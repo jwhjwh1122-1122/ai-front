@@ -3108,6 +3108,100 @@ def backup_info():
                     'size': total, 'mounted': mounted})
 
 
+
+# ============================================================
+# 反向代理：把外部页面套进 app 里
+#   很多服务设了 X-Frame-Options 不让被嵌，绕一层自己的域名就行
+# ============================================================
+PROXY_FILE = os.path.join(DATA_DIR, 'proxy.json')
+HOP_HEADERS = {'connection', 'keep-alive', 'transfer-encoding', 'te',
+               'trailer', 'upgrade', 'proxy-authorization', 'proxy-authenticate',
+               'content-encoding', 'content-length'}
+
+
+def _proxy_targets():
+    return jread(PROXY_FILE, {})
+
+
+@app.route('/api/proxy/target', methods=['GET', 'POST'])
+def proxy_target():
+    if request.method == 'POST':
+        b = request.json or {}
+        name = (b.get('name') or '').strip()
+        url = (b.get('url') or '').strip().rstrip('/')
+        if not name:
+            return jsonify({'error': '要起个名字'}), 400
+        d = _proxy_targets()
+        if url:
+            d[name] = url
+        else:
+            d.pop(name, None)
+        jwrite(PROXY_FILE, d)
+        return jsonify({'ok': True})
+    return jsonify(_proxy_targets())
+
+
+@app.route('/p/<name>', defaults={'path': ''},
+           methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+@app.route('/p/<name>/<path:path>',
+           methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def proxy_pass(name, path):
+    base = _proxy_targets().get(name)
+    if not base:
+        return jsonify({'error': f'没有配 {name} 这个地址'}), 404
+    target = base + ('/' + path if path else '/')
+    if request.query_string:
+        target += '?' + request.query_string.decode()
+    fwd = {k: v for k, v in request.headers.items()
+           if k.lower() not in HOP_HEADERS and k.lower() != 'host'}
+    try:
+        r = requests.request(request.method, target, headers=fwd,
+                             data=request.get_data(), cookies=request.cookies,
+                             allow_redirects=False, timeout=60, stream=True)
+    except Exception as e:
+        return Response(f'<div style="padding:40px;font:15px -apple-system;color:#888;'
+                        f'text-align:center;line-height:2">连不上那个服务<br>'
+                        f'<span style="font-size:12px">{esc_html(str(e)[:120])}</span></div>',
+                        mimetype='text/html')
+    ct = (r.headers.get('Content-Type') or '').lower()
+    body = r.content
+    prefix = f'/p/{name}'
+    # HTML 和 JS 里的绝对路径要改写，不然它会去请求我们自己的域名根目录
+    if 'text/html' in ct or 'javascript' in ct or 'application/json' in ct:
+        try:
+            txt = body.decode('utf-8', 'ignore')
+            for a, b in (('src="/', f'src="{prefix}/'), ("src='/", f"src='{prefix}/"),
+                         ('href="/', f'href="{prefix}/'), ("href='/", f"href='{prefix}/"),
+                         ('action="/', f'action="{prefix}/'),
+                         ('fetch("/', f'fetch("{prefix}/'), ("fetch('/", f"fetch('{prefix}/"),
+                         ('url("/', f'url("{prefix}/'),
+                         ('"/api/', f'"{prefix}/api/'), ("'/api/", f"'{prefix}/api/"),
+                         ('"/music/', f'"{prefix}/music/'), ("'/music/", f"'{prefix}/music/"),
+                         ('"/static/', f'"{prefix}/static/'), ("'/static/", f"'{prefix}/static/")):
+                txt = txt.replace(a, b)
+            txt = txt.replace('href="//', 'href="https://').replace('src="//', 'src="https://')
+            body = txt.encode('utf-8')
+        except Exception:
+            pass
+    out = Response(body, status=r.status_code,
+                   mimetype=(r.headers.get('Content-Type') or 'text/html'))
+    for k, v in r.headers.items():
+        lk = k.lower()
+        if lk in HOP_HEADERS or lk in ('x-frame-options', 'content-security-policy'):
+            continue
+        if lk == 'location' and v.startswith('/'):
+            v = prefix + v
+        if lk == 'set-cookie':
+            out.headers.add('Set-Cookie', v)
+            continue
+        out.headers[k] = v
+    return out
+
+
+def esc_html(t):
+    return (str(t).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+
+
 # ============================================================
 # 电话
 # ============================================================
