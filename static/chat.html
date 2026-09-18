@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=16">
+<link rel="stylesheet" href="/static/style.css?v=20">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -53,6 +53,8 @@ window.addEventListener('error', function (e) {
     </div>
   </div>
   <div class="topbar-right">
+    <div class="theme-btn" id="btn-call" style="font-size:14px;position:relative;">☏<span class="call-dot" id="call-dot"></span></div>
+    <div class="theme-btn" id="btn-search" style="font-size:13px;">⌕</div>
     <div class="theme-btn" id="btn-convs" style="font-size:12px;">☰</div>
     <div class="theme-btn" id="btn-theme">✦</div>
   </div>
@@ -372,17 +374,18 @@ window.addEventListener('error', function (e) {
     </div>
 
     <div class="settings-card">
-      <div class="settings-label">Token 用量</div>
+      <div class="settings-label">这一轮</div>
       <div class="settings-value" id="token-used">—</div>
       <div class="token-bar-wrap"><div class="token-bar" id="token-bar"></div></div>
       <div class="settings-sub" id="token-remain">上限 200,000</div>
     </div>
 
-    <div class="settings-card">
-      <div class="settings-label">OpenRouter 余额</div>
-      <div class="settings-value" id="balance-val">加载中…</div>
+    <div class="settings-card" style="border-color:var(--accent);">
+      <div class="settings-label" style="color:var(--accent);">额度</div>
+      <div class="settings-value" id="balance-val">—</div>
       <div class="settings-sub" id="balance-limit"></div>
-      <button class="btn-ghost" id="btn-topup" style="width:100%;margin-top:10px;font-size:13px;padding:9px;">去 OpenRouter 充值</button>
+      <button class="btn-solid" id="btn-usage" style="width:100%;margin-top:10px;font-size:13px;padding:9px;">看用量</button>
+      <button class="btn-ghost" id="btn-topup" style="width:100%;margin-top:8px;font-size:13px;padding:9px;">去充值</button>
     </div>
 
     <div class="settings-card">
@@ -390,6 +393,16 @@ window.addEventListener('error', function (e) {
       <div class="settings-sub">滑出窗口的对话不直接丢，先用 DeepSeek 压成一段留着，跟人设一起给他看。他自己也能补。</div>
       <div class="settings-value" id="recap-n" style="font-size:14px;margin-top:8px;">—</div>
       <button class="btn-ghost" id="btn-recap" style="width:100%;margin-top:10px;">看看压了什么</button>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-label">数据</div>
+      <div class="settings-sub" id="backup-info">—</div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn-ghost" id="btn-backup" style="font-size:13px;padding:9px;">下载备份</button>
+        <button class="btn-ghost" id="btn-restore" style="font-size:13px;padding:9px;">恢复</button>
+      </div>
+      <button class="btn-ghost" id="btn-backup-all" style="width:100%;margin-top:8px;font-size:12px;padding:8px;">连照片视频一起备份（大）</button>
     </div>
 
     <button class="btn-ghost" id="btn-clear-conv" style="width:100%;margin-top:14px;">清空本次对话</button>
@@ -501,6 +514,45 @@ window.addEventListener('error', function (e) {
       <button class="btn-solid" id="btn-book-paste">放上书架</button>
     </div>
   </div>
+</div>
+
+<!-- ============ 电话 ============ -->
+<div class="callscreen" id="callscreen">
+  <div class="cs-bg"></div>
+  <div class="cs-top">
+    <div class="cs-name" id="cs-name">凛</div>
+    <div class="cs-state" id="cs-state">正在接通…</div>
+    <div class="cs-timer" id="cs-timer"></div>
+  </div>
+
+  <div class="cs-mid">
+    <div class="cs-avatar" id="cs-avatar"><span id="cs-avatar-t">凛</span></div>
+    <div class="cs-wave" id="cs-wave"></div>
+    <div class="cs-caption" id="cs-caption"></div>
+  </div>
+
+  <div class="cs-acts">
+    <div class="cs-btn" id="cs-mute"><span>⏸</span><i>暂停听</i></div>
+    <div class="cs-btn hang" id="cs-hang"><span>✕</span><i>挂断</i></div>
+    <div class="cs-btn" id="cs-cutin"><span>⇄</span><i>能插话</i></div>
+    <div class="cs-btn" id="cs-mini"><span>⌄</span><i>收起</i></div>
+  </div>
+</div>
+
+<div class="call-pill" id="call-pill">
+  <span class="cp-dot"></span><span id="cp-timer">00:00</span>
+  <span class="cp-x" id="cp-hang">挂断</span>
+</div>
+
+<div class="full" id="calllog-panel">
+  <div class="full-head">
+    <div><div class="full-title">通 话</div><div class="full-count" id="calllog-sub"></div></div>
+    <div class="full-btns">
+      <button class="mem-upload-btn" id="btn-call-now">打给他</button>
+      <div class="mem-close-btn" data-close-full="calllog-panel">✕</div>
+    </div>
+  </div>
+  <div class="list-wrap" id="calllog-list"></div>
 </div>
 
 <!-- ============ 共读（外部服务，嵌在里面） ============ -->
@@ -665,6 +717,25 @@ window.addEventListener('error', function (e) {
   </div>
 </div>
 
+<div class="full" id="usage-panel">
+  <div class="full-head">
+    <div><div class="full-title">额 度</div><div class="full-count" id="usage-sub"></div></div>
+    <div class="full-btns">
+      <button class="mem-upload-btn" id="btn-usage-topup" style="border-color:var(--border);color:var(--text-muted);">充值</button>
+      <div class="mem-close-btn" data-close-full="usage-panel">✕</div>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px 16px 30px;" id="usage-body"></div>
+</div>
+
+<div class="full" id="search-panel">
+  <div class="full-head" style="padding-bottom:10px;">
+    <input id="search-input" class="mini-input" style="flex:1;margin-right:10px;" placeholder="搜聊天记录" autocapitalize="off">
+    <div class="mem-close-btn" data-close-full="search-panel">✕</div>
+  </div>
+  <div id="search-result" style="flex:1;overflow-y:auto;padding:0 0 30px;"></div>
+</div>
+
 <div class="full" id="recap-panel">
   <div class="full-head">
     <div><div class="full-title">前情提要</div><div class="full-count" id="recap-sub"></div></div>
@@ -716,6 +787,7 @@ window.addEventListener('error', function (e) {
   <div class="list-wrap" id="dispute-list"></div>
 </div>
 
+<input type="file" id="restore-input" accept=".zip,application/zip" style="display:none">
 <input type="file" id="post-img-input" accept="image/*" multiple style="display:none">
 
 <!-- ============ 信箱 ============ -->
@@ -996,7 +1068,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=16"></script>
-<script src="/static/rooms.js?v=16"></script>
+<script src="/static/app.js?v=20"></script>
+<script src="/static/rooms.js?v=20"></script>
 </body>
 </html>
