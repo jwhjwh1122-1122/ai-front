@@ -290,7 +290,11 @@ async function playSong(s){
   try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
   loadLyric(s.id);refreshMini();
 }
-function refreshMini(){$('mini').classList.toggle('show',collapsed&&!!cur);}
+function showQueue(){
+  if(!cur){alert('还没有歌');return;}
+  alert('当前播放：\n'+cur.name+' - '+cur.artist+'\n\n(播放队列功能完善中，现在是单曲)');
+}
+function refreshMini(){const isCollapsed=$('play-page').classList.contains('hid');$('mini').classList.toggle('show',isCollapsed&&!!cur);}
 
 async function loadLyric(id){
   lyrics=[];lastLy=-1;$('ly-scroll').innerHTML='<div class="ly-empty">加载歌词…</div>';
@@ -302,7 +306,7 @@ async function loadLyric(id){
 }
 function renderLyric(){if(!lyrics.length){$('ly-scroll').innerHTML='<div class="ly-empty">这首歌没有歌词</div>';return;}
   $('ly-scroll').innerHTML=lyrics.map((l,i)=>'<div class="ly-line" data-i="'+i+'">'+l.text+(l.tr?'<div class="tr">'+l.tr+'</div>':'')+'</div>').join('');}
-function updLyric(t){if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t+0.3)i=j;else break;}
+function updLyric(t){if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t)i=j;else break;}
   if(i===lastLy)return;lastLy=i;document.querySelectorAll('.ly-line').forEach((el,j)=>el.classList.toggle('cur',j===i));
   if(lyView){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});}}
 
@@ -316,7 +320,7 @@ function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused
 $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
 $('mini').addEventListener('click',e=>{if(e.target.closest('.mp')||e.target.closest('.ml'))return;expand();});
 $('btn-heart').onclick=()=>$('btn-heart').classList.toggle('liked');
-$('c-list').onclick=()=>{collapse();};
+$('c-list').onclick=()=>{showQueue();};
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
 function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);if(lyView){lastLy=-1;updLyric(audio.currentTime);}}
