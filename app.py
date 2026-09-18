@@ -3957,5 +3957,17 @@ def wake_loop():
 threading.Thread(target=wake_loop, daemon=True).start()
 
 
+# ============================================================
+# 网易云音乐（一起听 + 推歌 + MCP）
+# ============================================================
+try:
+    from music import register_music
+    register_music(app, data_dir=DATA_DIR, jread=jread, jwrite=jwrite,
+                   auth_token=os.environ.get('MUSIC_PUSH_TOKEN', ''))
+    print('[music] 网易云音乐模块已挂载', flush=True)
+except Exception as e:
+    print(f'[music] 挂载失败（不影响其他功能）: {e}', flush=True)
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True)
