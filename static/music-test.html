@@ -8,230 +8,312 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
 html,body{height:100%;}
 body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
-  background:#f4f6f8;color:#2b2f36;overflow:hidden;position:fixed;inset:0;display:flex;flex-direction:column;}
-.wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;
-  padding:calc(env(safe-area-inset-top) + 8px) 22px calc(env(safe-area-inset-bottom) + 18px);}
+  background:linear-gradient(180deg,#fbfcfd,#eef1f4);color:#2b2f36;overflow:hidden;position:fixed;inset:0;display:flex;flex-direction:column;}
+.page{position:absolute;inset:0;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 8px) 22px calc(env(safe-area-inset-bottom) + 14px);
+  transition:transform .34s cubic-bezier(.3,.7,.3,1);background:linear-gradient(180deg,#fbfcfd,#eef1f4);}
+
+/* ===== 播放页 ===== */
+#play-page{z-index:2;}
+#play-page.hid{transform:translateY(100%);}
 .top{display:flex;align-items:center;justify-content:space-between;height:44px;flex-shrink:0;}
-.top .down{font-size:26px;color:#3a3f47;line-height:1;}
+.top .down{width:30px;height:30px;color:#3a3f47;display:grid;place-items:center;}
+.top .down svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
 .top .ttl{font-size:16px;font-weight:500;color:#2b2f36;}
-.top .share{width:26px;height:26px;color:#3a3f47;}
-.ipod-view{flex:1;display:flex;flex-direction:column;min-height:0;}
-.ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0;}
-.ipod{width:min(70vw,258px);aspect-ratio:266/438;padding:3.2% 3.5%;border-radius:9% / 5.4%;position:relative;
-  background:linear-gradient(160deg,#fdfdfe 0%,#f2f3f5 46%,#e9eaed 100%);
-  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 26px 50px -22px rgba(70,80,100,.5),0 8px 18px -10px rgba(70,80,100,.35);
+.top .share{width:24px;height:24px;color:#3a3f47;}
+.ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:8px 0;}
+.ipod{width:min(66vw,244px);aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
+  background:linear-gradient(158deg,#ffffff 0%,#f6f7f8 40%,#e6e8ea 100%);
+  box-shadow:0 1px 1px rgba(255,255,255,1) inset,0 -2px 6px rgba(180,185,195,.4) inset,
+    0 28px 52px -24px rgba(60,70,90,.52),0 10px 22px -12px rgba(60,70,90,.36);
   display:flex;flex-direction:column;}
-.ipod::before{content:"";position:absolute;top:2.2%;left:50%;transform:translateX(-50%);width:11%;height:1.4%;border-radius:3px;background:#d7d9dd;}
-.screen{margin-top:5%;border-radius:5px;overflow:hidden;border:1.5px solid #b9bdc6;background:#eef1f3;box-shadow:0 2px 5px rgba(0,0,0,.16) inset;}
-.scr-top{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:linear-gradient(#dfe3e7,#cdd2d8);border-bottom:1px solid #b9bdc6;}
-.scr-top b{font-size:11px;font-weight:600;color:#3a4048;}
-.scr-top .r{display:flex;align-items:center;gap:5px;}
-.scr-top .pz{color:#4a90d9;font-size:9px;}
-.scr-top .bt{width:20px;height:10px;border:1px solid #6a7078;border-radius:2px;padding:1px;}
-.scr-top .bt::after{content:"";display:block;height:100%;width:75%;background:#5cb85c;border-radius:1px;}
-.scr-body{display:flex;gap:9px;padding:9px;background:#f4f6f7;}
-.scr-cover{width:34%;aspect-ratio:1;border-radius:3px;object-fit:cover;background:#d5dae0;flex-shrink:0;}
-.scr-meta{flex:1;min-width:0;padding-top:2px;}
-.scr-meta .nm{font-size:14px;font-weight:700;color:#242a30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .ar{font-size:12px;color:#4a5058;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .al{font-size:11px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-prog{display:flex;align-items:center;gap:6px;padding:0 9px 9px;background:#f4f6f7;font-size:9px;color:#6a7078;}
-.scr-track{flex:1;height:9px;border-radius:5px;background:#dfe3e7;border:1px solid #c3c8ce;overflow:hidden;}
-.scr-fill{height:100%;width:0%;background:linear-gradient(#7db9ec,#4a90d9);border-radius:4px;}
+.ipod::before{content:"";position:absolute;top:2%;left:50%;transform:translateX(-50%);width:12%;height:1.5%;border-radius:3px;background:#c8ccd0;box-shadow:0 1px 1px rgba(255,255,255,.7);}
+.screen{margin-top:5.5%;border-radius:4px;overflow:hidden;border:1px solid #a8adb6;
+  background:#e8ebee;box-shadow:0 1px 3px rgba(0,0,0,.22) inset,0 1px 0 rgba(255,255,255,.6);}
+.scr-top{display:flex;align-items:center;justify-content:space-between;padding:4px 7px;
+  background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
+.scr-top b{font-size:10px;font-weight:600;color:#40454d;}
+.scr-top .r{display:flex;align-items:center;gap:4px;}
+.scr-top .pz{color:#4a90d9;font-size:8px;letter-spacing:-1px;}
+.scr-top .bt{width:17px;height:9px;border:1px solid #5a6068;border-radius:2px;padding:1px;position:relative;}
+.scr-top .bt::after{content:"";display:block;height:100%;width:72%;background:#5cb85c;border-radius:1px;}
+.scr-top .bt::before{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:2px;height:4px;background:#5a6068;border-radius:0 1px 1px 0;}
+.scr-body{display:flex;gap:8px;padding:8px;background:#f5f7f8;}
+.scr-cover{width:33%;aspect-ratio:1;border-radius:2px;object-fit:cover;background:#d5dae0;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.15);}
+.scr-meta{flex:1;min-width:0;padding-top:1px;}
+.scr-meta .nm{font-size:13px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-meta .ar{font-size:11px;color:#525860;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-meta .al{font-size:10px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-prog{display:flex;align-items:center;gap:5px;padding:0 8px 8px;background:#f5f7f8;font-size:8px;color:#6a7078;}
+.scr-track{flex:1;height:8px;border-radius:4px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.08) inset;}
+.scr-fill{height:100%;width:0%;background:linear-gradient(#8fc4f0,#4a90d9);border-radius:3px;box-shadow:0 -1px 1px rgba(255,255,255,.3) inset;}
 .wheel-box{flex:1;display:flex;align-items:center;justify-content:center;}
-.wheel{width:62%;aspect-ratio:1;border-radius:50%;position:relative;
-  background:radial-gradient(circle at 50% 42%,#eceef0,#dcdfe3 68%,#d0d4d8);
-  box-shadow:0 1px 3px rgba(0,0,0,.1) inset,0 2px 6px -2px rgba(70,80,100,.3);display:grid;place-items:center;}
-.wheel .menu{position:absolute;top:9%;font-size:11px;font-weight:600;color:#9a9ea6;letter-spacing:1.5px;}
-.wheel .wi{position:absolute;color:#8b8f97;}
-.wheel .wi svg{width:20px;height:20px;fill:currentColor;}
+.wheel{width:63%;aspect-ratio:1;border-radius:50%;position:relative;
+  background:radial-gradient(circle at 50% 38%,#f5f6f7 0%,#e4e7ea 44%,#d3d7db 72%,#c5cace 100%);
+  box-shadow:0 2px 5px rgba(90,100,120,.28),0 1px 0 rgba(255,255,255,.85) inset,0 -2px 5px rgba(150,158,170,.3) inset;
+  display:grid;place-items:center;}
+.wheel::before{content:"";position:absolute;inset:11%;border-radius:50%;border:1px solid rgba(160,166,175,.25);}
+.wheel .menu{position:absolute;top:8.5%;font-size:10px;font-weight:600;color:#a6abb2;letter-spacing:2px;}
+.wheel .wi{position:absolute;color:#9aa0a8;}
+.wheel .wi svg{width:17px;height:17px;fill:currentColor;}
 .wheel .wi.prev{left:11%;top:50%;transform:translateY(-50%);}
 .wheel .wi.next{right:11%;top:50%;transform:translateY(-50%);}
-.wheel .wi.play{bottom:10%;}
-.wheel .center{width:38%;aspect-ratio:1;border-radius:50%;border:none;
-  background:radial-gradient(circle at 50% 42%,#ffffff,#f0f2f4);box-shadow:0 1px 3px rgba(70,80,100,.28),0 1px 0 rgba(255,255,255,.9) inset;}
+.wheel .wi.play{bottom:9.5%;}
+.wheel .center{width:37%;aspect-ratio:1;border-radius:50%;border:none;
+  background:radial-gradient(circle at 50% 38%,#ffffff 0%,#f4f5f6 60%,#e8eaec 100%);
+  box-shadow:0 2px 5px rgba(90,100,120,.3),0 1px 0 rgba(255,255,255,.9) inset;}
 .wbtn{position:absolute;width:30%;height:30%;background:none;border:none;}
 .wbtn.m{top:0;left:35%;} .wbtn.p{left:0;top:35%;} .wbtn.n{right:0;top:35%;} .wbtn.y{bottom:0;left:35%;}
 .below{flex-shrink:0;}
-.b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;}
-.b-title{font-size:20px;font-weight:700;color:#242a30;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.b-title{font-size:20px;font-weight:700;color:#20262c;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .b-artist{font-size:13px;color:#8a9098;margin-top:5px;display:flex;align-items:center;gap:7px;}
 .b-follow{font-size:11px;color:#8a9098;border:1px solid #d5dae0;border-radius:9px;padding:1px 8px;}
 .b-social{display:flex;align-items:center;gap:16px;flex-shrink:0;padding-top:3px;}
-.b-heart{display:flex;align-items:flex-start;color:#ec4141;}
+.b-heart{color:#ec4141;background:none;border:none;}
 .b-heart svg{width:26px;height:26px;fill:currentColor;}
-.b-heart .n{font-size:10px;color:#ec4141;transform:translateY(-2px);}
-.b-cmt{width:26px;height:26px;color:#5a6068;}
-.prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:4px;}
+.b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
+.prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:2px;}
 .prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
 .prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
 .prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);}
 .prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:7px;}
-.ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding:0 2px;}
+.ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding:0 2px;}
 .cb{background:none;border:none;color:#3a3f47;display:grid;place-items:center;}
 .cb svg{fill:currentColor;}
-.cb.mode svg,.cb.list svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+.cb.mode svg,.cb.list svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
 .cb.side svg{width:30px;height:30px;}
 .cb.main svg{width:52px;height:52px;}
-.lyric-view{position:absolute;inset:0;background:#f4f6f8;display:none;flex-direction:column;
-  padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);}
+
+/* ===== 歌词覆盖 ===== */
+.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;}
 .lyric-view.on{display:flex;}
 .ly-scroll{flex:1;overflow-y:auto;text-align:center;padding:16vh 8px 26vh;scrollbar-width:none;}
 .ly-scroll::-webkit-scrollbar{display:none;}
-.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 6px;transition:color .3s,font-size .3s,font-weight .3s;}
-.ly-line.cur{font-size:19px;color:#242a30;font-weight:700;}
+.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 6px;transition:all .3s;}
+.ly-line.cur{font-size:19px;color:#20262c;font-weight:700;}
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
 .ly-line.cur .tr{color:#5a6068;}
-.ly-empty{color:#b0b6be;font-size:14px;text-align:center;padding-top:36vh;}
-.sheet{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.32);display:none;align-items:flex-end;}
-.sheet.open{display:flex;}
-.sheet-in{width:100%;max-height:80vh;background:#f4f6f8;border-radius:18px 18px 0 0;padding:14px 16px calc(env(safe-area-inset-bottom) + 14px);display:flex;flex-direction:column;}
-.grab{width:36px;height:4px;border-radius:2px;background:#d0d4d8;margin:0 auto 12px;}
-.srow{display:flex;gap:8px;}
-.srow input{flex:1;padding:11px 14px;border-radius:12px;border:1px solid #dfe3e7;background:#fff;font-size:15px;outline:none;color:#2b2f36;}
-.srow button{padding:0 20px;border-radius:12px;border:none;background:#ec4141;color:#fff;font-size:15px;font-weight:600;}
-.reslist{flex:1;overflow-y:auto;margin-top:12px;scrollbar-width:none;}
-.reslist::-webkit-scrollbar{display:none;}
-.ri{display:flex;align-items:center;gap:11px;padding:9px 6px;border-radius:11px;}
-.ri:active{background:#e9ecef;}
-.ri img{width:44px;height:44px;border-radius:7px;object-fit:cover;background:#d8dce2;flex-shrink:0;}
-.ri .i{flex:1;min-width:0;}
-.ri .i .nm{font-size:15px;color:#2b2f36;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ri .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ri .go{color:#ec4141;font-size:24px;}
-.hint{text-align:center;color:#b0b6be;font-size:13px;padding:34px;}
+.ly-empty{color:#b0b6be;font-size:14px;padding-top:36vh;}
+
+/* ===== 列表页(搜索+我的) ===== */
+#list-page{z-index:1;padding-bottom:0;}
+.lp-top{display:flex;align-items:center;gap:14px;height:44px;flex-shrink:0;}
+.lp-tab{font-size:19px;font-weight:700;color:#b6bcc4;}
+.lp-tab.on{color:#20262c;}
+.lp-search{margin:14px 0;position:relative;}
+.lp-search input{width:100%;padding:11px 14px 11px 40px;border-radius:20px;border:none;background:#e9ecef;font-size:15px;outline:none;color:#2b2f36;}
+.lp-search .ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9298a0;width:18px;height:18px;}
+.lp-body{flex:1;overflow-y:auto;scrollbar-width:none;padding-bottom:80px;}
+.lp-body::-webkit-scrollbar{display:none;}
+.mine-item{display:flex;align-items:center;gap:13px;padding:11px 2px;}
+.mine-item:active{opacity:.6;}
+.mine-ic{width:46px;height:46px;border-radius:10px;background:#e9ecef;display:grid;place-items:center;color:#5a6068;flex-shrink:0;}
+.mine-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;}
+.mine-tx{flex:1;min-width:0;}
+.mine-tx .nm{font-size:16px;color:#20262c;}
+.mine-tx .sub{font-size:12px;color:#9298a0;margin-top:3px;}
+.res{display:flex;align-items:center;gap:11px;padding:9px 2px;}
+.res:active{opacity:.6;}
+.res img{width:44px;height:44px;border-radius:7px;object-fit:cover;background:#d8dce2;flex-shrink:0;}
+.res .i{flex:1;min-width:0;}
+.res .i .nm{font-size:15px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res .go{color:#ec4141;font-size:22px;}
+.hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
+
+/* ===== 迷你播放条 ===== */
+.mini{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);
+  height:56px;border-radius:28px;background:rgba(255,255,255,.92);backdrop-filter:blur(16px);
+  box-shadow:0 6px 20px -6px rgba(60,70,90,.3);display:none;align-items:center;gap:11px;padding:6px 12px 6px 6px;z-index:5;}
+.mini.show{display:flex;}
+.mini img{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#d8dce2;animation:spin 12s linear infinite;animation-play-state:paused;}
+.mini.playing img{animation-play-state:running;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.mini .mt{flex:1;min-width:0;}
+.mini .mt .nm{font-size:14px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mini .mt .ar{font-size:11px;color:#9298a0;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mini .mp{width:34px;height:34px;color:#3a3f47;background:none;border:none;display:grid;place-items:center;}
+.mini .mp svg{width:26px;height:26px;fill:currentColor;}
+.mini .ml{width:30px;height:30px;color:#5a6068;background:none;border:none;}
+.mini .ml svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;}
 </style>
 </head>
 <body>
 <audio id="audio"></audio>
-<div class="wrap">
+
+<!-- 列表页 -->
+<div class="page" id="list-page">
+  <div class="lp-top">
+    <span class="lp-tab on" id="tab-mine" data-tab="mine">我的</span>
+    <span class="lp-tab" id="tab-search" data-tab="search">搜索</span>
+  </div>
+  <div class="lp-search" id="search-box" style="display:none;">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="q" placeholder="搜歌名 / 歌手" enterkeyhint="search">
+  </div>
+  <div class="lp-body" id="lp-body"></div>
+</div>
+
+<!-- 播放页 -->
+<div class="page" id="play-page">
   <div class="top">
-    <div class="down" id="btn-down">⌄</div>
+    <button class="down" id="btn-down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <div class="ttl" id="top-title">一起听</div>
     <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M12 3v13M8 7l4-4 4 4"/></svg>
   </div>
-  <div class="ipod-view" id="ipod-view">
-    <div class="ipod-box">
-      <div class="ipod" id="ipod-tap">
-        <div class="screen">
-          <div class="scr-top"><b>Now Playing</b><div class="r"><span class="pz" id="scr-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
-          <div class="scr-body">
-            <img class="scr-cover" id="scr-cover" src="" alt="">
-            <div class="scr-meta"><div class="nm" id="scr-nm">还没有歌</div><div class="ar" id="scr-ar">右上角搜一首</div><div class="al" id="scr-al"></div></div>
-          </div>
-          <div class="scr-prog"><span id="scr-cur">0:00</span><div class="scr-track"><div class="scr-fill" id="scr-fill"></div></div><span id="scr-rem">0:00</span></div>
+  <div class="ipod-box">
+    <div class="ipod" id="ipod-tap">
+      <div class="screen">
+        <div class="scr-top"><b>Now Playing</b><div class="r"><span class="pz" id="scr-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
+        <div class="scr-body">
+          <img class="scr-cover" id="scr-cover" src="" alt="">
+          <div class="scr-meta"><div class="nm" id="scr-nm">还没有歌</div><div class="ar" id="scr-ar">去搜一首</div><div class="al" id="scr-al"></div></div>
         </div>
-        <div class="wheel-box">
-          <div class="wheel">
-            <span class="menu">MENU</span>
-            <span class="wi prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-8-7zM8 5v14H6V5z"/></svg></span>
-            <span class="wi next"><svg viewBox="0 0 24 24"><path d="M6 5v14l8-7zM16 5v14h2V5z"/></svg></span>
-            <span class="wi play"><svg viewBox="0 0 24 24"><path d="M8 5v14l9-7z"/><path d="M4 5h1.5v14H4z"/></svg></span>
-            <button class="center" id="w-center"></button>
-            <button class="wbtn m" id="w-menu"></button><button class="wbtn p" id="w-prev"></button>
-            <button class="wbtn n" id="w-next"></button><button class="wbtn y" id="w-play"></button>
-          </div>
-        </div>
+        <div class="scr-prog"><span id="scr-cur">0:00</span><div class="scr-track"><div class="scr-fill" id="scr-fill"></div></div><span id="scr-rem">0:00</span></div>
       </div>
-    </div>
-    <div class="below">
-      <div class="b-head">
-        <div style="min-width:0;flex:1;">
-          <div class="b-title" id="b-title">还没有歌</div>
-          <div class="b-artist"><span id="b-artist">在上面搜一首，点开始听</span><span class="b-follow" style="display:none">关注</span></div>
-        </div>
-        <div class="b-social">
-          <div class="b-heart"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.5-8.5C1 10 2 6.5 5.5 6.5c2 0 3 1.2 3.5 2 .5-.8 1.5-2 3.5-2C16 6.5 17 10 15.5 12.5 13 16.65 12 21 12 21z"/></svg></div>
-          <svg class="b-cmt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        </div>
-      </div>
-      <div class="prog"><span id="p-cur">0:00</span><div class="bar" id="p-bar"><div class="f" id="p-fill"></div><div class="dot" id="p-dot"></div></div><span id="p-dur">0:00</span></div>
-      <div class="prog-sub">无损音质</div>
-      <div class="ctrl">
-        <button class="cb mode" id="c-mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
-        <button class="cb side" id="c-prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7zM8 5v14H6V5z"/></svg></button>
-        <button class="cb main" id="c-main"><svg viewBox="0 0 24 24" id="c-main-ic"><path d="M8 5v14l11-7z"/></svg></button>
-        <button class="cb side" id="c-next"><svg viewBox="0 0 24 24"><path d="M6 5v14l9-7zM16 5v14h2V5z"/></svg></button>
-        <button class="cb list" id="c-list"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6l1 1M3 12h.01M3 18h.01"/></svg></button>
-      </div>
+      <div class="wheel-box"><div class="wheel">
+        <span class="menu">MENU</span>
+        <span class="wi prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-8-7zM8 5v14H6V5z"/></svg></span>
+        <span class="wi next"><svg viewBox="0 0 24 24"><path d="M6 5v14l8-7zM16 5v14h2V5z"/></svg></span>
+        <span class="wi play"><svg viewBox="0 0 24 24"><path d="M8 5v14l9-7z"/><path d="M4 5h1.5v14H4z"/></svg></span>
+        <button class="center" id="w-center"></button>
+        <button class="wbtn m" id="w-menu"></button><button class="wbtn p" id="w-prev"></button>
+        <button class="wbtn n" id="w-next"></button><button class="wbtn y" id="w-play"></button>
+      </div></div>
     </div>
   </div>
-  <div class="lyric-view" id="lyric-view">
-    <div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
+  <div class="below">
+    <div class="b-head">
+      <div style="min-width:0;flex:1;">
+        <div class="b-title" id="b-title">还没有歌</div>
+        <div class="b-artist"><span id="b-artist">向下收起，去搜一首</span><span class="b-follow" style="display:none">关注</span></div>
+      </div>
+      <div class="b-social">
+        <button class="b-heart"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.5-8.5C1 10 2 6.5 5.5 6.5c2 0 3 1.2 3.5 2 .5-.8 1.5-2 3.5-2C16 6.5 17 10 15.5 12.5 13 16.65 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button class="b-cmt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
+      </div>
+    </div>
+    <div class="prog"><span id="p-cur">0:00</span><div class="bar" id="p-bar"><div class="f" id="p-fill"></div><div class="dot" id="p-dot"></div></div><span id="p-dur">0:00</span></div>
+    <div class="prog-sub">无损音质</div>
+    <div class="ctrl">
+      <button class="cb mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
+      <button class="cb side" id="c-prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7zM8 5v14H6V5z"/></svg></button>
+      <button class="cb main" id="c-main"><svg viewBox="0 0 24 24" id="c-main-ic"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="cb side" id="c-next"><svg viewBox="0 0 24 24"><path d="M6 5v14l9-7zM16 5v14h2V5z"/></svg></button>
+      <button class="cb list" id="c-list"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6l1 1M3 12h.01M3 18h.01"/></svg></button>
+    </div>
   </div>
+  <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div></div>
 </div>
-<div class="sheet" id="sheet">
-  <div class="sheet-in">
-    <div class="grab"></div>
-    <div class="srow"><input id="q" placeholder="搜歌名 / 歌手" enterkeyhint="search"><button id="do-search">搜</button></div>
-    <div class="reslist" id="reslist"><div class="hint">搜一首想听的歌</div></div>
-  </div>
+
+<!-- 迷你条 -->
+<div class="mini" id="mini">
+  <img id="mini-cover" src="">
+  <div class="mt"><div class="nm" id="mini-nm">—</div><div class="ar" id="mini-ar">—</div></div>
+  <button class="mp" id="mini-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+  <button class="ml"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
 </div>
+
 <script>
 const $=id=>document.getElementById(id);const audio=$('audio');
-let cur=null,lyrics=[],lyView=false,lastLy=-1;
+let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
 function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
+
+// ── 页面切换 ──
+function collapse(){collapsed=true;$('play-page').classList.add('hid');refreshMini();}
+function expand(){collapsed=false;$('play-page').classList.remove('hid');}
+$('btn-down').onclick=collapse;
+
+// ── 我的/搜索 tab ──
+function showTab(t){
+  document.querySelectorAll('.lp-tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+  $('search-box').style.display=t==='search'?'block':'none';
+  if(t==='mine')renderMine();else{$('lp-body').innerHTML='<div class="hint">搜一首想听的歌</div>';setTimeout(()=>$('q').focus(),100);}
+}
+document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
+
+function renderMine(){
+  const items=[
+    {ic:'<path d="M12 21s-7-4.35-9.5-8.5C1 10 2 6.5 5.5 6.5c2 0 3 1.2 3.5 2 .5-.8 1.5-2 3.5-2C16 6.5 17 10 15.5 12.5 13 16.65 12 21 12 21z"/>',nm:'我喜欢的音乐',sub:'红心歌单',act:'liked'},
+    {ic:'<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',nm:'听歌排行',sub:'累计听歌',act:'rank'},
+    {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',sub:'',act:'recent'},
+    {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',sub:'云盘上传',act:'cloud'},
+  ];
+  let h='<div style="font-size:12px;color:#9298a0;padding:4px 2px 10px;">我的音乐（个人数据待接后端）</div>';
+  h+=items.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div>${it.sub?'<div class="sub">'+it.sub+'</div>':''}</div></div>`).join('');
+  h+='<div style="font-size:12px;color:#9298a0;padding:14px 2px 8px;">创建的歌单</div><div class="hint" style="padding:16px;">歌单列表要接后端个人接口<br>下一步做</div>';
+  $('lp-body').innerHTML=h;
+  document.querySelectorAll('.mine-item').forEach(el=>el.onclick=()=>alert('「'+el.querySelector('.nm').textContent+'」要接后端个人数据，下一步做'));
+}
+
+// ── 搜索 ──
+let searchTimer;
+$('q').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(doSearch,400);});
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 async function doSearch(){
-  const q=$('q').value.trim();if(!q)return;
-  $('reslist').innerHTML='<div class="hint">搜索中…</div>';
+  const q=$('q').value.trim();if(!q){$('lp-body').innerHTML='<div class="hint">搜一首想听的歌</div>';return;}
+  $('lp-body').innerHTML='<div class="hint">搜索中…</div>';
   try{
     const r=await fetch('/api/music/search?q='+encodeURIComponent(q)).then(r=>r.json());
-    if(!r.ok){$('reslist').innerHTML='<div class="hint">'+r.error+'</div>';return;}
-    if(!r.songs.length){$('reslist').innerHTML='<div class="hint">没搜到</div>';return;}
-    $('reslist').innerHTML='';
-    r.songs.forEach(s=>{const d=document.createElement('div');d.className='ri';
+    if(!r.ok){$('lp-body').innerHTML='<div class="hint">'+r.error+'</div>';return;}
+    if(!r.songs.length){$('lp-body').innerHTML='<div class="hint">没搜到</div>';return;}
+    $('lp-body').innerHTML='';
+    r.songs.forEach(s=>{const d=document.createElement('div');d.className='res';
       d.innerHTML='<img src="'+(s.cover||'')+'" onerror="this.style.opacity=.25"><div class="i"><div class="nm">'+s.name+'</div><div class="ar">'+s.artist+'</div></div><div class="go">＋</div>';
-      d.onclick=()=>{playSong(s);$('sheet').classList.remove('open');};$('reslist').appendChild(d);});
-  }catch(e){$('reslist').innerHTML='<div class="hint">出错：'+e+'</div>';}
+      d.onclick=()=>{playSong(s);expand();};$('lp-body').appendChild(d);});
+  }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
 }
+
+// ── 播放 ──
 async function playSong(s){
   cur=s;$('scr-nm').textContent=s.name;$('scr-ar').textContent=s.artist;$('scr-al').textContent=s.album||'';
   $('b-title').textContent=s.name;$('b-artist').textContent=s.artist;
   document.querySelector('.b-follow').style.display='';$('top-title').textContent='我喜欢的音乐';
-  if(s.cover)$('scr-cover').src=s.cover;
+  if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
+  $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
   try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
-  loadLyric(s.id);
+  loadLyric(s.id);refreshMini();
 }
+function refreshMini(){$('mini').classList.toggle('show',collapsed&&!!cur);}
+
 async function loadLyric(id){
   lyrics=[];lastLy=-1;$('ly-scroll').innerHTML='<div class="ly-empty">加载歌词…</div>';
-  try{
-    const r=await fetch('/api/music/lyric?id='+id).then(r=>r.json());const trMap={};
+  try{const r=await fetch('/api/music/lyric?id='+id).then(r=>r.json());const trMap={};
     (r.tlyric||'').split('\n').forEach(l=>{const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/);if(m){const t=(+m[1])*60+(+m[2])+(+m[3])/1000;trMap[Math.round(t)]=m[4].trim();}});
     (r.lyric||'').split('\n').forEach(l=>{const m=l.match(/\[(\d+):(\d+)[.:](\d+)\](.*)/);if(m){const t=(+m[1])*60+(+m[2])+(+m[3])/1000;const text=m[4].trim();if(text)lyrics.push({t,text,tr:trMap[Math.round(t)]||''});}});
     renderLyric();
   }catch(e){}
 }
-function renderLyric(){
-  if(!lyrics.length){$('ly-scroll').innerHTML='<div class="ly-empty">这首歌没有歌词</div>';return;}
-  $('ly-scroll').innerHTML=lyrics.map((l,i)=>'<div class="ly-line" data-i="'+i+'">'+l.text+(l.tr?'<div class="tr">'+l.tr+'</div>':'')+'</div>').join('');
-}
-function updLyric(t){
-  if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t+0.3)i=j;else break;}
-  if(i===lastLy)return;lastLy=i;
-  document.querySelectorAll('.ly-line').forEach((el,j)=>el.classList.toggle('cur',j===i));
-  if(lyView){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});}
-}
-audio.addEventListener('timeupdate',()=>{
-  const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
+function renderLyric(){if(!lyrics.length){$('ly-scroll').innerHTML='<div class="ly-empty">这首歌没有歌词</div>';return;}
+  $('ly-scroll').innerHTML=lyrics.map((l,i)=>'<div class="ly-line" data-i="'+i+'">'+l.text+(l.tr?'<div class="tr">'+l.tr+'</div>':'')+'</div>').join('');}
+function updLyric(t){if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t+0.3)i=j;else break;}
+  if(i===lastLy)return;lastLy=i;document.querySelectorAll('.ly-line').forEach((el,j)=>el.classList.toggle('cur',j===i));
+  if(lyView){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});}}
+
+audio.addEventListener('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
   $('scr-fill').style.width=p+'%';$('p-fill').style.width=p+'%';$('p-dot').style.left=p+'%';
-  $('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);
-  $('p-cur').textContent=fmt(t);$('p-dur').textContent=fmt(d);updLyric(t);
-});
-audio.addEventListener('play',()=>{$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('scr-pz').innerHTML='&#10074;&#10074;';});
-audio.addEventListener('pause',()=>{$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('scr-pz').textContent='▶';});
-function togglePlay(){if(!cur){$('sheet').classList.add('open');return;}audio.paused?audio.play():audio.pause();}
-$('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;
-$('c-list').onclick=()=>$('sheet').classList.add('open');$('w-center').onclick=()=>$('sheet').classList.add('open');
+  $('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);$('p-cur').textContent=fmt(t);$('p-dur').textContent=fmt(d);updLyric(t);});
+audio.addEventListener('play',()=>{$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
+audio.addEventListener('pause',()=>{$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
+
+function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused?audio.play():audio.pause();}
+$('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
+$('mini').addEventListener('click',e=>{if(e.target.closest('.mp')||e.target.closest('.ml'))return;expand();});
+$('c-list').onclick=()=>{collapse();};
+$('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
-$('do-search').onclick=doSearch;$('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
-$('sheet').addEventListener('click',e=>{if(e.target===$('sheet'))$('sheet').classList.remove('open');});
-function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);$('ipod-view').style.display=lyView?'none':'flex';if(lyView){lastLy=-1;updLyric(audio.currentTime);}}
+function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);if(lyView){lastLy=-1;updLyric(audio.currentTime);}}
 $('ipod-tap').addEventListener('click',e=>{if(e.target.closest('.wheel'))return;if(e.target.closest('.screen'))toggleLyric();});
 $('lyric-view').addEventListener('click',()=>toggleLyric());
 $('p-bar').addEventListener('click',e=>{if(!audio.duration)return;const r=$('p-bar').getBoundingClientRect();audio.currentTime=(e.clientX-r.left)/r.width*audio.duration;});
+
 let lastSeq=0;
 setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
-  if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;if(c.action==='play'&&c.id)playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});else if(c.action==='stop')audio.pause();}}catch(e){}},5000);
+  if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}else if(c.action==='stop')audio.pause();}}catch(e){}},5000);
+
+showTab('mine');
 </script>
 </body>
 </html>
