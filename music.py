@@ -209,23 +209,6 @@ class NeteaseClient:
             cookie = '; '.join(parts)
         return code, cookie
 
-    def login_status(self):
-        """确认当前 cookie 还活着、拿账号信息。"""
-        try:
-            r = requests.post('https://music.163.com/weapi/w/nuser/account/get',
-                              data=weapi_encrypt({}),
-                              headers=self._headers(pc=True), timeout=12)
-            j = r.json()
-            prof = j.get('profile')
-            if prof and prof.get('userId'):
-                return {'userId': str(prof['userId']),
-                        'nickname': prof.get('nickname', ''),
-                        'avatarUrl': prof.get('avatarUrl', ''),
-                        'vipType': prof.get('vipType', 0)}
-        except Exception:
-            pass
-        return None
-
     # ── 搜歌 / 取流 / 歌词 ────────────────────────────────────────────────
     def search(self, keyword, limit=20):
         # eapi 带登录态搜索，诊断证明稳定能搜到
@@ -317,15 +300,50 @@ class NeteaseClient:
 
     # ── 个人数据（登录后）────────────────────────────────────────────────
     def uid(self):
-        """从账号或登录态拿 userId。"""
+        """从账号或登录态拿 userId。多路兜底。"""
         acc = self.store.account()
         if acc.get('userId'):
             return acc['userId']
+        # 路1: eapi nuser/account
+        try:
+            j = self.eapi('/api/nuser/account/get', {})
+            prof = j.get('profile') or {}
+            if prof.get('userId'):
+                st = {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                      'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+                self.store.save_cred(self.store.cookie(), st)
+                return st['userId']
+        except Exception:
+            pass
+        # 路2: weapi login_status
         st = self.login_status()
         if st and st.get('userId'):
             self.store.save_cred(self.store.cookie(), st)
             return st['userId']
         return ''
+
+    def login_status(self):
+        """确认当前 cookie 还活着、拿账号信息。eapi 优先。"""
+        try:
+            j = self.eapi('/api/w/nuser/account/get', {})
+            prof = j.get('profile')
+            if prof and prof.get('userId'):
+                return {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                        'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+        except Exception:
+            pass
+        try:
+            r = requests.post('https://music.163.com/weapi/w/nuser/account/get',
+                              data=weapi_encrypt({}),
+                              headers=self._headers(pc=True), timeout=12)
+            j = r.json()
+            prof = j.get('profile')
+            if prof and prof.get('userId'):
+                return {'userId': str(prof['userId']), 'nickname': prof.get('nickname', ''),
+                        'avatarUrl': prof.get('avatarUrl', ''), 'vipType': prof.get('vipType', 0)}
+        except Exception:
+            pass
+        return None
 
     def my_playlists(self):
         """我的歌单列表（自建 + 收藏）。第一个通常是'我喜欢的音乐'。"""
@@ -575,6 +593,23 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     def music_diag2():
         """诊断个人数据能不能取到。"""
         out = {}
+        # 直接看几个身份接口的原始返回
+        try:
+            j = nc.eapi('/api/nuser/account/get', {})
+            out['eapi_account_code'] = j.get('code')
+            out['eapi_account_has_profile'] = bool(j.get('profile'))
+            out['eapi_account_uid'] = (j.get('profile') or {}).get('userId', '')
+            out['eapi_account_keys'] = list(j.keys())[:8]
+        except Exception as e:
+            out['eapi_account_error'] = str(e)[:150]
+        try:
+            r = requests.post('https://music.163.com/weapi/w/nuser/account/get',
+                              data=weapi_encrypt({}), headers=nc._headers(pc=True), timeout=12)
+            j = r.json()
+            out['weapi_account_code'] = j.get('code')
+            out['weapi_account_uid'] = (j.get('profile') or {}).get('userId', '')
+        except Exception as e:
+            out['weapi_account_error'] = str(e)[:150]
         try:
             out['uid'] = nc.uid()
         except Exception as e:
@@ -585,16 +620,6 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             out['playlists_head'] = [p['name'] for p in pls[:5]]
         except Exception as e:
             out['playlists_error'] = str(e)[:150]
-        try:
-            rec = nc.recent_plays(5)
-            out['recent_count'] = len(rec)
-        except Exception as e:
-            out['recent_error'] = str(e)[:120]
-        try:
-            cl = nc.cloud_songs(5)
-            out['cloud_count'] = len(cl)
-        except Exception as e:
-            out['cloud_error'] = str(e)[:120]
         return jsonify(out)
         err = _need_crypto()
         if err:
