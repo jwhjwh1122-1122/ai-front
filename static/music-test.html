@@ -152,6 +152,26 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .mini .mp svg{width:26px;height:26px;fill:currentColor;}
 .mini .ml{width:30px;height:30px;color:#5a6068;background:none;border:none;}
 .mini .ml svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;}
+/* 播放列表抽屉 */
+.queue-sheet{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.34);display:none;align-items:flex-end;}
+.queue-sheet.open{display:flex;}
+.q-inner{width:100%;max-height:72vh;background:#f4f6f8;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden;}
+.q-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid #e4e7ea;}
+.q-head b{font-size:16px;color:#20262c;}
+.q-head .q-n{font-size:13px;color:#9298a0;margin-left:4px;}
+.q-close{background:none;border:none;font-size:18px;color:#9298a0;}
+.q-list{flex:1;overflow-y:auto;scrollbar-width:none;padding:4px 0;}
+.q-list::-webkit-scrollbar{display:none;}
+.q-item{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;gap:10px;}
+.q-item:active{background:#e9ecef;}
+.q-item.cur .q-nm{color:#ec4141;}
+.q-item.cur .q-ar{color:#ec4141;}
+.q-song{flex:1;min-width:0;display:flex;align-items:baseline;}
+.q-nm{font-size:15px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;}
+.q-ar{font-size:12px;color:#9298a0;white-space:nowrap;flex-shrink:0;max-width:40%;overflow:hidden;text-overflow:ellipsis;}
+.q-del{background:none;border:none;font-size:15px;color:#c0c4ca;flex-shrink:0;padding:4px;}
+.q-foot{padding:14px 18px;border-top:1px solid #e4e7ea;text-align:center;}
+.q-foot span{font-size:14px;color:#5a6068;}
 </style>
 </head>
 <body>
@@ -223,6 +243,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 </div>
 
 <!-- 迷你条 -->
+<div class="queue-sheet" id="queue-sheet"></div>
+
 <div class="mini" id="mini">
   <img id="mini-cover" src="">
   <div class="mt"><div class="nm" id="mini-nm">—</div><div class="ar" id="mini-ar">—</div></div>
@@ -372,8 +394,29 @@ async function playSong(s){
   loadLyric(s.id);refreshMini();
 }
 function showQueue(){
-  if(!cur){alert('还没有歌');return;}
-  alert('当前播放：\n'+cur.name+' - '+cur.artist+'\n\n(播放队列功能完善中，现在是单曲)');
+  if(!queue.length){toast('还没有歌');return;}
+  const cur_i=qIndex;
+  let h='<div class="q-head"><div><b>当前播放</b> <span class="q-n">'+queue.length+'</span></div>'+
+    '<button class="q-close" id="q-close">✕</button></div>';
+  h+='<div class="q-list" id="q-list">';
+  h+=queue.map((s,i)=>`<div class="q-item${i===cur_i?' cur':''}" data-i="${i}">
+    <div class="q-song"><div class="q-nm">${s.name}</div><div class="q-ar"> - ${s.artist}</div></div>
+    <button class="q-del" data-del="${i}">✕</button></div>`).join('');
+  h+='</div>';
+  h+='<div class="q-foot"><span id="q-mode">'+['列表循环','单曲循环','随机播放'][loopMode]+'</span></div>';
+  $('queue-sheet').innerHTML='<div class="q-inner">'+h+'</div>';
+  $('queue-sheet').classList.add('open');
+  $('q-close').onclick=()=>$('queue-sheet').classList.remove('open');
+  $('q-mode').onclick=()=>{$('c-mode').click();$('q-mode').textContent=['列表循环','单曲循环','随机播放'][loopMode];};
+  document.querySelectorAll('.q-item').forEach(el=>{
+    const i=+el.dataset.i;
+    el.querySelector('.q-song').onclick=()=>{qIndex=i;playSong(queue[i]);showQueue();};
+    el.querySelector('[data-del]').onclick=(e)=>{e.stopPropagation();
+      queue.splice(i,1);if(i<qIndex)qIndex--;else if(i===qIndex&&queue.length){qIndex=qIndex%queue.length;playSong(queue[qIndex]);}
+      if(!queue.length){$('queue-sheet').classList.remove('open');audio.pause();cur=null;}else showQueue();};
+  });
+  // 滚到当前歌
+  setTimeout(()=>{const c=document.querySelector('.q-item.cur');if(c)c.scrollIntoView({block:'center'});},50);
 }
 function refreshMini(){const isCollapsed=$('play-page').classList.contains('hid');$('mini').classList.toggle('show',isCollapsed&&!!cur);}
 
@@ -399,7 +442,11 @@ audio.addEventListener('pause',()=>{$('c-main-ic').innerHTML='<path d="M8 5v14l1
 
 function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused?audio.play():audio.pause();}
 $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
-$('mini').addEventListener('click',e=>{if(e.target.closest('.mp')||e.target.closest('.ml'))return;expand();});
+$('mini').addEventListener('click',e=>{
+  if(e.target.closest('.mp'))return;
+  if(e.target.closest('.ml')){showQueue();return;}
+  expand();
+});
 $('btn-heart').onclick=()=>$('btn-heart').classList.toggle('liked');
 $('c-list').onclick=()=>{showQueue();};
 // 上一首/下一首(iPod轮 + 底部控件)
