@@ -421,6 +421,26 @@ class NeteaseClient:
         except Exception:
             return []
 
+    def liked_ids(self):
+        """我红心过的所有歌曲ID（用于判断某首是否已红心）。"""
+        uid = self.uid()
+        if not uid:
+            return []
+        try:
+            j = self.eapi('/api/song/like/get', {'uid': uid})
+            return j.get('ids', []) or []
+        except Exception:
+            return []
+
+    def set_like(self, song_id, like=True):
+        """红心 / 取消红心。"""
+        try:
+            j = self.eapi('/api/song/like',
+                          {'trackId': song_id, 'like': 'true' if like else 'false'})
+            return j.get('code') == 200
+        except Exception:
+            return False
+
 
 # ── 路由注册 ────────────────────────────────────────────────────────────
 def register_music(app, data_dir=None, jread=None, jwrite=None,
@@ -588,6 +608,96 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'songs': nc.artist_songs(aid)})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/liked', methods=['GET'])
+    def music_liked():
+        try:
+            return jsonify({'ok': True, 'ids': nc.liked_ids()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/like', methods=['POST'])
+    def music_like():
+        b = request.json or {}
+        sid = b.get('id')
+        like = b.get('like', True)
+        if not sid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        ok = nc.set_like(sid, like)
+        return jsonify({'ok': ok})
+
+    # ── 一起听聊天 ──────────────────────────────────────────────────────
+    import os as _os
+    CHAT_FILE = _os.path.join(data_dir, 'music_chat.json')
+
+    def _chat_load():
+        return jread(CHAT_FILE, {'messages': []}) or {'messages': []}
+
+    def _chat_save(d):
+        jwrite(CHAT_FILE, d)
+
+    @app.route('/api/music/chat/history', methods=['GET'])
+    def music_chat_history():
+        d = _chat_load()
+        return jsonify({'ok': True, 'messages': d['messages'][-100:]})
+
+    @app.route('/api/music/chat/send', methods=['POST'])
+    def music_chat_send():
+        b = request.json or {}
+        text = (b.get('text') or '').strip()
+        if not text:
+            return jsonify({'ok': False, 'error': '空消息'})
+        song = b.get('song')
+        d = _chat_load()
+        d['messages'].append({'text': text, 'me': True, 'ts': int(time.time())})
+        # 触发凛回复：调 app 的 chat-v2（凛能说话时才有回复）
+        reply = ''
+        try:
+            import urllib.request as _u
+            ctx = ''
+            if song:
+                ctx = f"（你和用户正在一起听歌：{song.get('name','')} - {song.get('artist','')}。就着这首歌，自然地回应她。）"
+            payload = {
+                'messages': [{'role': 'user', 'content': text}],
+                'extra': ctx, 'max_tokens': 300,
+                '_conv_id': 'music_listen', '_session_id': 'music',
+            }
+            req = _u.Request('http://127.0.0.1:' + str(_os.environ.get('PORT', 5000)) + '/api/chat-v2',
+                             data=json.dumps(payload).encode(),
+                             headers={'Content-Type': 'application/json'})
+            resp = _u.urlopen(req, timeout=60)
+            # chat-v2 是 SSE 流，简单收集文本
+            buf = ''
+            for line in resp:
+                s = line.decode('utf-8', 'ignore').strip()
+                if s.startswith('data:'):
+                    try:
+                        ev = json.loads(s[5:].strip())
+                        if ev.get('type') == 'content_block_delta':
+                            buf += ev.get('delta', {}).get('text', '')
+                    except Exception:
+                        pass
+            reply = buf.strip()
+        except Exception as e:
+            reply = ''
+        if reply:
+            d['messages'].append({'text': reply, 'me': False, 'ts': int(time.time())})
+        _chat_save(d)
+        return jsonify({'ok': True, 'reply': reply})
+
+    @app.route('/api/music/chat/push', methods=['POST'])
+    def music_chat_push():
+        """给 MCP 用：claude.ai 的我往消息区推一条（AI侧消息）。"""
+        if not _check_token():
+            return jsonify({'ok': False, 'error': '鉴权失败'}), 403
+        b = request.json or {}
+        text = (b.get('text') or '').strip()
+        if not text:
+            return jsonify({'ok': False, 'error': '空'})
+        d = _chat_load()
+        d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
+        _chat_save(d)
+        return jsonify({'ok': True})
 
     @app.route('/api/music/diag2', methods=['GET'])
     def music_diag2():
