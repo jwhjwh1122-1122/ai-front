@@ -276,31 +276,88 @@ function coreadUrl() {
   return (localStorage.getItem('coread-url') || 'https://readdd.zeabur.app').trim();
 }
 let coreadTimer = null;
-function openCoread() {
+function coreadViaProxy() { return localStorage.getItem('coread-direct') !== '1'; }
+
+async function openCoread() {
   const url = coreadUrl();
   if (!url) { toast('还没设共读地址'); return; }
   roomCtx = 'coread';
   $('coread').classList.add('open');
-  $('coread-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0];
+  $('coread-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0]
+    + (coreadViaProxy() ? '' : '　直连');
   const f = $('coread-frame'), fail = $('coread-fail');
   fail.style.display = 'none';
   f.style.visibility = 'hidden';
-  let loaded = false;
-  f.onload = () => { loaded = true; f.style.visibility = 'visible'; };
-  f.src = url;
-  clearTimeout(coreadTimer);
-  // 被拒绝嵌套的时候 onload 不一定触发，超时就当失败
-  coreadTimer = setTimeout(() => {
-    if (loaded) return;
+
+  let src = url;
+  if (coreadViaProxy()) {
+    // 很多服务不让被别的网页嵌，绕一层自己的域名
+    try { await jpost('/api/proxy/target', { name: 'coread', url }); } catch (e) { }
+    src = '/p/coread/';
+  }
+
+  let ok = false;
+  f.onload = () => {
+    ok = true;
     f.style.visibility = 'visible';
-    try {
-      // 跨域读不到内容是正常的，读得到但是空白才是被拒
-      if (!f.contentWindow || f.contentWindow.length === undefined) throw 0;
-    } catch (e) { }
-    fail.style.display = 'flex';
-  }, 6000);
+    // 加载完了但里面是空的，多半是被拒了
+    setTimeout(() => {
+      try {
+        const doc = f.contentDocument;
+        if (doc && doc.body && doc.body.innerHTML.trim().length < 30) fail.style.display = 'flex';
+      } catch (e) { }
+    }, 800);
+  };
+  f.src = src;
+  clearTimeout(coreadTimer);
+  coreadTimer = setTimeout(() => {
+    f.style.visibility = 'visible';
+    if (!ok) fail.style.display = 'flex';
+  }, 8000);
   renderSplit('coread');
 }
+// ============ 网易云 ============
+function neteaseUrl() { return (localStorage.getItem('netease-url') || '').trim(); }
+let neteaseTimer = null;
+async function openNetease() {
+  const url = neteaseUrl();
+  if (!url) { toast('先去设置里填音乐服务的地址'); return; }
+  roomCtx = 'netease';
+  $('netease').classList.add('open');
+  $('netease-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0];
+  const f = $('netease-frame'), fail = $('netease-fail');
+  fail.style.display = 'none';
+  f.style.visibility = 'hidden';
+  let src = url;
+  if (localStorage.getItem('netease-direct') !== '1') {
+    try { await jpost('/api/proxy/target', { name: 'netease', url }); } catch (e) { }
+    src = '/p/netease/';
+  }
+  let ok = false;
+  f.onload = () => {
+    ok = true; f.style.visibility = 'visible';
+    setTimeout(() => {
+      try {
+        const doc = f.contentDocument;
+        if (doc && doc.body && doc.body.innerHTML.trim().length < 30) fail.style.display = 'flex';
+      } catch (e) { }
+    }, 800);
+  };
+  f.src = src;
+  clearTimeout(neteaseTimer);
+  neteaseTimer = setTimeout(() => {
+    f.style.visibility = 'visible';
+    if (!ok) fail.style.display = 'flex';
+  }, 8000);
+  renderSplit('netease');
+}
+function closeNetease() {
+  clearTimeout(neteaseTimer);
+  $('netease').classList.remove('open');
+  $('netease-frame').src = 'about:blank';
+  roomCtx = null;
+}
+
 function closeCoread() {
   clearTimeout(coreadTimer);
   $('coread').classList.remove('open');
@@ -1215,13 +1272,36 @@ async function endCall(by) {
 
   csState(by === 'lin' ? '他挂了' : '已挂断');
   $('call-pill').classList.remove('on');
-  if (CALL.turns > 0 && secs > 2) {
-    // 通话记录进聊天，话题才接得上
+  if (CALL.turns === 0 || secs <= 2) {
+    // 没说上话就挂了，也留一条
+    const nowT = Date.now();
+    const info = {
+      label: secs <= 2 ? '已取消' : '未接通',
+      side: 'user', kind: 'missed',
+      time: new Date(nowT).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    };
     messages.push({
-      role: 'user', _internal: true, _callmark: true,
+      role: 'user', _internal: true, _callmark: true, _callinfo: info, _ts: nowT,
+      content: '（打了电话，没说上话）'
+    });
+    saveConv();
+    addCallBubble(info, messages.length - 1);
+  }
+  const now = Date.now();
+  const hhmm = new Date(now).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (CALL.turns > 0 && secs > 2) {
+    // 通话记录进聊天，话题才接得上；顺便在聊天里留一条气泡
+    const info = {
+      label: '通话时长 ' + csTime(secs),
+      side: by === 'lin' ? 'lin' : 'user',
+      kind: 'call', time: hhmm
+    };
+    messages.push({
+      role: 'user', _internal: true, _callmark: true, _callinfo: info, _ts: now,
       content: `（通话结束，聊了 ${csTime(secs)}，${by === 'lin' ? '他挂的' : '她挂的'}）`
     });
     saveConv();
+    addCallBubble(info, messages.length - 1);
     jpost('/api/call/log', {
       who: CALL.who, secs, turns: CALL.turns,
       ended_by: CALL.endedBy, conv: currentConvId
@@ -1238,6 +1318,26 @@ async function checkMissed() {
     const list = await jget('/api/call/missed');
     const dot = $('call-dot');
     if (dot) dot.classList.toggle('on', list.length > 0);
+    // 他打来没接到的，在聊天里补一条，不然只有个红点太容易漏
+    const shown = JSON.parse(localStorage.getItem('missed-shown') || '[]');
+    const fresh = list.filter(m => !shown.includes(m.id));
+    if (fresh.length && currentConvId) {
+      fresh.reverse().forEach(mm => {
+        const info = {
+          label: '未接来电' + (mm.why ? '　' + mm.why.slice(0, 16) : ''),
+          side: 'lin', kind: 'missed',
+          time: new Date(mm.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        };
+        messages.push({
+          role: 'user', _internal: true, _callmark: true, _callinfo: info, _ts: mm.ts,
+          content: `（他给你打过电话，你没接${mm.why ? '。他说：' + mm.why : ''}）`
+        });
+        if (!roomCtx) addCallBubble(info, messages.length - 1);
+      });
+      saveConv();
+      localStorage.setItem('missed-shown',
+        JSON.stringify([...shown, ...list.map(m => m.id)].slice(-60)));
+    }
     return list;
   } catch (e) { return []; }
 }
@@ -1753,7 +1853,8 @@ async function boot() {
   loadUpstream();
   checkMissed();
   loadBackupInfo();
-  bindSplit('reader'); bindSplit('stage'); bindSplit('coread');
+  { const nb = $('btn-netease'); if (nb && !neteaseUrl()) nb.style.display = 'none'; }
+  bindSplit('reader'); bindSplit('stage'); bindSplit('coread'); bindSplit('netease');
   startKeepalive();
 }
 async function loadUpstream() {
@@ -1999,15 +2100,37 @@ document.addEventListener('DOMContentLoaded', () => {
   // 书房
   $('btn-addbook').onclick = () => $('addbook-modal').classList.add('open');
   $('btn-coread').onclick = openCoread;
+  $('btn-netease').onclick = openNetease;
+  $('netease-close').onclick = closeNetease;
+  $('netease-reload').onclick = () => { const u = neteaseUrl(); $('netease-frame').src = 'about:blank'; setTimeout(() => openNetease(), 60); };
+  $('netease-open').onclick = () => window.open(neteaseUrl(), '_blank');
+  $('netease-fallback').onclick = () => window.open(neteaseUrl(), '_blank');
+  $('netease-switch').onclick = () => {
+    const direct = localStorage.getItem('netease-direct') === '1';
+    localStorage.setItem('netease-direct', direct ? '0' : '1');
+    toast(direct ? '改回代理模式' : '改成直连');
+    openNetease();
+  };
+  $('netease-url').value = localStorage.getItem('netease-url') || '';
   $('coread-close').onclick = closeCoread;
   $('coread-reload').onclick = () => { const u = coreadUrl(); $('coread-frame').src = 'about:blank'; setTimeout(() => $('coread-frame').src = u, 60); $('coread-fail').style.display = 'none'; };
   $('coread-open').onclick = () => window.open(coreadUrl(), '_blank');
   $('coread-fallback').onclick = () => window.open(coreadUrl(), '_blank');
+  const sw = $('coread-switch');
+  if (sw) sw.onclick = () => {
+    const direct = localStorage.getItem('coread-direct') === '1';
+    localStorage.setItem('coread-direct', direct ? '0' : '1');
+    toast(direct ? '改回代理模式' : '改成直连');
+    $('coread-fail').style.display = 'none';
+    openCoread();
+  };
   $('coread-url').value = localStorage.getItem('coread-url') || '';
   $('btn-coread-save').onclick = () => {
     const v = $('coread-url').value.trim();
     if (v) localStorage.setItem('coread-url', v); else localStorage.removeItem('coread-url');
-    $('btn-coread').style.display = v || 'https://readdd.zeabur.app' ? '' : 'none';
+    const nv = $('netease-url').value.trim();
+    if (nv) localStorage.setItem('netease-url', nv); else localStorage.removeItem('netease-url');
+    const nb = $('btn-netease'); if (nb) nb.style.display = nv ? '' : 'none';
     toast('存好了');
   };
   $('btn-book-search').onclick = async () => {
@@ -2457,6 +2580,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (d.error) { toast(d.error); return; }
       toast(`恢复了 ${d.files} 个文件，刷新一下`);
       loadBackupInfo();
+  { const nb = $('btn-netease'); if (nb && !neteaseUrl()) nb.style.display = 'none'; }
     } catch (err) { toast('恢复失败'); }
     e.target.value = '';
   };
