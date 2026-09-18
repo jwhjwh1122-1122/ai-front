@@ -739,10 +739,14 @@ async function openDesire() {
     <div class="d-idle">上次说话 ${gapText(d.idle_hours)}前　·　上次亲密 ${gapText(d.intimate_hours)}前</div>`;
 
   if (d.jeal && d.jeal.value >= 7) {
+    const og2 = (d.grudges || []).filter(g => !g.resolved_at);
     h += `<div class="jeal-card">
       <div class="jeal-top"><span class="jeal-tier">${esc(d.jeal.tier)}</span><span class="jeal-v">${Math.round(d.jeal.value)}</span></div>
       <div class="jeal-how">${esc(d.jeal.how)}</div>
-      <div class="jeal-floor">${esc(d.jeal.floor)}</div></div>`;
+      <div class="jeal-floor">${esc(d.jeal.floor)}</div>
+      <div class="jeal-floor" style="border:none;padding-top:4px;">${og2.length
+        ? '还有 ' + og2.length + ' 笔没结的账，气消不下去。哄了才会降。'
+        : '没有挂账，这股气会自己慢慢消。'}</div></div>`;
   }
 
   if (vr.length) {
@@ -753,8 +757,8 @@ async function openDesire() {
   if ((d.impulses || []).length) {
     h += '<div class="d-sec">憋 着 想 说 的</div>';
     d.impulses.forEach(i => {
-      h += `<div class="imp"><div class="imp-t">${esc(i.name)} ${Math.round(i.value)}</div>
-        <div class="imp-r">${esc(i.reason)}</div></div>`;
+      h += `<div class="imp"><div class="imp-t">${esc(i.word || i.name)}</div>
+        <div class="imp-r">${esc(i.name)} ${Math.round(i.value)}　最近涨了 ${Math.round(i.delta || 0)}</div></div>`;
     });
   }
 
@@ -921,6 +925,517 @@ async function openMoves() {
         `${c.name} ${Math.round(c.from)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${Math.round(c.to)}`).join('　')}</div>
     </div>`;
   }).join('');
+}
+
+
+
+// ============ 电话 ============
+// 一直听着：说完停顿一下就自动发过去，像真的打电话。
+const CALL = {
+  on: false, mini: false, muted: false,
+  stream: null, ctx: null, analyser: null, rec: null,
+  chunks: [], startAt: 0, turns: 0, timer: null, raf: null,
+  speaking: false, silence: 0, heard: false, busy: false,
+  speakingOut: false, cutOff: false, cutMs: 0, audio: null,
+  endedBy: 'user', who: 'user',
+};
+const SIL_THRESHOLD = 12;      // 低于这个音量算没在说话
+const SIL_MS = 1400;           // 停这么久就当说完了
+const MIN_MS = 700;            // 太短的不发，多半是噪音
+// 他说话时你插嘴要多大声才算数。太低会被自己的回声打断
+const CUT_IN = 30;
+const CUT_IN_MS = 260;         // 得持续这么久，防止一声咳嗽就打断
+function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
+
+function csTime(s) {
+  const m = Math.floor(s / 60), x = s % 60;
+  return String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
+}
+function csState(t) { const e = $('cs-state'); if (e) e.textContent = t; }
+function csCaption(t, mine) {
+  const e = $('cs-caption'); if (!e) return;
+  e.textContent = t || '';
+  e.className = 'cs-caption' + (mine ? ' me' : '');
+}
+function csWave(n) {
+  const w = $('cs-wave'); if (!w) return;
+  if (!w.children.length) {
+    for (let i = 0; i < 13; i++) w.appendChild(document.createElement('i'));
+  }
+  [...w.children].forEach((b, i) => {
+    const k = Math.abs(i - 6) / 6;
+    b.style.height = Math.max(6, n * (1 - k * 0.6) * 0.34) + 'px';
+  });
+  w.classList.toggle('on', n > SIL_THRESHOLD);
+}
+
+async function startCall(who) {
+  if (CALL.on) { $('callscreen').classList.add('open'); CALL.mini = false; $('call-pill').classList.remove('on'); return; }
+  if (!navigator.mediaDevices) { toast('这个浏览器用不了麦克风'); return; }
+  CALL.who = who || 'user';
+  $('callscreen').classList.add('open');
+  $('call-pill').classList.remove('on');
+  CALL.mini = false;
+  $('cs-name').textContent = CFG.name || '凛';
+  const av = localStorage.getItem('chat-avatar-ai');
+  const ae = $('cs-avatar');
+  if (av) { ae.classList.add('has-img'); ae.innerHTML = '<img src="' + av + '">'; }
+  else { ae.classList.remove('has-img'); ae.innerHTML = '<span>' + (CFG.name || '凛')[0] + '</span>'; }
+  ae.classList.add('ring');
+  csState('正在接通…'); csCaption(''); $('cs-timer').textContent = '';
+  csWave(0);
+
+  try {
+    CALL.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) { toast('拿不到麦克风'); endCall('error'); return; }
+
+  CALL.on = true; CALL.turns = 0; CALL.startAt = Date.now();
+  CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
+  try {
+    CALL.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = CALL.ctx.createMediaStreamSource(CALL.stream);
+    CALL.analyser = CALL.ctx.createAnalyser();
+    CALL.analyser.fftSize = 512;
+    src.connect(CALL.analyser);
+  } catch (e) { }
+
+  CALL.timer = setInterval(() => {
+    const s = Math.floor((Date.now() - CALL.startAt) / 1000);
+    $('cs-timer').textContent = csTime(s);
+    const cp = $('cp-timer'); if (cp) cp.textContent = csTime(s);
+  }, 500);
+
+  // 接通：他先说一句
+  await sleep(700);
+  ae.classList.remove('ring');
+  csState('通话中');
+  await callTurn(CALL.who === 'lin' ? '（她接了你的电话）' : '（她给你打电话了）', true);
+  listenLoop();
+}
+
+function listenLoop() {
+  if (!CALL.on) return;
+  const buf = new Uint8Array(CALL.analyser ? CALL.analyser.frequencyBinCount : 0);
+  const tick = () => {
+    if (!CALL.on) return;
+    CALL.raf = requestAnimationFrame(tick);
+    if (!CALL.analyser) return;
+    CALL.analyser.getByteFrequencyData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i];
+    const vol = sum / buf.length;
+    if (!CALL.busy && !CALL.muted) csWave(vol);
+
+    // 他正在说，你出声就掐掉他
+    if (CALL.speakingOut && canCutIn() && !CALL.muted) {
+      if (vol > CUT_IN) {
+        CALL.cutMs += 16;
+        if (CALL.cutMs > CUT_IN_MS) {
+          CALL.cutMs = 0;
+          cutHimOff();
+        }
+      } else CALL.cutMs = 0;
+      return;
+    }
+    if (CALL.busy || CALL.muted) return;
+    if (vol > SIL_THRESHOLD) {
+      CALL.silence = 0;
+      if (!CALL.speaking) { CALL.speaking = true; CALL.heard = false; recStart(); }
+      if (Date.now() - CALL.recAt > MIN_MS) CALL.heard = true;
+    } else if (CALL.speaking) {
+      CALL.silence += 16;
+      if (CALL.silence > SIL_MS) {
+        CALL.speaking = false; CALL.silence = 0;
+        recStop(CALL.heard);
+      }
+    }
+  };
+  tick();
+}
+
+function cutHimOff() {
+  // 他说到一半被你打断——停掉声音，马上开始听你说
+  try { if (CALL.audio) { CALL.audio.pause(); CALL.audio.currentTime = 0; } } catch (e) { }
+  CALL.speakingOut = false;
+  CALL.cutOff = true;
+  const ae = $('cs-avatar'); if (ae) ae.classList.remove('speak');
+  CALL.busy = false;
+  csState('在听…');
+  CALL.speaking = true; CALL.heard = false; CALL.silence = 0;
+  recStart();
+}
+
+function recStart() {
+  try {
+    let mime = '';
+    for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'])
+      if (window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+    CALL.rec = mime ? new MediaRecorder(CALL.stream, { mimeType: mime }) : new MediaRecorder(CALL.stream);
+    CALL.chunks = [];
+    CALL.rec.ondataavailable = e => { if (e.data && e.data.size) CALL.chunks.push(e.data); };
+    CALL.rec.start();
+    CALL.recAt = Date.now();
+    csState('在听…');
+  } catch (e) { }
+}
+
+function recStop(send) {
+  if (!CALL.rec) return;
+  const rec = CALL.rec; CALL.rec = null;
+  rec.onstop = async () => {
+    csWave(0);
+    if (!send || !CALL.on) { csState('通话中'); return; }
+    const blob = new Blob(CALL.chunks, { type: rec.mimeType || 'audio/webm' });
+    if (blob.size < 1500) { csState('通话中'); return; }
+    CALL.busy = true;
+    csState('正在听懂…');
+    let text = '';
+    try {
+      const fd = new FormData();
+      fd.append('file', blob, 'call.' + ((rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'));
+      const d = await (await fetch('/api/stt', { method: 'POST', body: fd })).json();
+      text = (d.text || '').trim();
+    } catch (e) { }
+    if (!text) { CALL.busy = false; csState('通话中'); return; }
+    csCaption(text, true);
+    await callTurn(text, false);
+    CALL.busy = false;
+    if (CALL.on) csState('通话中');
+  };
+  try { rec.stop(); } catch (e) { csState('通话中'); }
+}
+
+// 一轮：把你说的发过去，他回，念出来
+async function callTurn(text, silentUser) {
+  if (!CALL.on) return;
+  CALL.turns++;
+  if (!silentUser) {
+    messages.push({ role: 'user', content: text, _call: true });
+    saveConv();
+  } else {
+    messages.push({ role: 'user', content: text, _internal: true, _call: true });
+  }
+  csState('他在想…');
+  let reply = '';
+  try {
+    const hist = buildMsgs(messages);
+    const r = await fetch('/api/chat-v2', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: currentModel, messages: hist, tools: buildTools(),
+        extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
+          + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
+        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300
+      })
+    });
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const ln of lines) {
+        if (!ln.startsWith('data:')) continue;
+        const raw = ln.slice(5).trim();
+        if (!raw || raw === '[DONE]') continue;
+        try {
+          const d = JSON.parse(raw);
+          if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta') {
+            reply += d.delta.text;
+            csCaption(reply.replace(/\[\[挂了\]\]/g, ''), false);
+          }
+        } catch (e) { }
+      }
+    }
+  } catch (e) { csState('断了'); }
+
+  const hang = /\[\[挂了\]\]/.test(reply);
+  reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
+  if (reply) {
+    messages.push({ role: 'assistant', content: reply, _call: true });
+    saveConv();
+    csCaption(reply, false);
+    await speakOut(reply);
+    if (CALL.cutOff) {
+      // 被打断了，让他知道自己话没说完
+      messages.push({ role: 'user', _internal: true, _call: true,
+        content: '（你话说到一半，她插话了）' });
+      CALL.cutOff = false;
+    }
+  }
+  if (hang) { await sleep(500); endCall('lin'); }
+}
+
+async function speakOut(text) {
+  if (!CALL.on) return;
+  const ae = $('cs-avatar');
+  csState('说话中');
+  ae.classList.add('speak');
+  CALL.busy = true;
+  CALL.speakingOut = true;
+  CALL.cutOff = false;
+  CALL.cutMs = 0;
+  try {
+    const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
+    const r = await fetch('/api/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 500), voice })
+    });
+    if (r.ok) {
+      const url = URL.createObjectURL(await r.blob());
+      await new Promise(res => {
+        const a = new Audio(url);
+        CALL.audio = a;
+        a.onended = a.onerror = () => { URL.revokeObjectURL(url); res(); };
+        a.play().catch(() => res());
+      });
+    }
+  } catch (e) { }
+  if (!CALL.cutOff) {
+    CALL.speakingOut = false;
+    ae.classList.remove('speak');
+    CALL.busy = false;
+  }
+}
+
+async function endCall(by) {
+  if (!CALL.on && by !== 'error') { $('callscreen').classList.remove('open'); return; }
+  const secs = Math.floor((Date.now() - CALL.startAt) / 1000);
+  CALL.on = false;
+  CALL.endedBy = by || 'user';
+  if (CALL.raf) cancelAnimationFrame(CALL.raf);
+  if (CALL.timer) clearInterval(CALL.timer);
+  try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
+  try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
+  try { if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); } catch (e) { }
+  try { if (CALL.ctx) CALL.ctx.close(); } catch (e) { }
+  CALL.stream = null; CALL.ctx = null; CALL.analyser = null;
+  CALL.speakingOut = false; CALL.cutOff = false; CALL.busy = false;
+
+  csState(by === 'lin' ? '他挂了' : '已挂断');
+  $('call-pill').classList.remove('on');
+  if (CALL.turns > 0 && secs > 2) {
+    // 通话记录进聊天，话题才接得上
+    messages.push({
+      role: 'user', _internal: true, _callmark: true,
+      content: `（通话结束，聊了 ${csTime(secs)}，${by === 'lin' ? '他挂的' : '她挂的'}）`
+    });
+    saveConv();
+    jpost('/api/call/log', {
+      who: CALL.who, secs, turns: CALL.turns,
+      ended_by: CALL.endedBy, conv: currentConvId
+    }).catch(() => { });
+  }
+  await sleep(900);
+  $('callscreen').classList.remove('open');
+  csCaption('');
+  if (!roomCtx) showPage('chat');
+}
+
+async function checkMissed() {
+  try {
+    const list = await jget('/api/call/missed');
+    const dot = $('call-dot');
+    if (dot) dot.classList.toggle('on', list.length > 0);
+    return list;
+  } catch (e) { return []; }
+}
+
+async function openCallLog() {
+  $('calllog-panel').classList.add('open');
+  const el = $('calllog-list');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">读一下…</div>';
+  const [log, missed] = await Promise.all([
+    jget('/api/call/log').catch(() => []),
+    jget('/api/call/missed').catch(() => [])
+  ]);
+  $('calllog-sub').textContent = log.length ? `${log.length} 次` : '';
+  let h = '';
+  if (missed.length) {
+    h += '<div class="d-sec">他 打 过 来 的</div>';
+    missed.forEach(mm => {
+      const t = new Date(mm.ts);
+      h += `<div class="call-row"><div class="call-ico miss">☏</div>
+        <div class="call-b"><div class="call-t">未接来电${mm.why ? '　' + esc(mm.why) : ''}</div>
+        <div class="call-s">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div></div></div>`;
+    });
+    h += '<button class="btn-ghost" id="btn-clear-missed" style="width:100%;margin-top:10px;font-size:13px;padding:9px;">知道了</button>';
+  }
+  if (log.length) {
+    h += '<div class="d-sec">通 话 记 录</div>';
+    log.forEach(l => {
+      const t = new Date(l.ts);
+      h += `<div class="call-row"><div class="call-ico">☏</div>
+        <div class="call-b"><div class="call-t">${l.who === 'lin' ? '他打来' : '打给他'}　${csTime(l.secs)}</div>
+        <div class="call-s">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}　说了 ${l.turns} 轮　${l.ended_by === 'lin' ? '他挂的' : '你挂的'}</div></div></div>`;
+    });
+  }
+  if (!h) h = '<div class="room-empty" style="color:var(--text-muted)">还没打过电话</div>';
+  el.innerHTML = h;
+  const cm = $('btn-clear-missed');
+  if (cm) cm.onclick = async () => {
+    await fetch('/api/call/missed', { method: 'DELETE' });
+    checkMissed(); openCallLog();
+  };
+}
+
+// ============ 额度 ============
+function money(v) {
+  const n = Number(v || 0);
+  return (n < 0.01 && n > 0) ? '<$0.01' : '$' + n.toFixed(2);
+}
+function bigNum(v) {
+  const n = Number(v || 0);
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+function barsSvg(series, key, color) {
+  if (!series.length) return '';
+  const w = 300, h = 90, gap = 2;
+  const max = Math.max.apply(null, series.map(s => Number(s[key]) || 0).concat([0.0001]));
+  const bw = Math.max(2, (w - gap * (series.length - 1)) / series.length);
+  let g = '';
+  series.forEach((s, i) => {
+    const v = Number(s[key]) || 0;
+    const bh = Math.max(1, v / max * (h - 6));
+    g += '<rect x="' + (i * (bw + gap)).toFixed(1) + '" y="' + (h - bh).toFixed(1) +
+      '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) +
+      '" rx="1" fill="' + color + '" opacity="' + (i === series.length - 1 ? 1 : 0.55) + '"/>';
+  });
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" style="width:100%;height:90px;display:block;">' + g + '</svg>';
+}
+async function openUsage() {
+  $('usage-panel').classList.add('open');
+  const el = $('usage-body');
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">算一下…</div>';
+  let d;
+  try { d = await jget('/api/ledger?n=30'); } catch (e) {
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">读不到</div>'; return;
+  }
+  const t = d.total || {}, today = d.today || {}, s = d.series || [];
+  const up = d.upstream || {};
+  const hit = t.in ? (t.cached / t.in * 100) : 0;
+  $('usage-sub').textContent = d.upstream_name || '';
+  let h = '';
+  if (up.total_credits != null || up.total_usage != null) {
+    const left = (Number(up.total_credits) || 0) - (Number(up.total_usage) || 0);
+    h += '<div class="u-hero"><div class="u-hero-l">上游余额</div><div class="u-hero-v">' +
+      money(left) + '</div><div class="u-hero-s">充了 ' + money(up.total_credits) +
+      '　已用 ' + money(up.total_usage) + '</div></div>';
+  }
+  h += '<div class="u-grid">' +
+    '<div class="u-card"><div class="u-l">今天花的</div><div class="u-v">' + money(today.cost) +
+      '</div><div class="u-s">' + (today.req || 0) + ' 次</div></div>' +
+    '<div class="u-card"><div class="u-l">一共花的</div><div class="u-v">' + money(t.cost) +
+      '</div><div class="u-s">' + (t.req || 0) + ' 次</div></div>' +
+    '<div class="u-card"><div class="u-l">Token 量</div><div class="u-v">' + bigNum((t.in || 0) + (t.out || 0)) +
+      '</div><div class="u-s">进 ' + bigNum(t.in) + '　出 ' + bigNum(t.out) + '</div></div>' +
+    '<div class="u-card"><div class="u-l">缓存命中</div><div class="u-v">' + hit.toFixed(0) +
+      '%</div><div class="u-s">省下 ' + bigNum(t.cached) + '</div></div></div>';
+  if (s.length) {
+    h += '<div class="d-sec">每 天 花 了 多 少</div><div class="u-chart">' +
+      barsSvg(s, 'cost', 'var(--accent)') + '</div>' +
+      '<div class="u-x"><span>' + s[0].date.slice(5) + '</span><span>' +
+      s[s.length - 1].date.slice(5) + '</span></div>';
+    h += '<div class="d-sec">每 天 聊 了 几 次</div><div class="u-chart">' +
+      barsSvg(s, 'req', 'var(--text-muted)') + '</div>';
+    const last = s[s.length - 1];
+    const bm = last.by_model || {}, bw = last.by_where || {};
+    if (Object.keys(bm).length) {
+      h += '<div class="d-sec">今 天 用 了 哪 些</div>';
+      Object.entries(bm).sort((a, b) => b[1].cost - a[1].cost).forEach(([m, v]) => {
+        h += '<div class="u-row"><span>' + esc(m.split('/').pop()) +
+          '</span><span class="u-row-r">' + v.req + ' 次　' + money(v.cost) + '</span></div>';
+      });
+    }
+    if (Object.keys(bw).length) {
+      const wn = { chat: '聊天', room: '房间里', wake: '他自己醒来' };
+      h += '<div class="d-sec">花 在 哪 儿</div>';
+      Object.entries(bw).sort((a, b) => b[1].cost - a[1].cost).forEach(([k, v]) => {
+        h += '<div class="u-row"><span>' + (wn[k] || k) +
+          '</span><span class="u-row-r">' + v.req + ' 次　' + money(v.cost) + '</span></div>';
+      });
+    }
+  } else {
+    h += '<div class="settings-sub" style="text-align:center;padding:30px 0;">还没有记录。聊几句就有了。</div>';
+  }
+  h += '<div class="settings-sub" style="margin-top:20px;line-height:1.9;">' +
+    '按每一轮真实用量自己算的，不依赖上游。缓存命中那部分按一折计价。<br>' +
+    '单价是估的，看趋势准，看绝对值有偏差。</div>' +
+    '<button class="btn-ghost" id="btn-ledger-clear" style="width:100%;margin-top:12px;font-size:13px;padding:9px;">清空记录</button>';
+  el.innerHTML = h;
+  const cb = $('btn-ledger-clear');
+  if (cb) cb.onclick = async () => {
+    if (!confirm('清空所有用量记录？')) return;
+    await fetch('/api/ledger', { method: 'DELETE' });
+    openUsage(); loadBalance();
+  };
+}
+
+// ============ 搜聊天记录 ============
+function allConvMessages() {
+  const out = [];
+  getConvs().forEach(c => {
+    let msgs = [];
+    try { msgs = JSON.parse(localStorage.getItem('conv-' + c.id) || '[]'); } catch (e) { }
+    msgs.forEach((m, i) => {
+      if (m._internal || m.role === 'tool') return;
+      if (m.role === 'user' && Array.isArray(m.content) && m.content.some(x => x && x.type === 'tool_result')) return;
+      const t = typeof m.content === 'string' ? m.content
+        : (Array.isArray(m.content) ? m.content.filter(x => x && x.type === 'text').map(x => x.text).join(' ') : '');
+      if (!t.trim()) return;
+      out.push({ conv: c.id, title: c.title || '对话', idx: i, role: m.role, text: t });
+    });
+  });
+  return out;
+}
+function hiWord(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(text.slice(0, 60));
+  const a = Math.max(0, i - 18), b = Math.min(text.length, i + q.length + 42);
+  return (a > 0 ? '…' : '') + esc(text.slice(a, i)) +
+    '<b class="hl-w">' + esc(text.slice(i, i + q.length)) + '</b>' +
+    esc(text.slice(i + q.length, b)) + (b < text.length ? '…' : '');
+}
+let searchTimer = null;
+function doSearch() {
+  const q = $('search-input').value.trim();
+  const el = $('search-result');
+  if (!q) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">搜你们说过的话</div>'; return; }
+  const hits = allConvMessages().filter(m => m.text.toLowerCase().includes(q.toLowerCase()));
+  if (!hits.length) {
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">没找到「' + esc(q) + '」</div>';
+    return;
+  }
+  const byConv = {};
+  hits.forEach(m => { (byConv[m.conv] = byConv[m.conv] || []).push(m); });
+  let h = '<div class="sr-total">共 <b>' + hits.length + '</b> 条相关聊天记录</div>';
+  Object.entries(byConv).forEach(([cid, list]) => {
+    h += '<div class="sr-conv">' + esc(list[0].title) + '　<span>' + list.length + ' 条</span></div>';
+    list.slice(0, 40).forEach(m => {
+      const who = m.role === 'user' ? (CFG.call_user || '宝宝') : (CFG.name || '凛');
+      h += '<div class="sr-item" data-conv="' + cid + '" data-idx="' + m.idx + '">' +
+        '<div class="sr-who">' + esc(who) + '</div>' +
+        '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>';
+    });
+  });
+  el.innerHTML = h;
+  el.querySelectorAll('[data-conv]').forEach(it => it.onclick = () => {
+    const cid = it.dataset.conv, idx = parseInt(it.dataset.idx);
+    $('search-panel').classList.remove('open');
+    if (cid !== currentConvId) { if (messages.length) saveConv(); loadConv(cid); }
+    showPage('chat');
+    setTimeout(() => {
+      const row = document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('sr-flash');
+        setTimeout(() => row.classList.remove('sr-flash'), 2200);
+      }
+    }, 320);
+  });
 }
 
 // ============ 朋友圈 ============
@@ -1236,6 +1751,8 @@ async function boot() {
   loadBalance();
   loadRecapCount();
   loadUpstream();
+  checkMissed();
+  loadBackupInfo();
   bindSplit('reader'); bindSplit('stage'); bindSplit('coread');
   startKeepalive();
 }
@@ -1260,6 +1777,51 @@ function upstreamBody() {
   const k = $('up-key').value.trim();
   if (k) b.key = k;
   return b;
+}
+async function loadBackupInfo() {
+  const e = $('backup-info'); if (!e) return;
+  try {
+    const d = await jget('/api/backup/info');
+    const mb = (d.size / 1048576).toFixed(1);
+    e.innerHTML = `${d.files} 个文件　${mb} MB<br>存在 <b>${d.dir}</b>　`
+      + (d.mounted
+        ? '<span style="color:var(--accent)">挂载盘，重部署不会丢</span>'
+        : '<span style="color:#e8506a">没挂盘！重部署会全没，去 Zeabur 挂个 Volume 到 /data</span>');
+  } catch (err) { e.textContent = '—'; }
+}
+async function loadRecapCount() {
+  const e = $('recap-n'); if (!e) return;
+  try {
+    const d = await jget('/api/recap?conv=' + encodeURIComponent(currentConvId || 'default'));
+    e.textContent = (d.text || '').trim()
+      ? `${d.text.length} 字 · 压了 ${d.covered || 0} 条` : '还没有';
+  } catch (err) { e.textContent = '—'; }
+}
+async function loadBalance() {
+  try {
+    const d = await jget('/api/ledger?n=1');
+    const up = d.upstream || {}, t = d.total || {}, today = d.today || {};
+    if (up.total_credits != null || up.total_usage != null) {
+      const left = (Number(up.total_credits) || 0) - (Number(up.total_usage) || 0);
+      $('balance-val').textContent = money(left);
+      $('balance-limit').textContent = '充了 ' + money(up.total_credits) + '　今天花了 ' + money(today.cost);
+    } else {
+      $('balance-val').textContent = money(t.cost);
+      $('balance-limit').textContent = '一共 ' + (t.req || 0) + ' 次　今天 ' + money(today.cost) + '（自己算的）';
+    }
+  } catch (e) { $('balance-val').textContent = '—'; }
+}
+
+async function loadBackupInfo() {
+  const e = $('backup-info'); if (!e) return;
+  try {
+    const d = await jget('/api/backup/info');
+    const mb = (d.size / 1048576).toFixed(1);
+    e.innerHTML = `${d.files} 个文件　${mb} MB<br>存在 <b>${d.dir}</b>　`
+      + (d.mounted
+        ? '<span style="color:var(--accent)">挂载盘，重部署不会丢</span>'
+        : '<span style="color:#e8506a">没挂盘！重部署会全没，去 Zeabur 挂个 Volume 到 /data</span>');
+  } catch (err) { e.textContent = '—'; }
 }
 async function loadRecapCount() {
   const e = $('recap-n'); if (!e) return;
@@ -1839,6 +2401,79 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.removeItem('recap-done-' + currentConvId);
     loadRecapCount();
   };
+  $('btn-call').onclick = async () => {
+    const missed = await checkMissed();
+    if (missed.length) { openCallLog(); return; }
+    startCall('user');
+  };
+  $('cs-hang').onclick = () => endCall('user');
+  $('cp-hang').onclick = e => { e.stopPropagation(); endCall('user'); };
+  $('cs-mini').onclick = () => {
+    CALL.mini = true;
+    $('callscreen').classList.remove('open');
+    $('call-pill').classList.add('on');
+  };
+  $('call-pill').onclick = () => {
+    CALL.mini = false;
+    $('call-pill').classList.remove('on');
+    $('callscreen').classList.add('open');
+  };
+  $('cs-mute').onclick = () => {
+    CALL.muted = !CALL.muted;
+    $('cs-mute').classList.toggle('off', CALL.muted);
+    $('cs-mute').querySelector('span').textContent = CALL.muted ? '▶' : '⏸';
+    $('cs-mute').querySelector('i').textContent = CALL.muted ? '继续听' : '暂停听';
+    csState(CALL.muted ? '暂停了' : '通话中');
+    if (CALL.muted && CALL.rec) recStop(false);
+  };
+  // 插话开关
+  const syncCutin = () => {
+    const on = localStorage.getItem('call-cutin') !== '0';
+    const b = $('cs-cutin'); if (!b) return;
+    b.classList.toggle('off', !on);
+    b.querySelector('i').textContent = on ? '能插话' : '轮流说';
+  };
+  syncCutin();
+  $('cs-cutin').onclick = () => {
+    const on = localStorage.getItem('call-cutin') !== '0';
+    localStorage.setItem('call-cutin', on ? '0' : '1');
+    syncCutin();
+    toast(on ? '改成轮流说，他说完你再说' : '他说话时你出声就能打断他');
+  };
+
+  // 备份
+  $('btn-backup').onclick = () => window.open('/api/backup', '_blank');
+  $('btn-backup-all').onclick = () => window.open('/api/backup?media=1', '_blank');
+  $('btn-restore').onclick = () => {
+    if (!confirm('恢复会覆盖同名文件。继续？')) return;
+    $('restore-input').click();
+  };
+  $('restore-input').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    toast('恢复中…');
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const d = await (await fetch('/api/backup', { method: 'POST', body: fd })).json();
+      if (d.error) { toast(d.error); return; }
+      toast(`恢复了 ${d.files} 个文件，刷新一下`);
+      loadBackupInfo();
+    } catch (err) { toast('恢复失败'); }
+    e.target.value = '';
+  };
+
+  $('btn-call-now').onclick = () => { $('calllog-panel').classList.remove('open'); startCall('user'); };
+  $('btn-usage').onclick = openUsage;
+  $('btn-usage-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
+  $('btn-search').onclick = () => {
+    $('search-panel').classList.add('open');
+    $('search-input').value = '';
+    $('search-result').innerHTML = '<div class="room-empty" style="color:var(--text-muted)">搜你们说过的话</div>';
+    setTimeout(() => $('search-input').focus(), 120);
+  };
+  $('search-input').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(doSearch, 220);
+  });
   $('btn-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
   $('btn-mcp').onclick = () => { renderMcp(); $('mcp-panel').classList.add('open'); };
   $('mcp-add-btn').onclick = async () => {
