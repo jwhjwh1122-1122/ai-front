@@ -626,23 +626,25 @@ async function playSong(s){
   }
 }
 // 红心状态同步
-let likedSet=null,likedLoading=null;
-async function loadLiked(){
-  // 拿不到就下次再试，不要一次失败就永远当成"没红心过"
-  try{
-    const r=await fetch('/api/music/liked').then(r=>r.json());
+let likedSet=null,likedLoading=null,likedTries=0;
+function loadLiked(){
+  // 只在没数据时拉，最多重试2次。以前"空了就下次再试"，
+  // 结果每放一首歌都去翻一遍两千多首的歌单，把后端堵死了。
+  if(likedLoading)return likedLoading;
+  if(likedTries>=2)return Promise.resolve();
+  likedTries++;
+  likedLoading=fetch('/api/music/liked').then(r=>r.json()).then(r=>{
     const ids=(r&&r.ids)||[];
-    if(ids.length){likedSet=new Set(ids.map(String));}
-    else{likedSet=null;console.log('红心列表空:',r&&r.error);}
-  }catch(e){likedSet=null;}
-  likedLoading=null;
+    likedSet=new Set(ids.map(String));
+    if(!ids.length)console.log('红心列表空:',r&&r.error);
+  }).catch(()=>{}).finally(()=>{likedLoading=null;});
+  return likedLoading;
 }
-async function syncHeart(id){
-  if(likedSet===null){
-    if(!likedLoading)likedLoading=loadLiked();
-    await likedLoading;
-  }
-  $('btn-heart').classList.toggle('liked',!!likedSet&&likedSet.has(String(id)));
+// 不挡播放：先按已有数据画，数据回来了再补画一次
+function syncHeart(id){
+  const paint=()=>$('btn-heart').classList.toggle('liked',!!likedSet&&likedSet.has(String(id)));
+  paint();
+  if(likedSet===null)loadLiked().then(()=>{if(cur&&String(cur.id)===String(id))paint();});
 }
 function showQueue(){
   if(!queue.length){toast('还没有歌');return;}
@@ -796,7 +798,8 @@ $('btn-heart').onclick=async()=>{
   if(!cur)return;
   const nowLiked=!$('btn-heart').classList.contains('liked');
   $('btn-heart').classList.toggle('liked',nowLiked);
-  if(likedSet){if(nowLiked)likedSet.add(String(cur.id));else likedSet.delete(String(cur.id));}
+  if(!likedSet)likedSet=new Set();
+  if(nowLiked)likedSet.add(String(cur.id));else likedSet.delete(String(cur.id));
   try{await fetch('/api/music/like',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur.id,like:nowLiked})});}catch(e){}
 };
 $('c-list').onclick=()=>{showQueue();};
