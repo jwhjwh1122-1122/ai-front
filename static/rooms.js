@@ -336,7 +336,10 @@ async function openNetease() {
   fail.style.display = 'none';
   f.style.visibility = 'hidden';
   let src = url;
-  if (localStorage.getItem('netease-direct') !== '1') {
+  // 同一个域名(播放器就在自己服务器上)：直接开，不用绕代理。
+  // 绕代理会把 .../music-test.html 拼成 .../music-test.html/ ，多一个斜杠就 404 了。
+  const sameOrigin = url.indexOf(location.origin) === 0 || url.charAt(0) === '/';
+  if (!sameOrigin && localStorage.getItem('netease-direct') !== '1') {
     try { await jpost('/api/proxy/target', { name: 'netease', url }); } catch (e) { }
     src = '/p/netease/';
   }
@@ -2115,7 +2118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-coread').onclick = openCoread;
   $('btn-netease').onclick = openNetease;
   $('netease-close').onclick = closeNetease;
-  $('netease-reload').onclick = () => { const u = neteaseUrl(); $('netease-frame').src = 'about:blank'; setTimeout(() => openNetease(), 60); };
+  $('netease-reload').onclick = () => { $('netease-frame').src = 'about:blank'; setTimeout(() => openNetease(), 60); };
   $('netease-open').onclick = () => window.open(neteaseUrl(), '_blank');
   $('netease-fallback').onclick = () => window.open(neteaseUrl(), '_blank');
   $('netease-switch').onclick = () => {
