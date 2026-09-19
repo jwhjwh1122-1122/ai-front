@@ -325,6 +325,16 @@ async function openNetease() {
   roomCtx = 'netease';
   $('netease').classList.add('open');
   bindIpodBall(); setTimeout(refreshIpodBall, 30);
+  forceSplitLayout('netease');
+  setTimeout(() => {
+    try {
+      const chat = $('split-chat-netease'), split = chat.parentElement;
+      const top = split.querySelector('.split-top'), f = $('netease-frame');
+      const hint = $('split-hint-netease');
+      if (hint) hint.textContent = '展开 · ' + [split.clientHeight, top.clientHeight,
+        f.clientHeight, chat.offsetHeight].join('/');
+    } catch (e) { }
+  }, 400);
   $('netease-title').textContent = '';   // 不显示网址
   const f = $('netease-frame'), fail = $('netease-fail');
   // 播放器已经加载过了(可能正在后台放歌)：直接显示，别重新加载
@@ -519,6 +529,21 @@ function renderSplit(which) {
   roomCtx = keep;
   box.scrollTop = box.scrollHeight;
 }
+// 强制把布局钉死（内联样式优先级最高，缓存的旧 CSS 盖不过它）
+function forceSplitLayout(which) {
+  const chat = $('split-chat-' + which);
+  if (!chat) return;
+  const split = chat.parentElement;
+  const top = split.querySelector('.split-top');
+  const bar = split.querySelector('.split-bar[data-split="' + which + '"]');
+  split.style.position = 'relative';
+  if (top) { top.style.position = 'absolute'; top.style.left = top.style.right = top.style.top = top.style.bottom = '0'; top.style.height = 'auto'; top.style.flex = 'none'; }
+  chat.style.position = 'absolute'; chat.style.left = chat.style.right = '0'; chat.style.bottom = '0';
+  chat.style.zIndex = '2'; chat.style.height = '0px'; chat.style.flex = 'none';
+  chat.classList.add('hidden');
+  if (bar) { bar.style.position = 'absolute'; bar.style.left = bar.style.right = '0'; bar.style.bottom = '0'; bar.style.zIndex = '3'; bar.style.flex = 'none'; }
+  const hint = $('split-hint-' + which); if (hint) hint.textContent = '展开';
+}
 function bindSplit(which) {
   const bar = document.querySelector(`.split-bar[data-split="${which}"]`);
   const chat = $('split-chat-' + which);
@@ -549,7 +574,7 @@ function bindSplit(which) {
       place(0);
     }
   });
-  place(0);   // 默认收起：一进来整屏都是播放器，想聊天自己往上拉
+  forceSplitLayout(which);   // 默认收起 + 钉死布局
 }
 
 // ============ 放映室 / 听音房 ============
