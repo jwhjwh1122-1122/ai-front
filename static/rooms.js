@@ -324,7 +324,8 @@ async function openNetease() {
   if (!url) { toast('先去设置里填音乐服务的地址'); return; }
   roomCtx = 'netease';
   $('netease').classList.add('open');
-  $('netease-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0];
+  bindIpodBall(); setTimeout(refreshIpodBall, 30);
+  $('netease-title').textContent = '';   // 不显示网址
   const f = $('netease-frame'), fail = $('netease-fail');
   // 播放器已经加载过了(可能正在后台放歌)：直接显示，别重新加载
   if (f.src && f.src !== 'about:blank' && !/about:blank$/.test(f.src)) {
@@ -361,10 +362,71 @@ async function openNetease() {
   }, 8000);
   renderSplit('netease');
 }
+// ============ 迷你随身听（悬浮球）============
+// 播放器在 iframe 里，外面靠 postMessage 通气：它报当前歌，我们报遥控指令
+let _ipodNP = null;
+function ipodBall() { return document.getElementById('ipod-ball'); }
+function ipodSend(cmd) {
+  const f = $('netease-frame');
+  if (f && f.contentWindow) { try { f.contentWindow.postMessage({ __ipodCmd: 1, cmd }, '*'); } catch (e) { } }
+}
+function refreshIpodBall() {
+  const b = ipodBall(); if (!b) return;
+  const panelOpen = $('netease') && $('netease').classList.contains('open');
+  const has = _ipodNP && _ipodNP.song;
+  // 有歌 + 播放器面板没开着 → 显示悬浮球
+  b.classList.toggle('show', !!has && !panelOpen);
+  if (!has) return;
+  const img = document.getElementById('ib-cover');
+  if (img && _ipodNP.song.cover && img.src !== _ipodNP.song.cover) img.src = _ipodNP.song.cover;
+  b.classList.toggle('playing', !!_ipodNP.playing);
+  const pp = document.getElementById('ib-pp');
+  if (pp) pp.innerHTML = _ipodNP.playing ? '&#10074;&#10074;' : '&#9654;';
+}
+window.addEventListener('message', e => {
+  const d = e.data;
+  if (!d || !d.__ipod || d.type !== 'np') return;
+  _ipodNP = d;
+  refreshIpodBall();
+});
+function bindIpodBall() {
+  const b = ipodBall(); if (!b || b._bound) return; b._bound = true;
+  const wheel = document.getElementById('ib-wheel');
+  let moved = false, sy = 0, startBottom = 0;
+  // 转盘 = 播放/暂停
+  wheel.addEventListener('click', e => { e.stopPropagation(); ipodSend('toggle'); });
+  // 机身 = 回到播放器
+  b.addEventListener('click', () => { if (!moved) openNetease(); });
+  // 上下拖着走，位置记住
+  b.addEventListener('pointerdown', e => {
+    moved = false; sy = e.clientY;
+    startBottom = parseInt(b.style.bottom || '110', 10);
+    try { b.setPointerCapture(e.pointerId); } catch (_) { }
+  });
+  b.addEventListener('pointermove', e => {
+    if (!e.buttons) return;
+    const dy = sy - e.clientY;
+    if (Math.abs(dy) > 4) moved = true;
+    if (moved) {
+      const nb = Math.min(window.innerHeight - 120, Math.max(20, startBottom + dy));
+      b.style.bottom = nb + 'px';
+    }
+  });
+  b.addEventListener('pointerup', () => {
+    if (moved) { try { localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10)); } catch (_) { } }
+    setTimeout(() => { moved = false; }, 30);
+  });
+  const saved = localStorage.getItem('ipod-ball-bottom');
+  if (saved) b.style.bottom = saved + 'px';
+  // 问一次现在在放什么（比如刚刷新完）
+  setInterval(() => { if (_ipodNP === null) ipodSend('ask'); }, 3000);
+}
+
 function closeNetease() {
   clearTimeout(neteaseTimer);
   $('netease').classList.remove('open');
   $('musicroom').classList.remove('open');
+  setTimeout(refreshIpodBall, 30);
   // 不要把 iframe 设成 about:blank —— 那等于把播放器整个销毁，歌会停。
   // 只把面板收起来，播放器留在后台继续放。
   roomCtx = null;
@@ -411,22 +473,26 @@ function bindSplit(which) {
   const bar = document.querySelector(`.split-bar[data-split="${which}"]`);
   const chat = $('split-chat-' + which);
   let startY = 0, startH = 0, dragging = false;
-  bar.addEventListener('touchstart', e => { dragging = true; startY = e.touches[0].clientY; startH = chat.offsetHeight; }, { passive: true });
+  // 聊天区是盖在播放器上面的，所以把手要跟着聊天区顶边走
+  function place(h) {
+    chat.style.height = h + 'px';
+    bar.style.bottom = h + 'px';
+    chat.classList.toggle('hidden', h < 30);
+    $('split-hint-' + which).textContent = h < 30 ? '展开' : '收起';
+  }
+  bar.addEventListener('touchstart', e => { dragging = true; startY = e.touches[0].clientY; startH = chat.offsetHeight; bar.style.transition = 'none'; chat.style.transition = 'none'; }, { passive: true });
   bar.addEventListener('touchmove', e => {
     if (!dragging) return;
     const dy = startY - e.touches[0].clientY;
-    const h = Math.max(0, Math.min(window.innerHeight * 0.7, startH + dy));
-    chat.style.height = h + 'px';
-    chat.classList.toggle('hidden', h < 30);
-    $('split-hint-' + which).textContent = h < 30 ? '展开' : '收起';
+    place(Math.max(0, Math.min(window.innerHeight * 0.7, startH + dy)));
   }, { passive: true });
-  bar.addEventListener('touchend', () => { dragging = false; });
+  bar.addEventListener('touchend', () => { dragging = false; bar.style.transition = ''; chat.style.transition = ''; });
   bar.addEventListener('click', () => {
     const hidden = chat.classList.contains('hidden') || chat.offsetHeight < 30;
-    chat.style.height = hidden ? '38vh' : '0px';
-    chat.classList.toggle('hidden', !hidden);
-    $('split-hint-' + which).textContent = hidden ? '收起' : '展开';
+    place(hidden ? Math.round(window.innerHeight * 0.38) : 0);
   });
+  // 初始位置
+  place(Math.round(window.innerHeight * 0.38));
 }
 
 // ============ 放映室 / 听音房 ============
