@@ -876,7 +876,9 @@ function postNP(){
   try{
     parent.postMessage({__ipod:1,type:'np',
       song:cur?{name:cur.name,artist:cur.artist,cover:cur.cover||'',id:cur.id}:null,
-      playing:!audio.paused&&!!cur},'*');
+      playing:!audio.paused&&!!cur,
+      pct:audio.duration?Math.round(audio.currentTime/audio.duration*100):0,
+      cur:fmt(audio.currentTime||0),rem:'-'+fmt((audio.duration||0)-(audio.currentTime||0))},'*');
   }catch(e){}
 }
 window.addEventListener('message',e=>{
