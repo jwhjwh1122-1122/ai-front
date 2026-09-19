@@ -825,14 +825,16 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': False, 'error': '缺 id'})
         fresh = request.args.get('fresh') in ('1', 'true', 'yes')
         try:
-            return jsonify({'ok': True, **nc.playlist_songs(pid, use_cache=not fresh)})
+            data = dict(nc.playlist_songs(pid, use_cache=not fresh))
+            data['songs'] = _apply_meta(list(data.get('songs') or []))
+            return jsonify({'ok': True, **data})
         except Exception as e:
             return jsonify({'ok': False, 'error': type(e).__name__ + ': ' + str(e)[:150]})
 
     @app.route('/api/music/my/recent', methods=['GET'])
     def music_my_recent():
         try:
-            songs = nc.recent_plays()
+            songs = _apply_meta(nc.recent_plays())
             if not songs:
                 why = getattr(nc, '_last_recent_err', '')
                 return jsonify({'ok': False, 'error': '拿不到最近播放' + (('：' + why) if why else '')})
@@ -876,7 +878,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     @app.route('/api/music/my/cloud', methods=['GET'])
     def music_my_cloud():
         try:
-            songs = nc.cloud_songs()
+            songs = _apply_meta(nc.cloud_songs())
             if not songs:
                 why = getattr(nc, '_last_cloud_err', '')
                 return jsonify({'ok': False, 'error': '云盘没拿到' + (('：' + why) if why else '')})
@@ -891,7 +893,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if period not in ('week', 'all'):
             period = 'week'
         try:
-            songs = nc.play_rank(period)
+            songs = _apply_meta(nc.play_rank(period))
             if not songs:
                 why = getattr(nc, '_last_rank_err', '')
                 return jsonify({'ok': False, 'error': '拿不到听歌排行' + (('：' + why) if why else '')})
@@ -952,6 +954,74 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not pid or not ids:
             return jsonify({'ok': False, 'error': '缺 pid 或 ids'})
         return jsonify({'ok': nc.playlist_tracks(pid, ids, add=False)})
+
+    # ── 自定义显示信息（封面/歌名/歌手）──────────────────────────────────
+    META_FILE = os.path.join(data_dir, 'music_meta.json')
+
+    def _meta_load():
+        d = jread(META_FILE, {})
+        return d if isinstance(d, dict) else {}
+
+    def _meta_save(d):
+        jwrite(META_FILE, d)
+
+    def _apply_meta(songs):
+        """把用户自己设的歌名/歌手/封面盖在返回结果上。网易云那边原数据不变。"""
+        if not songs:
+            return songs
+        meta = _meta_load()
+        if not meta:
+            return songs
+        for x in songs:
+            m = meta.get(str(x.get('id')))
+            if not m:
+                continue
+            if m.get('name'):
+                x['name'] = m['name']
+            if m.get('artist'):
+                x['artist'] = m['artist']
+            if m.get('cover'):
+                x['cover'] = m['cover']
+            x['custom'] = True
+        return songs
+
+    @app.route('/api/music/meta', methods=['GET'])
+    def music_meta_get():
+        return jsonify({'ok': True, 'meta': _meta_load()})
+
+    @app.route('/api/music/meta', methods=['POST'])
+    def music_meta_set():
+        """设置某首歌的显示名/歌手/封面。只传想改的字段；传空字符串=清掉那一项。"""
+        b = request.json or {}
+        sid = str(b.get('id') or '').strip()
+        if not sid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        d = _meta_load()
+        cur = d.get(sid, {}) if isinstance(d.get(sid), dict) else {}
+        for k in ('name', 'artist', 'cover'):
+            if k in b:
+                v = b.get(k)
+                v = v.strip() if isinstance(v, str) else v
+                if v:
+                    cur[k] = v
+                else:
+                    cur.pop(k, None)
+        if cur:
+            d[sid] = cur
+        else:
+            d.pop(sid, None)
+        _meta_save(d)
+        return jsonify({'ok': True, 'meta': cur})
+
+    @app.route('/api/music/meta/del', methods=['POST'])
+    def music_meta_del():
+        """清掉某首歌的自定义，恢复网易云原来的显示。"""
+        b = request.json or {}
+        sid = str(b.get('id') or '').strip()
+        d = _meta_load()
+        d.pop(sid, None)
+        _meta_save(d)
+        return jsonify({'ok': True})
 
     # ── 一起听聊天 ──────────────────────────────────────────────────────
     import os as _os
@@ -1136,7 +1206,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not q:
             return jsonify({'ok': False, 'error': '空搜索'})
         try:
-            return jsonify({'ok': True, 'songs': nc.search(q, int(request.args.get('limit', 20)))})
+            return jsonify({'ok': True,
+                            'songs': _apply_meta(nc.search(q, int(request.args.get('limit', 20))))})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:120]})
 
