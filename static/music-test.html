@@ -391,6 +391,12 @@ function addNext(song){
   queue.splice(qIndex+1,0,song);
   toast(song.name+' 已加到下一首');
 }
+// 提前把下一首的直链在后端备好，切过去就不用等
+function prefetchNext(){
+  if(!queue.length||qIndex<0)return;
+  const n=queue[(qIndex+1)%queue.length];
+  if(n&&n.id)fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
+}
 function playNext(){
   if(!queue.length)return;
   if(loopMode===1){playSong(queue[qIndex]);return;} // 单曲循环
@@ -612,14 +618,32 @@ async function doSearch(){
 }
 
 // ── 播放 ──
+// 带超时的 fetch：网慢的时候不至于一直吊着最后报错
+function fetchT(url,ms){
+  return Promise.race([
+    fetch(url).then(r=>r.json()),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms||12000))
+  ]);
+}
+let playToken=0;
 async function playSong(s){
+  const my=++playToken;
   cur=s;$('scr-nm').textContent=s.name;$('scr-ar').textContent=s.artist;$('scr-al').textContent=s.album||'';
   $('b-title').textContent=s.name;$('b-artist').textContent=s.artist;
   document.querySelector('.b-follow').style.display='';$('top-title').textContent='我喜欢的音乐';
   if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
   $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
-  try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
-  loadLyric(s.id);refreshMini();syncHeart(s.id);
+  try{
+    let r=null;
+    try{r=await fetchT('/api/music/url?id='+s.id,12000);}
+    catch(e){r=await fetchT('/api/music/url?id='+s.id,15000).catch(()=>null);}  // 超时再给一次机会
+    if(my!==playToken)return;      // 这期间又切歌了，丢掉这次结果
+    if(!r||!r.ok){toast('这首拿不到音源');return;}
+    audio.src=r.url;audio.preload='auto';
+    await audio.play().catch(()=>{});
+  }catch(e){if(my===playToken)toast('加载失败，再点一次');}
+  if(my!==playToken)return;
+  loadLyric(s.id);refreshMini();syncHeart(s.id);prefetchNext();
   // 一起听时上报当前歌
   if($('play-page').classList.contains('listening')){
     fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({song:{name:s.name,artist:s.artist,id:s.id}})}).catch(()=>{});
@@ -722,7 +746,7 @@ function lyHideSeek(){
 }
 (function(){
   const sc=$('ly-scroll');
-  let touching=false;
+  let touching=false,lastTouchEnd=0;
   function pickNow(){
     const i=lyCenterIndex();
     if(i!==lyPick){
@@ -752,13 +776,15 @@ function lyHideSeek(){
   },{passive:true});
   sc.addEventListener('touchmove',()=>{lyMoved=true;},{passive:true});
   sc.addEventListener('touchend',()=>{
-    touching=false;
+    touching=false;lastTouchEnd=Date.now();
     clearTimeout(lyIdleT);
     lyIdleT=setTimeout(toRest,200);   // 等惯性滑完
   },{passive:true});
-  sc.addEventListener('touchcancel',()=>{touching=false;},{passive:true});
+  sc.addEventListener('touchcancel',()=>{touching=false;lastTouchEnd=Date.now();},{passive:true});
   sc.addEventListener('scroll',()=>{
     if(!lyrics.length)return;
+    // 歌自己走时的自动滚动不算：必须手指按着，或刚松手不到1秒(惯性)
+    if(!touching&&Date.now()-lastTouchEnd>1000)return;
     lySeeking=true;lyResting=false;
     clearTimeout(lyIdleT);clearTimeout(lyRestT);
     document.querySelectorAll('.ly-line.rest').forEach(el=>el.classList.remove('rest'));
@@ -937,7 +963,7 @@ async function pollInvite(){
     }
   }catch(e){}
 }
-setInterval(pollInvite,8000);pollInvite();
+setInterval(pollInvite,20000);pollInvite();
 $('inv-yes').onclick=async()=>{
   $('invite-mask').classList.remove('show');inviteShown=false;
   enterTogether();
@@ -1030,7 +1056,7 @@ async function pollChat(){
     }
   }catch(e){}
 }
-setInterval(pollChat,6000);
+setInterval(pollChat,8000);
 
 // ── 改显示信息(封面/歌名/歌手)──
 let edSong=null,edCover=null,edDone=null;
@@ -1096,7 +1122,7 @@ setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.jso
     else if(c.action==='resume')audio.play().catch(()=>{});
     else if(c.action==='next')playNext();
     else if(c.action==='prev')playPrev();
-  }}catch(e){}},5000);
+  }}catch(e){}},12000);
 
 showTab('mine');
 
