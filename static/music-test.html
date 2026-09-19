@@ -355,7 +355,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
       </div>
     </div>
     <div class="prog"><span id="p-cur">0:00</span><div class="bar" id="p-bar"><div class="f" id="p-fill"></div><div class="dot" id="p-dot"></div></div><span id="p-dur">0:00</span></div>
-    <div class="prog-sub" id="prog-sub">无损音质</div>
+    <div class="prog-sub" id="prog-sub" style="cursor:pointer">连播</div>
     <div class="ctrl">
       <button class="cb mode" id="c-mode"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg></button>
       <button class="cb side" id="c-prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7zM8 5v14H6V5z"/></svg></button>
@@ -425,20 +425,104 @@ let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
 let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
 function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
 
-// 播放队列
+// ══════════════════════════════════════════════════════════════════
+// HLS 播放引擎
+//   把队列里的歌做成一张播放列表(m3u8)交给 iOS，整条流由系统自己往下播。
+//   "下一首"= 在这条时间轴上跳一下，不是换音源 —— 所以锁屏/后台都能用。
+//   iOS 掐的是"JS 在后台换音源"，这里根本没这个动作。
+// ══════════════════════════════════════════════════════════════════
+// 两种模式：
+//   连播(hls)  —— 整个队列一条流，后台锁屏一首接一首，音质 320k mp3
+//   音质(solo) —— 单曲直连，超清母带/无损，但后台放完这首就停
+let hlsMode=(localStorage.getItem('play-mode')||'hls')==='hls';
+const HLS_WIN=40;              // 一张列表放多少首（够听两三个小时）
+let segs=[],segBase=0,segIdx=-1,hlsReady=false;
+function songDur(s){return Math.max(1,Math.round((s&&s.duration||240000)/1000));}
+function buildPlaylist(startIdx){
+  const order=queue;
+  const win=[];
+  for(let k=0;k<HLS_WIN&&k<order.length;k++)win.push(order[(startIdx+k)%order.length]);
+  segs=[];let t=0;
+  win.forEach(x=>{const d=songDur(x);segs.push({id:x.id,song:x,start:t,dur:d});t+=d;});
+  segBase=startIdx;segIdx=-1;
+  return '/api/music/hls?s='+encodeURIComponent(win.map(x=>x.id+':'+songDur(x)).join(','));
+}
+function segAt(t){
+  for(let i=segs.length-1;i>=0;i--)if(t>=segs[i].start-0.05)return i;
+  return 0;
+}
+function curSeg(){return segs[segIdx]||null;}
+// 本地时间(这首歌里的第几秒) ↔ 流时间(整条列表的第几秒)
+function localTime(){const g=curSeg();return g?Math.max(0,audio.currentTime-g.start):audio.currentTime;}
+function localDur(){const g=curSeg();return g?g.dur:(audio.duration||0);}
+
 let curSourceId='';   // 当前队列来自哪个歌单，上报时带上，歌单播放量才会涨
 function setQueue(songs,startIndex){
   queue=songs.slice();qIndex=startIndex;
-  playSong(queue[qIndex]);
+  if(hlsMode)startStream(startIndex,true);
+  else soloPlay(queue[startIndex]);
+}
+// 换一张播放列表并从第 idx 首开始。这是唯一会"换音源"的地方，
+// 只在你主动点歌时发生（那时都在前台，iOS 允许）。
+function startStream(idx,autoplay){
+  if(!queue.length)return;
+  idx=((idx%queue.length)+queue.length)%queue.length;
+  const url=buildPlaylist(idx);
+  playToken++;
+  flushScrobble();
+  hlsReady=false;
+  audio.src=url;audio.preload='auto';
+  const go=()=>{
+    audio.removeEventListener('loadedmetadata',go);
+    hlsReady=true;
+    try{audio.currentTime=0;}catch(e){}
+    onSegChanged(0);
+    if(autoplay!==false)audio.play().catch(()=>{});
+  };
+  audio.addEventListener('loadedmetadata',go);
+  // 界面先跟上，别等网络
+  onSegChanged(0,true);
+  if(autoplay!==false)audio.play().catch(()=>{});
+}
+// 流走到了第 i 段（= 第 i 首歌）：把界面、歌词、红心、锁屏信息全换过去
+function onSegChanged(i,uiOnly){
+  if(i<0||i>=segs.length)return;
+  const prevIdx=segIdx;
+  segIdx=i;
+  const g=segs[i],sg=g.song;
+  qIndex=(segBase+i)%queue.length;
+  if(prevIdx!==i&&prevIdx>=0)flushScrobble();
+  cur=sg;
+  $('scr-nm').textContent=sg.name;$('scr-ar').textContent=sg.artist;$('scr-al').textContent=sg.album||'';
+  $('b-title').textContent=sg.name;$('b-artist').textContent=sg.artist;
+  document.querySelector('.b-follow').style.display='none';
+  if(sg.cover){$('scr-cover').src=sg.cover;$('mini-cover').src=sg.cover;}
+  $('mini-nm').textContent=sg.name;$('mini-ar').textContent=sg.artist;
+  $('p-dur').textContent=fmt(g.dur);
+  if(uiOnly)return;
+  loadLyric(sg.id);refreshMini();syncHeart(sg.id);setMediaSession(sg);postNP();
+  scrobbleSong=sg;scrobbleDone=false;
+  fetch('/api/music/url?id='+sg.id).then(r=>r.json()).then(r=>{
+    if(r&&r.ok&&r.quality){qualityCache[sg.id]=r.quality;setModeLabel();}}).catch(()=>{});
+  if($('play-page').classList.contains('listening')){
+    fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({song:{name:sg.name,artist:sg.artist,id:sg.id}})}).catch(()=>{});
+  }
 }
 // 打开一个列表时，先把第一首的地址在后端备好，点下去就能响
 function warmFirst(songs){
   if(songs&&songs.length&&songs[0].id)fetch('/api/music/prefetch?id='+songs[0].id).catch(()=>{});
 }
 function addNext(song){
-  if(!queue.length){queue=[song];qIndex=0;playSong(song);return;}
+  if(!queue.length){queue=[song];qIndex=0;startStream(0,true);return;}
   queue.splice(qIndex+1,0,song);
   toast(song.name+' 已加到下一首');
+  // 新歌要进流里，得重做一张列表，从当前这首的当前位置接着放
+  const keep=localTime();
+  startStream(qIndex,!audio.paused);
+  const resume=()=>{audio.removeEventListener('loadedmetadata',resume);
+    try{audio.currentTime=(curSeg()?curSeg().start:0)+keep;}catch(e){}};
+  audio.addEventListener('loadedmetadata',resume);
 }
 // 下一首的直链提前取回来存本地。放完那一刻直接换上去播，
 // 中间一旦有等待，iOS 在后台就会掐掉播放，这是"放完不接下一首"的根因。
@@ -448,30 +532,39 @@ let urlCache={},qualityCache={};
 // 把后面两首的"地址"提前取回来存着（只存地址，不下载整首——下载会抢带宽，
 // 点一首歌要等半天就是被它拖的）。换歌那一刻直接用，不发任何网络请求，
 // iOS 在后台才肯让它出声。
-function prefetchNext(){
-  if(!queue.length||qIndex<0)return;
-  for(let k=1;k<=2;k++){
-    const n=queue[(qIndex+k)%queue.length];
-    if(!n||!n.id||urlCache[n.id])continue;
-    fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
-    fetch('/api/music/url?id='+n.id).then(r=>r.json()).then(r=>{
-      if(r&&r.ok&&r.url){urlCache[n.id]=r.url;qualityCache[n.id]=r.quality||'';
-        if(Object.keys(urlCache).length>40)urlCache={};}
-    }).catch(()=>{});
-  }
-}
+function prefetchNext(){/* HLS 自己会预读下一段，不用手动预取了 */}
+// 下一首 = 把播放位置跳到下一段的开头（不是换音源，所以后台锁屏都能用）
 function playNext(){
   if(!queue.length)return;
-  prefetchNext();
-  if(loopMode===1){playSong(queue[qIndex]);return;} // 单曲循环
-  if(loopMode===2){qIndex=Math.floor(Math.random()*queue.length);} // 随机
-  else{qIndex=(qIndex+1)%queue.length;} // 列表循环
-  playSong(queue[qIndex]);
+  if(!hlsMode){
+    if(loopMode===1){soloPlay(queue[qIndex]);return;}
+    if(loopMode===2)qIndex=Math.floor(Math.random()*queue.length);
+    else qIndex=(qIndex+1)%queue.length;
+    soloPlay(queue[qIndex]);return;
+  }
+  if(loopMode===1){const g=curSeg();if(g){audio.currentTime=g.start;audio.play().catch(()=>{});}return;}
+  if(loopMode===2){startStream(Math.floor(Math.random()*queue.length),true);return;}
+  if(segIdx+1<segs.length){
+    audio.currentTime=segs[segIdx+1].start;
+    audio.play().catch(()=>{});
+    onSegChanged(segIdx+1);
+  }else{
+    startStream((segBase+segs.length)%queue.length,true);   // 这张列表到头了，续一张
+  }
 }
 function playPrev(){
   if(!queue.length)return;
-  qIndex=(qIndex-1+queue.length)%queue.length;
-  playSong(queue[qIndex]);
+  if(!hlsMode){
+    qIndex=(qIndex-1+queue.length)%queue.length;
+    soloPlay(queue[qIndex]);return;
+  }
+  if(segIdx-1>=0){
+    audio.currentTime=segs[segIdx-1].start;
+    audio.play().catch(()=>{});
+    onSegChanged(segIdx-1);
+  }else{
+    startStream((segBase-1+queue.length)%queue.length,true);
+  }
 }
 function toast(msg){
   let t=document.getElementById('_toast');
@@ -891,7 +984,9 @@ function setMediaSession(s){
     navigator.mediaSession.setActionHandler('nexttrack',()=>playNext());
     navigator.mediaSession.setActionHandler('previoustrack',()=>playPrev());
     navigator.mediaSession.setActionHandler('seekto',e=>{
-      if(e.seekTime!=null&&audio.duration)audio.currentTime=e.seekTime;});
+      if(e.seekTime==null)return;
+      const g=curSeg();
+      audio.currentTime=(g?g.start:0)+e.seekTime;});
   }catch(e){}
   updPositionState();
 }
@@ -899,11 +994,11 @@ function setMediaSession(s){
 function updPositionState(){
   if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
   try{
-    const d=audio.duration;
+    const d=localDur()||audio.duration;
     if(!d||!isFinite(d))return;
     navigator.mediaSession.setPositionState({
       duration:d,playbackRate:audio.playbackRate||1,
-      position:Math.min(audio.currentTime||0,d)});
+      position:Math.min(localTime(),d)});
   }catch(e){}
 }
 // 被切到后台时别停，回来时把状态补上
@@ -962,41 +1057,84 @@ function resetPlayUI(){
   lyrics=[];lastLy=-1;lyHideSeek();
   $('ly-scroll').innerHTML='<div class="ly-empty">加载歌词…</div>';
 }
-async function playSong(s){
+// ── 音质模式：单曲直连，要母带 ──
+async function soloPlay(sg){
+  if(!sg)return;
   const my=++playToken;
-  resetPlayUI();
-  cur=s;$('scr-nm').textContent=s.name;$('scr-ar').textContent=s.artist;$('scr-al').textContent=s.album||'';
-  $('b-title').textContent=s.name;$('b-artist').textContent=s.artist;
-  document.querySelector('.b-follow').style.display='none';$('top-title').textContent='我喜欢的音乐';
-  if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
-  $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
-  loadLyric(s.id);   // 歌词跟音频同时去拿，不再排队等
-  const cached=urlCache[s.id];
-  if(cached){
-    // 地址早就备好了：立刻开播，一点都不等（后台自动连播全靠这条）
-    audio.src=cached;audio.preload='auto';
+  segs=[];segIdx=-1;hlsReady=false;
+  flushScrobble();
+  try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}
+  cur=sg;
+  const i=queue.findIndex(x=>String(x.id)===String(sg.id));
+  if(i>=0)qIndex=i;
+  $('scr-nm').textContent=sg.name;$('scr-ar').textContent=sg.artist;$('scr-al').textContent=sg.album||'';
+  $('b-title').textContent=sg.name;$('b-artist').textContent=sg.artist;
+  document.querySelector('.b-follow').style.display='none';
+  if(sg.cover){$('scr-cover').src=sg.cover;$('mini-cover').src=sg.cover;}
+  $('mini-nm').textContent=sg.name;$('mini-ar').textContent=sg.artist;
+  $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
+  $('p-cur').textContent='0:00';$('p-dur').textContent='0:00';
+  setModeLabel('加载中…');
+  lyrics=[];lastLy=-1;lyHideSeek();
+  loadLyric(sg.id);
+  try{
+    let r=urlCache[sg.id]?{ok:true,url:urlCache[sg.id],quality:qualityCache[sg.id]}:null;
+    if(!r)r=await fetchT('/api/music/url?id='+sg.id,15000).catch(()=>null);
+    if(my!==playToken)return;
+    if(!r||!r.ok){setModeLabel('拿不到音源');toast('这首拿不到音源');return;}
+    urlCache[sg.id]=r.url;qualityCache[sg.id]=r.quality||'';
+    audio.src=r.url;audio.preload='auto';
     audio.play().catch(()=>{});
-    $('prog-sub').textContent=qualityCache[s.id]||'';
-  }else{
-    try{
-      let r=null;
-      try{r=await fetchT('/api/music/url?id='+s.id,12000);}
-      catch(e){r=await fetchT('/api/music/url?id='+s.id,15000).catch(()=>null);}
-      if(my!==playToken)return;      // 这期间又切歌了，丢掉这次结果
-      if(!r||!r.ok){$('prog-sub').textContent='拿不到音源';toast('这首拿不到音源');return;}
-      urlCache[s.id]=r.url;qualityCache[s.id]=r.quality||'';
-      $('prog-sub').textContent=r.quality||'';
-      audio.src=r.url;audio.preload='auto';
-      await audio.play().catch(()=>{});
-    }catch(e){if(my===playToken){$('prog-sub').textContent='加载失败';toast('加载失败，再点一次');}}
-  }
+    setModeLabel();
+  }catch(e){if(my===playToken)setModeLabel('加载失败');}
   if(my!==playToken)return;
-  refreshMini();syncHeart(s.id);prefetchNext();setMediaSession(s);postNP();
-  scrobbleSong=s;scrobbleDone=false;
-  // 一起听时上报当前歌
+  refreshMini();syncHeart(sg.id);setMediaSession(sg);postNP();
+  scrobbleSong=sg;scrobbleDone=false;
   if($('play-page').classList.contains('listening')){
-    fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({song:{name:s.name,artist:s.artist,id:s.id}})}).catch(()=>{});
+    fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({song:{name:sg.name,artist:sg.artist,id:sg.id}})}).catch(()=>{});
   }
+}
+// 底下那行字：既显示音质，也是模式开关
+function setModeLabel(tmp){
+  const el=$('prog-sub');if(!el)return;
+  if(tmp){el.textContent=tmp;return;}
+  const q=(cur&&qualityCache[cur.id])||(hlsMode?'320k':'');
+  el.textContent=(q?q+' · ':'')+(hlsMode?'连播':'单曲');
+}
+function toggleMode(){
+  hlsMode=!hlsMode;
+  localStorage.setItem('play-mode',hlsMode?'hls':'solo');
+  toast(hlsMode?'连播模式 · 锁屏也会一首接一首':'音质模式 · 母带，后台放完这首会停');
+  const keep=hlsMode?0:localTime();
+  const sg=cur;
+  if(!sg){setModeLabel();return;}
+  if(hlsMode){
+    const i=queue.findIndex(x=>String(x.id)===String(sg.id));
+    startStream(i<0?0:i,!audio.paused);
+    const back=()=>{audio.removeEventListener('loadedmetadata',back);
+      try{audio.currentTime=(curSeg()?curSeg().start:0)+keep;}catch(e){}};
+    audio.addEventListener('loadedmetadata',back);
+  }else{
+    soloPlay(sg).then(()=>{try{audio.currentTime=keep;}catch(e){}});
+  }
+  setModeLabel();
+}
+
+// 点某一首歌：在当前这张列表里就直接跳过去，不在就换一张列表
+function playSong(sg){
+  if(!sg)return;
+  if(!hlsMode){soloPlay(sg);return;}
+  const inWin=segs.findIndex(g=>String(g.id)===String(sg.id));
+  if(inWin>=0&&hlsReady){
+    audio.currentTime=segs[inWin].start;
+    audio.play().catch(()=>{});
+    onSegChanged(inWin);
+    return;
+  }
+  let idx=queue.findIndex(x=>String(x.id)===String(sg.id));
+  if(idx<0){queue=[sg];idx=0;}
+  startStream(idx,true);
 }
 // 红心状态同步
 let likedSet=null,likedLoading=null,likedTries=0;
@@ -1153,14 +1291,23 @@ function lyHideSeek(){
 })();
 
 function onBoth(ev,fn){audio.addEventListener(ev,fn);}
-onBoth('canplay',()=>{if(cur&&qualityCache[cur.id])$('prog-sub').textContent=qualityCache[cur.id];});
+onBoth('canplay',()=>{setModeLabel();});
 onBoth('play',()=>{postNP();updPositionState();});onBoth('pause',()=>{postNP();updPositionState();});
-onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(audio.duration||0);updPositionState();});
+onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(localDur()||audio.duration||0);updPositionState();});
 onBoth('seeked',()=>{updPositionState();
   // 拖到后段就立刻催一次：免得"刚开播就拖到结尾"时地址还没拿回来
   if(audio.duration&&audio.currentTime>audio.duration*0.7)prefetchNext();});
 setInterval(()=>{if(!audio.paused)updPositionState();},5000);
-onBoth('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
+onBoth('timeupdate',()=>{
+  // 流里走到哪一首了？跨过边界就换界面
+  if(segs.length){
+    const i=segAt(audio.currentTime);
+    if(i!==segIdx)onSegChanged(i);
+    // 单曲循环：这首快完了就跳回这首开头
+    if(loopMode===1){const g=curSeg();
+      if(g&&audio.currentTime>=g.start+g.dur-0.35){audio.currentTime=g.start;return;}}
+  }
+  const t=localTime(),d=localDur(),p=d?t/d*100:0;
   $('scr-fill').style.width=p+'%';$('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);
   $('p-dur').textContent=fmt(d);
   if(!(window._pbarDragging&&window._pbarDragging())){
@@ -1185,6 +1332,8 @@ $('btn-heart').onclick=async()=>{
   if(nowLiked)likedSet.add(String(cur.id));else likedSet.delete(String(cur.id));
   try{await fetch('/api/music/like',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur.id,like:nowLiked})});}catch(e){}
 };
+$('prog-sub').onclick=toggleMode;
+setModeLabel();
 $('c-list').onclick=()=>{showQueue();};
 // 上一首/下一首(iPod轮 + 底部控件)
 $('c-prev').onclick=playPrev;$('c-next').onclick=playNext;
@@ -1200,37 +1349,11 @@ $('c-mode').onclick=()=>{
 };
 // 放完自动下一首
 audio.addEventListener('ended',()=>{
-  if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,audio.duration||0);scrobbleDone=true;}
-  // 下一首已经缓冲好了 → 立刻接上，中间不留任何空隙
-  if(!queue.length){return;}
-  let ni;
-  if(loopMode===1)ni=qIndex;
-  else if(loopMode===2)ni=Math.floor(Math.random()*queue.length);
-  else ni=(qIndex+1)%queue.length;
-  const nx=queue[ni];
-  if(nx&&urlCache[nx.id]){
-    // 地址早就存好了：直接换上去播，中间一次网络都不发。
-    // 只要中间有等待，iOS 在后台就会掐掉——这是连播的关键。
-    qIndex=ni;cur=nx;
-    playToken++;                      // 作废掉还在路上的请求
-    audio.src=urlCache[nx.id];
-    audio.play().catch(()=>{});
-    $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
-    $('scr-nm').textContent=nx.name;$('scr-ar').textContent=nx.artist;$('scr-al').textContent=nx.album||'';
-    $('b-title').textContent=nx.name;$('b-artist').textContent=nx.artist;
-    if(nx.cover){$('scr-cover').src=nx.cover;$('mini-cover').src=nx.cover;}
-    $('mini-nm').textContent=nx.name;$('mini-ar').textContent=nx.artist;
-    $('prog-sub').textContent=qualityCache[nx.id]||'';
-    loadLyric(nx.id);refreshMini();syncHeart(nx.id);setMediaSession(nx);postNP();
-    scrobbleSong=nx;scrobbleDone=false;
-    prefetchNext();
-    if($('play-page').classList.contains('listening')){
-      fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({song:{name:nx.name,artist:nx.artist,id:nx.id}})}).catch(()=>{});
-    }
-    return;
-  }
-  playNext();
+  if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,localDur()||audio.duration||0);scrobbleDone=true;}
+  if(!queue.length)return;
+  if(!hlsMode){playNext();return;}   // 音质模式：一首一首来
+  if(loopMode===1){const g=curSeg();if(g){audio.currentTime=g.start;audio.play().catch(()=>{});}return;}
+  startStream(loopMode===2?Math.floor(Math.random()*queue.length):(segBase+segs.length)%queue.length,true);
 });
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
@@ -1247,9 +1370,9 @@ $('lyric-view').addEventListener('click',e=>{
   const bar=$('p-bar');let dragging=false;
   function ratio(x){const r=bar.getBoundingClientRect();return Math.min(1,Math.max(0,(x-r.left)/r.width));}
   function paint(p){$('p-fill').style.width=(p*100)+'%';$('p-dot').style.left=(p*100)+'%';
-    if(audio.duration)$('p-cur').textContent=fmt(p*audio.duration);}
+    const d=localDur();if(d)$('p-cur').textContent=fmt(p*d);}
   bar.addEventListener('pointerdown',e=>{
-    if(!audio.duration)return;
+    if(!audio.duration&&!localDur())return;
     dragging=true;
     try{bar.setPointerCapture(e.pointerId);}catch(_){}
     paint(ratio(e.clientX));e.preventDefault();
@@ -1257,7 +1380,9 @@ $('lyric-view').addEventListener('click',e=>{
   bar.addEventListener('pointermove',e=>{if(dragging)paint(ratio(e.clientX));});
   function end(e){
     if(!dragging)return;dragging=false;
-    if(audio.duration)audio.currentTime=ratio(e.clientX)*audio.duration;
+    const g=curSeg();
+    if(g)audio.currentTime=g.start+ratio(e.clientX)*g.dur;
+    else if(audio.duration)audio.currentTime=ratio(e.clientX)*audio.duration;
   }
   bar.addEventListener('pointerup',end);
   bar.addEventListener('pointercancel',()=>{dragging=false;});
