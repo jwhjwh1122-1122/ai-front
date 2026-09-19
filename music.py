@@ -152,6 +152,7 @@ class NeteaseClient:
         self.store = store
         self._last_recent_err = ''
         self._last_cloud_err = ''
+        self._last_rank_err = ''
         self._uid_cache = ''
         self._pl_cache = {}          # {pid: {'ts':.., 'count':.., 'data':{...}}}
         self._pl_cache_ttl = 600     # 歌单缓存 10 分钟，第二次点进去秒开
@@ -496,17 +497,18 @@ class NeteaseClient:
         return []
 
     def recent_plays(self, limit=100):
-        """最近播放。网易云有好几个版本的接口，挨个试，哪个出货用哪个。"""
-        uid = self.uid()
+        """最近播放（按时间倒序的播放历史）。
+
+        注意：/api/v1/play/record 是**听歌排行**（带播放次数），不是最近播放，
+        以前这里用错了接口，所以"最近播放"出来的是排行。真正的最近播放走 play-record/song/list。
+        """
         tries = [
-            ('/api/v1/play/record', {'uid': uid, 'type': 0, 'limit': limit, 'offset': 0}),
-            ('/api/v1/play/record', {'uid': uid, 'type': 1, 'limit': limit, 'offset': 0}),
-            ('/api/play-record/song/list', {'limit': limit, 'offset': 0}),
+            ('/api/play-record/song/list', {'limit': limit, 'offset': 0, 'total': True}),
+            ('/api/play-record/song/list', {'limit': limit, 'cursor': ''}),
+            ('/api/play-record/song/list', {'limit': limit}),
         ]
         last_err = ''
         for path, payload in tries:
-            if 'uid' in payload and not uid:
-                continue
             try:
                 j = self.eapi(path, payload)
                 recs = self._pick_records(j)
@@ -514,7 +516,7 @@ class NeteaseClient:
                 for r in recs:
                     if not isinstance(r, dict):
                         continue
-                    s = (r.get('song') or r.get('resourceInfo') or r.get('data')
+                    s = (r.get('data') or r.get('resourceInfo') or r.get('song')
                          or r.get('simpleSong') or r)
                     if not isinstance(s, dict) or not s.get('id'):
                         continue
@@ -533,6 +535,61 @@ class NeteaseClient:
                 last_err = f'{path}: {str(e)[:80]}'
         self._last_recent_err = last_err
         return []
+
+    def play_rank(self, period='week', limit=100):
+        """听歌排行。period='week' 最近一周 / 'all' 所有时间。带播放次数。"""
+        uid = self.uid()
+        if not uid:
+            self._last_rank_err = '拿不到 uid'
+            return []
+        t = 1 if period == 'week' else 0
+        try:
+            j = self.eapi('/api/v1/play/record',
+                          {'uid': uid, 'type': t, 'limit': limit, 'offset': 0})
+        except Exception as e:
+            self._last_rank_err = str(e)[:100]
+            return []
+        rows = j.get('weekData') if t == 1 else j.get('allData')
+        if not isinstance(rows, list):
+            rows = j.get('allData') or j.get('weekData') or []
+        out = []
+        for r in (rows or []):
+            if not isinstance(r, dict):
+                continue
+            s = r.get('song') or r.get('simpleSong') or {}
+            if not isinstance(s, dict) or not s.get('id'):
+                continue
+            out.append({
+                'id': s['id'],
+                'name': _safe_str(s.get('name'), '未知歌曲'),
+                'artist': _join_artists(s.get('ar') or s.get('artists')),
+                'album': _safe_str((s.get('al') or {}).get('name')),
+                'cover': _safe_str((s.get('al') or {}).get('picUrl')),
+                'duration': s.get('dt') or 0,
+                'play_count': r.get('playCount') or 0,
+                'score': r.get('score') or 0,
+            })
+        if not out:
+            self._last_rank_err = f'play/record type={t} code={j.get("code")} 无数据'
+        return out
+
+    def listen_songs_total(self):
+        """累计听歌总数（个人页那个"累计听歌 XXXXX 首"）。"""
+        uid = self.uid()
+        if not uid:
+            return 0
+        for path in ('/api/v1/user/detail', '/api/v1/user/detail/' + str(uid)):
+            try:
+                j = self.eapi(path, {'uid': uid})
+                n = j.get('listenSongs')
+                if n:
+                    return n
+                prof = j.get('profile') or {}
+                if prof.get('listenSongs'):
+                    return prof['listenSongs']
+            except Exception:
+                continue
+        return 0
 
     def cloud_songs(self, limit=200):
         """音乐云盘。老路径 /api/v1/cloud 现在多半不出货，优先 /api/v1/cloud/get。"""
@@ -824,6 +881,22 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 why = getattr(nc, '_last_cloud_err', '')
                 return jsonify({'ok': False, 'error': '云盘没拿到' + (('：' + why) if why else '')})
             return jsonify({'ok': True, 'songs': songs})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/my/rank', methods=['GET'])
+    def music_my_rank():
+        """听歌排行。?period=week(最近一周) / all(所有时间)，每首带 play_count。"""
+        period = request.args.get('period', 'week')
+        if period not in ('week', 'all'):
+            period = 'week'
+        try:
+            songs = nc.play_rank(period)
+            if not songs:
+                why = getattr(nc, '_last_rank_err', '')
+                return jsonify({'ok': False, 'error': '拿不到听歌排行' + (('：' + why) if why else '')})
+            return jsonify({'ok': True, 'songs': songs,
+                            'listen_total': nc.listen_songs_total()})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
