@@ -541,13 +541,51 @@ $('p-bar').addEventListener('click',e=>{if(!audio.duration)return;const r=$('p-b
 // ── 头像:跟随app头像(嵌入时从父窗口读,否则localStorage)──
 function loadAvatars(){
   let uav='',aav='';
-  try{uav=window.parent?.localStorage?.getItem('chat-avatar-user')||'';aav=window.parent?.localStorage?.getItem('chat-avatar-ai')||'';}catch(e){}
+  // 优先iPod自己存的自定义头像
+  uav=localStorage.getItem('music-avatar-user')||'';
+  aav=localStorage.getItem('music-avatar-ai')||'';
+  // 没有就试app的头像
+  if(!uav){try{uav=window.parent?.localStorage?.getItem('chat-avatar-user')||'';}catch(e){}}
+  if(!aav){try{aav=window.parent?.localStorage?.getItem('chat-avatar-ai')||'';}catch(e){}}
   if(!uav)uav=localStorage.getItem('chat-avatar-user')||'';
   if(!aav)aav=localStorage.getItem('chat-avatar-ai')||'';
   if(uav)$('tg-user').style.backgroundImage='url('+uav+')';
   if(aav)$('tg-ai').style.backgroundImage='url('+aav+')';
   window._uav=uav;window._aav=aav;
 }
+loadAvatars();
+
+// 点头像换图（压缩后存localStorage）
+let avatarTarget='user';
+const avFileInput=document.createElement('input');
+avFileInput.type='file';avFileInput.accept='image/*';avFileInput.style.display='none';
+document.body.appendChild(avFileInput);
+function pickAvatar(who){avatarTarget=who;avFileInput.click();}
+$('tg-user').addEventListener('click',()=>pickAvatar('user'));
+$('tg-ai').addEventListener('click',()=>pickAvatar('ai'));
+avFileInput.addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      // 压缩到 200x200 存
+      const cv=document.createElement('canvas');cv.width=200;cv.height=200;
+      const ctx=cv.getContext('2d');
+      // 居中裁剪成正方形
+      const s=Math.min(img.width,img.height);
+      ctx.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,200,200);
+      const data=cv.toDataURL('image/jpeg',0.82);
+      localStorage.setItem('music-avatar-'+avatarTarget,data);
+      $('tg-'+avatarTarget).style.backgroundImage='url('+data+')';
+      window['_'+(avatarTarget==='user'?'uav':'aav')]=data;
+      toast('头像换好了');
+    };
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(f);
+  avFileInput.value='';
+});
 
 // 单人/一起听 切换
 // 单人/一起听 + 互相邀请
