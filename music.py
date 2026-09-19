@@ -39,6 +39,26 @@ UA_IOS = 'NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 
 
+# ── 小工具 ──────────────────────────────────────────────────────────────
+def _join_artists(arr) -> str:
+    """拼歌手名。歌手名可能是 None / 字段缺失（下架歌、云盘歌常见），
+    直接 ' / '.join 会炸 TypeError: sequence item 0: expected str instance, NoneType found。"""
+    names = []
+    for a in (arr or []):
+        if isinstance(a, dict):
+            n = a.get('name') or a.get('nickname') or ''
+        else:
+            n = a or ''
+        n = str(n).strip()
+        if n:
+            names.append(n)
+    return ' / '.join(names) if names else '未知歌手'
+
+
+def _safe_str(v, default='') -> str:
+    return str(v) if v not in (None, '') else default
+
+
 # ── 加密 ────────────────────────────────────────────────────────────────
 def _pad(data: bytes) -> bytes:
     n = 16 - len(data) % 16
@@ -129,6 +149,9 @@ class MusicStore:
 class NeteaseClient:
     def __init__(self, store: MusicStore):
         self.store = store
+        self._last_recent_err = ''
+        self._last_cloud_err = ''
+        self._uid_cache = ''
 
     def _headers(self, pc=False, extra_cookie=''):
         ck = self.store.cookie()
@@ -219,23 +242,25 @@ class NeteaseClient:
 
     def _fmt_songs(self, songs, plain=False):
         out = []
-        for s in songs:
+        for s in (songs or []):
+            if not isinstance(s, dict) or not s.get('id'):
+                continue
             if plain:
                 # 老接口字段：artists / album
                 out.append({
-                    'id': s['id'], 'name': s['name'],
-                    'artist': ' / '.join(a['name'] for a in s.get('artists', [])),
-                    'album': (s.get('album') or {}).get('name', ''),
-                    'cover': (s.get('album') or {}).get('picUrl', ''),
-                    'duration': s.get('duration', 0),
+                    'id': s['id'], 'name': _safe_str(s.get('name'), '未知歌曲'),
+                    'artist': _join_artists(s.get('artists')),
+                    'album': _safe_str((s.get('album') or {}).get('name')),
+                    'cover': _safe_str((s.get('album') or {}).get('picUrl')),
+                    'duration': s.get('duration') or 0,
                 })
             else:
                 out.append({
-                    'id': s['id'], 'name': s['name'],
-                    'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
-                    'album': (s.get('al') or {}).get('name', ''),
-                    'cover': (s.get('al') or {}).get('picUrl', ''),
-                    'duration': s.get('dt', 0),
+                    'id': s['id'], 'name': _safe_str(s.get('name'), '未知歌曲'),
+                    'artist': _join_artists(s.get('ar')),
+                    'album': _safe_str((s.get('al') or {}).get('name')),
+                    'cover': _safe_str((s.get('al') or {}).get('picUrl')),
+                    'duration': s.get('dt') or 0,
                 })
         return out
 
@@ -249,7 +274,7 @@ class NeteaseClient:
             out.append({
                 'id': s['id'],
                 'name': s['name'],
-                'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
+                'artist': _join_artists(s.get('ar')),
                 'album': (s.get('al') or {}).get('name', ''),
                 'cover': (s.get('al') or {}).get('picUrl', ''),
                 'duration': s.get('dt', 0),
@@ -271,11 +296,11 @@ class NeteaseClient:
         if not songs:
             return None
         s = songs[0]
-        return {'id': s['id'], 'name': s['name'],
-                'artist': ' / '.join(a['name'] for a in s.get('ar', [])),
-                'album': (s.get('al') or {}).get('name', ''),
-                'cover': (s.get('al') or {}).get('picUrl', ''),
-                'duration': s.get('dt', 0)}
+        return {'id': s['id'], 'name': _safe_str(s.get('name'), '未知歌曲'),
+                'artist': _join_artists(s.get('ar')),
+                'album': _safe_str((s.get('al') or {}).get('name')),
+                'cover': _safe_str((s.get('al') or {}).get('picUrl')),
+                'duration': s.get('dt') or 0}
 
     def lyric(self, song_id):
         r = requests.post('https://music.163.com/weapi/song/lyric',
@@ -293,7 +318,7 @@ class NeteaseClient:
             out = []
             for s in j.get('songs', []) or []:
                 out.append({'id': s['id'], 'name': s['name'],
-                            'artist': ' / '.join(a['name'] for a in s.get('artists', []))})
+                            'artist': _join_artists(s.get('artists'))})
             return out
         except Exception:
             return []
@@ -371,46 +396,110 @@ class NeteaseClient:
         ids = [t['id'] for t in (pl.get('trackIds', []) or [])]
         out = self._fmt_songs(tracks)
         if len(out) < len(ids):
-            # 剩下的用 song/detail 批量补
+            # 剩下的用 song/detail 批量补（某一批失败不影响其他批）
             have = {s['id'] for s in out}
             need = [i for i in ids if i not in have][:limit]
             for k in range(0, len(need), 100):
                 batch = need[k:k+100]
-                jj = self.eapi('/api/v3/song/detail',
-                               {'c': json.dumps([{'id': i} for i in batch])})
-                out += self._fmt_songs(jj.get('songs', []) or [])
+                try:
+                    jj = self.eapi('/api/v3/song/detail',
+                                   {'c': json.dumps([{'id': i} for i in batch])})
+                    out += self._fmt_songs(jj.get('songs', []) or [])
+                except Exception:
+                    continue
         return {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
                 'count': pl.get('trackCount', len(out)), 'songs': out}
 
-    def recent_plays(self, limit=100):
-        """最近播放。"""
-        try:
-            j = self.eapi('/api/play-record/song/list', {'limit': limit})
-            out = []
-            for r in j.get('data', {}).get('list', []) or j.get('list', []) or []:
-                s = r.get('resourceInfo') or r.get('data') or r.get('song') or r
-                if s.get('id'):
-                    out.append({'id': s['id'], 'name': s.get('name', ''),
-                                'artist': ' / '.join(a['name'] for a in (s.get('ar') or s.get('artists') or [])),
-                                'cover': (s.get('al') or s.get('album') or {}).get('picUrl', '')})
-            return out
-        except Exception:
+    def _pick_records(self, j):
+        """从各种形状的返回里把播放记录列表抠出来。"""
+        if not isinstance(j, dict):
             return []
+        data = j.get('data')
+        for cand in (j.get('allData'), j.get('weekData'),
+                     (data or {}).get('list') if isinstance(data, dict) else None,
+                     (data or {}).get('allData') if isinstance(data, dict) else None,
+                     data if isinstance(data, list) else None,
+                     j.get('list'), j.get('records')):
+            if isinstance(cand, list) and cand:
+                return cand
+        return []
+
+    def recent_plays(self, limit=100):
+        """最近播放。网易云有好几个版本的接口，挨个试，哪个出货用哪个。"""
+        uid = self.uid()
+        tries = [
+            ('/api/v1/play/record', {'uid': uid, 'type': 0, 'limit': limit, 'offset': 0}),
+            ('/api/v1/play/record', {'uid': uid, 'type': 1, 'limit': limit, 'offset': 0}),
+            ('/api/play-record/song/list', {'limit': limit, 'offset': 0}),
+        ]
+        last_err = ''
+        for path, payload in tries:
+            if 'uid' in payload and not uid:
+                continue
+            try:
+                j = self.eapi(path, payload)
+                recs = self._pick_records(j)
+                out = []
+                for r in recs:
+                    if not isinstance(r, dict):
+                        continue
+                    s = (r.get('song') or r.get('resourceInfo') or r.get('data')
+                         or r.get('simpleSong') or r)
+                    if not isinstance(s, dict) or not s.get('id'):
+                        continue
+                    out.append({
+                        'id': s['id'],
+                        'name': _safe_str(s.get('name'), '未知歌曲'),
+                        'artist': _join_artists(s.get('ar') or s.get('artists')),
+                        'album': _safe_str((s.get('al') or s.get('album') or {}).get('name')),
+                        'cover': _safe_str((s.get('al') or s.get('album') or {}).get('picUrl')),
+                        'duration': s.get('dt') or s.get('duration') or 0,
+                    })
+                if out:
+                    return out
+                last_err = f'{path} 返回 code={j.get("code")} 无记录'
+            except Exception as e:
+                last_err = f'{path}: {str(e)[:80]}'
+        self._last_recent_err = last_err
+        return []
 
     def cloud_songs(self, limit=200):
-        """音乐云盘。"""
-        try:
-            j = self.eapi('/api/v1/cloud', {'limit': limit, 'offset': 0})
-            out = []
-            for r in j.get('data', []) or []:
-                sid = r.get('songId') or (r.get('simpleSong') or {}).get('id')
-                nm = r.get('songName') or (r.get('simpleSong') or {}).get('name', '')
-                ar = r.get('artist') or ' / '.join(a['name'] for a in ((r.get('simpleSong') or {}).get('ar') or []))
-                if sid:
-                    out.append({'id': sid, 'name': nm, 'artist': ar, 'cover': ''})
-            return out
-        except Exception:
-            return []
+        """音乐云盘。老路径 /api/v1/cloud 现在多半不出货，优先 /api/v1/cloud/get。"""
+        last_err = ''
+        for path in ('/api/v1/cloud/get', '/api/v1/cloud', '/api/cloud/get'):
+            try:
+                j = self.eapi(path, {'limit': limit, 'offset': 0})
+                rows = j.get('data')
+                if isinstance(rows, dict):
+                    rows = rows.get('data') or rows.get('list') or []
+                out = []
+                for r in (rows or []):
+                    if not isinstance(r, dict):
+                        continue
+                    simple = r.get('simpleSong') or {}
+                    sid = r.get('songId') or simple.get('id')
+                    if not sid:
+                        continue
+                    nm = r.get('songName') or simple.get('name') or r.get('fileName') or '未知歌曲'
+                    ar = r.get('artist') or _join_artists(simple.get('ar'))
+                    if not str(ar).strip():
+                        ar = '未知歌手'
+                    al = r.get('album') or _safe_str((simple.get('al') or {}).get('name'))
+                    out.append({
+                        'id': sid,
+                        'name': _safe_str(nm, '未知歌曲'),
+                        'artist': _safe_str(ar, '未知歌手'),
+                        'album': _safe_str(al),
+                        'cover': _safe_str((simple.get('al') or {}).get('picUrl')),
+                        'duration': simple.get('dt') or 0,
+                    })
+                if out:
+                    return out
+                last_err = f'{path} 返回 code={j.get("code")} 无数据'
+            except Exception as e:
+                last_err = f'{path}: {str(e)[:80]}'
+        self._last_cloud_err = last_err
+        return []
 
     def artist_songs(self, artist_id, limit=50):
         """歌手热门歌。"""
@@ -609,19 +698,27 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         try:
             return jsonify({'ok': True, **nc.playlist_songs(pid)})
         except Exception as e:
-            return jsonify({'ok': False, 'error': str(e)[:150]})
+            return jsonify({'ok': False, 'error': type(e).__name__ + ': ' + str(e)[:150]})
 
     @app.route('/api/music/my/recent', methods=['GET'])
     def music_my_recent():
         try:
-            return jsonify({'ok': True, 'songs': nc.recent_plays()})
+            songs = nc.recent_plays()
+            if not songs:
+                why = getattr(nc, '_last_recent_err', '')
+                return jsonify({'ok': False, 'error': '拿不到最近播放' + (('：' + why) if why else '')})
+            return jsonify({'ok': True, 'songs': songs})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
     @app.route('/api/music/my/cloud', methods=['GET'])
     def music_my_cloud():
         try:
-            return jsonify({'ok': True, 'songs': nc.cloud_songs()})
+            songs = nc.cloud_songs()
+            if not songs:
+                why = getattr(nc, '_last_cloud_err', '')
+                return jsonify({'ok': False, 'error': '云盘没拿到' + (('：' + why) if why else '')})
+            return jsonify({'ok': True, 'songs': songs})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
@@ -837,7 +934,23 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             out['playlists_head'] = [p['name'] for p in pls[:5]]
         except Exception as e:
             out['playlists_error'] = str(e)[:150]
+        try:
+            out['recent_count'] = len(nc.recent_plays())
+            out['recent_error'] = getattr(nc, '_last_recent_err', '')
+        except Exception as e:
+            out['recent_error'] = str(e)[:150]
+        try:
+            out['cloud_count'] = len(nc.cloud_songs())
+            out['cloud_error'] = getattr(nc, '_last_cloud_err', '')
+        except Exception as e:
+            out['cloud_error'] = str(e)[:150]
         return jsonify(out)
+
+    # ── 搜歌 ──────────────────────────────────────────────────────────────
+    @app.route('/api/music/search', methods=['GET'])
+    def music_search():
+        """搜歌。之前这个路由的 @app.route 和 def 两行丢了，函数体粘在 diag2 后面，
+        导致 /api/music/search 直接 404，前端 JSON.parse 报 SyntaxError。"""
         err = _need_crypto()
         if err:
             return err
