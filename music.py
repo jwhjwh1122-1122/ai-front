@@ -441,6 +441,32 @@ class NeteaseClient:
         except Exception:
             return False
 
+    def create_playlist(self, name, private=False):
+        """新建歌单，返回歌单id。"""
+        try:
+            j = self.weapi('/api/playlist/create',
+                           {'name': name, 'privacy': '10' if private else '0'})
+            pl = j.get('playlist') or {}
+            return {'ok': j.get('code') == 200, 'id': pl.get('id'), 'name': pl.get('name')}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)[:120]}
+
+    def playlist_tracks(self, playlist_id, track_ids, add=True):
+        """往歌单加歌/删歌。track_ids 可为单个或列表。"""
+        try:
+            if not isinstance(track_ids, list):
+                track_ids = [track_ids]
+            ids_json = json.dumps([str(t) for t in track_ids])
+            j = self.weapi('/api/playlist/manipulate/tracks', {
+                'op': 'add' if add else 'del',
+                'pid': str(playlist_id),
+                'trackIds': ids_json,
+                'imme': 'true',
+            })
+            return j.get('code') == 200
+        except Exception:
+            return False
+
 
 # ── 路由注册 ────────────────────────────────────────────────────────────
 def register_music(app, data_dir=None, jread=None, jwrite=None,
@@ -626,9 +652,42 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ok = nc.set_like(sid, like)
         return jsonify({'ok': ok})
 
+    @app.route('/api/music/playlist/create', methods=['POST'])
+    def music_playlist_create():
+        b = request.json or {}
+        name = (b.get('name') or '').strip()
+        if not name:
+            return jsonify({'ok': False, 'error': '缺歌单名'})
+        return jsonify(nc.create_playlist(name, b.get('private', False)))
+
+    @app.route('/api/music/playlist/add', methods=['POST'])
+    def music_playlist_add():
+        b = request.json or {}
+        pid = b.get('pid')
+        ids = b.get('ids') or b.get('id')
+        if not pid or not ids:
+            return jsonify({'ok': False, 'error': '缺 pid 或 ids'})
+        return jsonify({'ok': nc.playlist_tracks(pid, ids, add=True)})
+
+    @app.route('/api/music/playlist/del', methods=['POST'])
+    def music_playlist_del():
+        b = request.json or {}
+        pid = b.get('pid')
+        ids = b.get('ids') or b.get('id')
+        if not pid or not ids:
+            return jsonify({'ok': False, 'error': '缺 pid 或 ids'})
+        return jsonify({'ok': nc.playlist_tracks(pid, ids, add=False)})
+
     # ── 一起听聊天 ──────────────────────────────────────────────────────
     import os as _os
     CHAT_FILE = _os.path.join(data_dir, 'music_chat.json')
+    LISTEN_FILE = _os.path.join(data_dir, 'music_listen.json')
+
+    def _listen_load():
+        return jread(LISTEN_FILE, {'active': False, 'invite': None, 'now': None}) or {'active': False, 'invite': None, 'now': None}
+
+    def _listen_save(d):
+        jwrite(LISTEN_FILE, d)
 
     def _chat_load():
         return jread(CHAT_FILE, {'messages': []}) or {'messages': []}
@@ -697,6 +756,54 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _chat_load()
         d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
         _chat_save(d)
+        return jsonify({'ok': True})
+
+    # ── 一起听状态 + 互相邀请 ──────────────────────────────────────────────
+    @app.route('/api/music/listen/state', methods=['GET'])
+    def music_listen_state():
+        """前端轮询：一起听状态 + 有没有收到邀请。"""
+        d = _listen_load()
+        return jsonify({'ok': True, 'active': d.get('active', False),
+                        'invite': d.get('invite'), 'now': d.get('now')})
+
+    @app.route('/api/music/listen/invite', methods=['POST'])
+    def music_listen_invite():
+        """发起邀请。from='user'(你邀请AI) 或 'ai'(AI邀请你)。MCP发ai邀请要带token。"""
+        b = request.json or {}
+        frm = b.get('from', 'user')
+        name = b.get('name', '')  # 邀请方名字
+        if frm == 'ai' and not _check_token():
+            return jsonify({'ok': False, 'error': '鉴权失败'}), 403
+        d = _listen_load()
+        d['invite'] = {'from': frm, 'name': name, 'ts': int(time.time())}
+        _listen_save(d)
+        return jsonify({'ok': True})
+
+    @app.route('/api/music/listen/accept', methods=['POST'])
+    def music_listen_accept():
+        """接受邀请，进入一起听。"""
+        d = _listen_load()
+        d['active'] = True
+        d['invite'] = None
+        _listen_save(d)
+        return jsonify({'ok': True})
+
+    @app.route('/api/music/listen/end', methods=['POST'])
+    def music_listen_end():
+        """退出一起听。"""
+        d = _listen_load()
+        d['active'] = False
+        d['invite'] = None
+        _listen_save(d)
+        return jsonify({'ok': True})
+
+    @app.route('/api/music/listen/now', methods=['POST'])
+    def music_listen_now():
+        """前端上报当前在放的歌（给AI知道你在听啥）。"""
+        b = request.json or {}
+        d = _listen_load()
+        d['now'] = b.get('song')
+        _listen_save(d)
         return jsonify({'ok': True})
 
     @app.route('/api/music/diag2', methods=['GET'])
@@ -816,6 +923,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         action = b.get('action', 'play')
         if action == 'stop':
             cmd = store.push_command({'action': 'stop'})
+            return jsonify({'ok': True, 'command': cmd})
+        if action in ('next', 'prev', 'pause', 'resume'):
+            cmd = store.push_command({'action': action})
             return jsonify({'ok': True, 'command': cmd})
         # play：给了 id 直接播；给了 query 就先搜再播最佳
         song = None
