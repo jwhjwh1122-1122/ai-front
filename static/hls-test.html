@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>连播实验</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC",sans-serif;background:linear-gradient(180deg,#fbfcfd,#eef1f4);
+  color:#2b2f36;padding:calc(env(safe-area-inset-top) + 20px) 22px 40px;min-height:100vh}
+h1{font-size:19px;font-weight:700;margin-bottom:6px}
+.sub{font-size:13px;color:#8a9098;line-height:1.7;margin-bottom:20px}
+.card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(60,70,90,.08);margin-bottom:14px}
+.row{display:flex;gap:9px;margin-bottom:10px}
+input{flex:1;min-width:0;padding:11px 13px;border-radius:10px;border:none;background:#eef0f2;font-size:15px;outline:none}
+button{padding:11px 16px;border-radius:10px;border:none;background:#ec4141;color:#fff;font-size:15px;font-weight:600}
+button.g{background:#eef0f2;color:#5a6068}
+audio{width:100%;margin-top:6px}
+.log{font:12px/1.7 -apple-system,monospace;color:#5a6068;background:#f4f6f8;border-radius:10px;
+  padding:12px;white-space:pre-wrap;word-break:break-all;max-height:42vh;overflow:auto}
+.step{font-size:13px;color:#5a6068;line-height:1.9}
+.step b{color:#20262c}
+</style>
+</head>
+<body>
+<h1>连播实验</h1>
+<div class="sub">这是个独立的测试页，跟正式播放器完全分开，怎么点都不会弄坏它。<br>
+目的：看 iOS 肯不肯自己一首接一首地播。</div>
+
+<div class="card">
+  <div class="row">
+    <input id="q" placeholder="随便搜个歌手，比如 周杰伦" value="周杰伦">
+    <button id="go">搜</button>
+  </div>
+  <div class="log" id="list">还没搜</div>
+</div>
+
+<div class="card">
+  <audio id="a" controls playsinline preload="auto"></audio>
+  <div class="row" style="margin-top:12px">
+    <button id="play">播放这张列表</button>
+    <button class="g" id="raw">看播放列表原文</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="step"><b>怎么测：</b><br>
+  1. 点「搜」，再点「播放这张列表」<br>
+  2. 出声之后，<b>把进度拖到第一首快结束的地方</b><br>
+  3. <b>锁屏</b>，等它跨过那个点<br>
+  4. 第二首有没有自动接上、有没有声音</div>
+</div>
+
+<div class="card"><div class="log" id="log">—</div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const a=$('a');let songs=[];
+function log(s){$('log').textContent=(new Date().toTimeString().slice(0,8))+'  '+s+'\n'+$('log').textContent;}
+$('go').onclick=async()=>{
+  $('list').textContent='搜索中…';
+  try{
+    const r=await fetch('/api/music/search?q='+encodeURIComponent($('q').value.trim())+'&limit=4').then(r=>r.json());
+    if(!r.ok){$('list').textContent='出错：'+r.error;return;}
+    songs=r.songs||[];
+    $('list').textContent=songs.map((s,i)=>(i+1)+'. '+s.name+' - '+s.artist).join('\n')||'没搜到';
+    log('拿到 '+songs.length+' 首');
+  }catch(e){$('list').textContent='出错：'+e;}
+};
+function hlsUrl(){return '/api/music/hls?ids='+songs.map(s=>s.id).join(',');}
+$('play').onclick=()=>{
+  if(!songs.length){log('先搜几首歌');return;}
+  a.src=hlsUrl();
+  a.play().then(()=>log('开始播放（整张列表是一条流）')).catch(e=>log('播放失败：'+e.message));
+};
+$('raw').onclick=async()=>{
+  if(!songs.length){log('先搜几首歌');return;}
+  const t=await fetch(hlsUrl()).then(r=>r.text());
+  $('log').textContent=t;
+};
+a.addEventListener('loadedmetadata',()=>log('总时长 '+Math.round(a.duration)+' 秒（几首歌加起来 = 成了）'));
+a.addEventListener('error',()=>log('✗ iOS 不吃这种播放列表'+(a.error?('（错误码 '+a.error.code+'）'):'')));
+a.addEventListener('ended',()=>log('整张列表放完了'));
+a.addEventListener('waiting',()=>log('缓冲中…'));
+a.addEventListener('playing',()=>log('出声了，当前 '+Math.round(a.currentTime)+' 秒'));
+</script>
+</body>
+</html>
