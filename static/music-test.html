@@ -21,8 +21,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .top .down svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
 .top .ttl{font-size:16px;font-weight:500;color:#2b2f36;}
 .top .share{width:24px;height:24px;color:#3a3f47;}
-.ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0 8px;}
-.ipod{width:min(66vw,244px);aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
+.ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0 0;}
+.ipod{width:min(47vw,196px);aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
   background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
   box-shadow:0 3px 3px rgba(255,255,255,1) inset,-3px 0 7px rgba(255,255,255,.85) inset,
     0 -5px 12px rgba(165,172,184,.55) inset,4px 5px 9px rgba(165,172,184,.4) inset,
@@ -75,8 +75,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     0 -3px 6px rgba(150,156,168,.4) inset;}
 .wbtn{position:absolute;width:30%;height:30%;background:none;border:none;}
 .wbtn.m{top:0;left:35%;} .wbtn.p{left:0;top:35%;} .wbtn.n{right:0;top:35%;} .wbtn.y{bottom:0;left:35%;}
-.below{flex-shrink:0;}
-.b-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.below{flex-shrink:0;padding-top:24px;}
+.b-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;}
 .b-title{font-size:20px;font-weight:700;color:#20262c;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .b-artist{font-size:13px;color:#8a9098;margin-top:5px;display:flex;align-items:center;gap:7px;}
 .b-follow{font-size:11px;color:#8a9098;border:1px solid #d5dae0;border-radius:9px;padding:1px 8px;}
@@ -87,12 +87,38 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-heart.liked svg path{fill:currentColor;stroke:none;}
 .b-heart svg{width:26px;height:26px;fill:currentColor;}
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
+/* 两头像戴耳机 */
+.together{position:relative;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding:22px 0 0;}
+.tg-buds{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:200px;height:122px;pointer-events:none;overflow:visible;z-index:0;}
+.tg-faces{display:flex;position:relative;z-index:2;}
+.tg-face{width:56px;height:56px;border-radius:50%;background:#d8dce2 center/cover no-repeat;box-shadow:0 2px 8px rgba(60,70,90,.16);}
+.tg-face:last-child{margin-left:-8px;}
+.tg-tip{position:relative;z-index:2;margin-top:16px;font-size:12px;color:#aeb4bc;letter-spacing:.2px;}
+/* 评论/聊天视图 */
+.chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:76px;display:none;flex-direction:column;padding:0 18px;}
+.chat-view.on{display:flex;}
+.cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:8px 0;display:flex;flex-direction:column;gap:12px;}
+.cv-msgs::-webkit-scrollbar{display:none;}
+.cv-row{display:flex;gap:8px;max-width:82%;}
+.cv-row.me{align-self:flex-end;flex-direction:row-reverse;}
+.cv-av{width:34px;height:34px;border-radius:50%;background:#d8dce2 center/cover no-repeat;flex-shrink:0;}
+.cv-bubble{padding:9px 13px;border-radius:15px;font-size:15px;line-height:1.4;color:#20262c;background:#fff;box-shadow:0 1px 3px rgba(60,70,90,.08);}
+.cv-row.me .cv-bubble{background:#d5e8fb;}
+.cv-input{display:flex;gap:8px;padding:10px 0;flex-shrink:0;}
+.cv-input input{flex:1;padding:11px 15px;border-radius:20px;border:none;background:#e9ecef;font-size:15px;outline:none;color:#2b2f36;}
+.cv-input button{padding:0 18px;border-radius:20px;border:none;background:#ec4141;color:#fff;font-size:14px;font-weight:600;}
+/* 音乐/评论切换 */
+.mc-switch{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);
+  display:flex;background:#e9ecef;border-radius:22px;padding:3px;gap:2px;z-index:4;}
+.mc-btn{width:52px;height:36px;border:none;background:none;border-radius:19px;display:grid;place-items:center;color:#8a9098;}
+.mc-btn svg{width:22px;height:22px;}
+.mc-btn.on{background:#fff;color:#2b2f36;box-shadow:0 1px 4px rgba(60,70,90,.12);}
 .prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:2px;}
 .prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
 .prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
 .prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);}
 .prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:7px;}
-.ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding:0 2px;}
+.ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:22px;margin-bottom:52px;padding:0 2px;}
 .cb{background:none;border:none;color:#3a3f47;display:grid;place-items:center;}
 .cb svg{fill:currentColor;}
 .cb.mode svg,.cb.list svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
@@ -197,6 +223,26 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <div class="ttl" id="top-title">一起听</div>
     <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M12 3v13M8 7l4-4 4 4"/></svg>
   </div>
+  <!-- 两头像戴耳机 -->
+  <div class="together" id="together-bar">
+    <svg class="tg-buds" viewBox="0 0 200 122" preserveAspectRatio="xMidYMin meet">
+      <defs><linearGradient id="budG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2b2f36" stop-opacity="1"/>
+        <stop offset="55%" stop-color="#2b2f36" stop-opacity="0.5"/>
+        <stop offset="100%" stop-color="#2b2f36" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="M46 26 Q36 46 42 66 Q46 78 52 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M154 26 Q164 46 158 66 Q154 78 148 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
+      <ellipse cx="46" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(-14 46 24)"/>
+      <ellipse cx="154" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(14 154 24)"/>
+    </svg>
+    <div class="tg-faces">
+      <div class="tg-face" id="tg-user"></div>
+      <div class="tg-face" id="tg-ai"></div>
+    </div>
+    <div class="tg-tip" id="tg-tip">一起听了 0 分钟</div>
+  </div>
+  </div>
   <div class="ipod-box">
     <div class="ipod" id="ipod-tap">
       <div class="screen">
@@ -238,6 +284,19 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
       <button class="cb side" id="c-next"><svg viewBox="0 0 24 24"><path d="M6 5v14l9-7zM16 5v14h2V5z"/></svg></button>
       <button class="cb list" id="c-list"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6l1 1M3 12h.01M3 18h.01"/></svg></button>
     </div>
+  </div>
+  <!-- 评论/聊天视图 -->
+  <div class="chat-view" id="chat-view">
+    <div class="cv-msgs" id="cv-msgs"></div>
+    <div class="cv-input">
+      <input id="cv-text" placeholder="就着这首歌，说点什么…" enterkeyhint="send">
+      <button id="cv-send">发送</button>
+    </div>
+  </div>
+  <!-- 音乐/评论切换 -->
+  <div class="mc-switch">
+    <button class="mc-btn on" id="mc-music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
+    <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
   </div>
   <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div></div>
 </div>
@@ -291,7 +350,7 @@ function toast(msg){
 
 // ── 页面切换 ──
 function collapse(){collapsed=true;$('play-page').classList.add('hid');refreshMini();}
-function expand(){collapsed=false;$('play-page').classList.remove('hid');}
+function expand(){collapsed=false;$('play-page').classList.remove('hid');refreshMini();}
 $('btn-down').onclick=collapse;
 
 // ── 我的/搜索 tab ──
@@ -391,7 +450,15 @@ async function playSong(s){
   if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
   $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
   try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
-  loadLyric(s.id);refreshMini();
+  loadLyric(s.id);refreshMini();syncHeart(s.id);
+}
+// 红心状态同步
+let likedSet=null;
+async function syncHeart(id){
+  if(likedSet===null){
+    try{const r=await fetch('/api/music/liked').then(r=>r.json());likedSet=new Set((r.ids||[]).map(String));}catch(e){likedSet=new Set();}
+  }
+  $('btn-heart').classList.toggle('liked',likedSet.has(String(id)));
 }
 function showQueue(){
   if(!queue.length){toast('还没有歌');return;}
@@ -447,7 +514,13 @@ $('mini').addEventListener('click',e=>{
   if(e.target.closest('.ml')){showQueue();return;}
   expand();
 });
-$('btn-heart').onclick=()=>$('btn-heart').classList.toggle('liked');
+$('btn-heart').onclick=async()=>{
+  if(!cur)return;
+  const nowLiked=!$('btn-heart').classList.contains('liked');
+  $('btn-heart').classList.toggle('liked',nowLiked);
+  if(likedSet){if(nowLiked)likedSet.add(String(cur.id));else likedSet.delete(String(cur.id));}
+  try{await fetch('/api/music/like',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur.id,like:nowLiked})});}catch(e){}
+};
 $('c-list').onclick=()=>{showQueue();};
 // 上一首/下一首(iPod轮 + 底部控件)
 $('c-prev').onclick=playPrev;$('c-next').onclick=playNext;
@@ -469,6 +542,75 @@ function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyVi
 $('ipod-tap').addEventListener('click',e=>{if(e.target.closest('.wheel'))return;if(e.target.closest('.screen'))toggleLyric();});
 $('lyric-view').addEventListener('click',()=>toggleLyric());
 $('p-bar').addEventListener('click',e=>{if(!audio.duration)return;const r=$('p-bar').getBoundingClientRect();audio.currentTime=(e.clientX-r.left)/r.width*audio.duration;});
+
+// ── 头像:跟随app头像(嵌入时从父窗口读,否则localStorage)──
+function loadAvatars(){
+  let uav='',aav='';
+  try{uav=window.parent?.localStorage?.getItem('chat-avatar-user')||'';aav=window.parent?.localStorage?.getItem('chat-avatar-ai')||'';}catch(e){}
+  if(!uav)uav=localStorage.getItem('chat-avatar-user')||'';
+  if(!aav)aav=localStorage.getItem('chat-avatar-ai')||'';
+  if(uav)$('tg-user').style.backgroundImage='url('+uav+')';
+  if(aav)$('tg-ai').style.backgroundImage='url('+aav+')';
+  window._uav=uav;window._aav=aav;
+}
+loadAvatars();
+
+// ── 一起听累计时长 ──
+function tgMins(){return parseInt(localStorage.getItem('together-mins')||'0',10);}
+function renderTip(){
+  const m=tgMins(),h=Math.floor(m/60),mm=m%60;
+  $('tg-tip').textContent='一起听了 '+(h?h+' 小时 ':'')+mm+' 分钟';
+}
+renderTip();
+setInterval(()=>{if(!audio.paused&&audio.currentTime>0){localStorage.setItem('together-mins',tgMins()+1);renderTip();}},60000);
+
+// ── 音乐/评论切换 ──
+let chatMode=false;
+function setMode(chat){
+  chatMode=chat;
+  $('chat-view').classList.toggle('on',chat);
+  $('mc-music').classList.toggle('on',!chat);
+  $('mc-chat').classList.toggle('on',chat);
+  // 评论模式隐藏iPod和控件
+  document.querySelector('.ipod-box').style.display=chat?'none':'flex';
+  document.querySelector('.below').style.display=chat?'none':'block';
+  if(chat){loadChatHistory();setTimeout(()=>{const m=$('cv-msgs');m.scrollTop=m.scrollHeight;},100);}
+}
+$('mc-music').onclick=()=>setMode(false);
+$('mc-chat').onclick=()=>setMode(true);
+// 播放页那个💬也切到聊天
+document.querySelector('.b-cmt').onclick=()=>setMode(true);
+
+// ── 聊天 ──
+function addMsg(text,me){
+  const row=document.createElement('div');row.className='cv-row'+(me?' me':'');
+  const av=me?(window._uav||''):(window._aav||'');
+  row.innerHTML='<div class="cv-av" style="background-image:url('+av+')"></div><div class="cv-bubble">'+text.replace(/</g,'&lt;')+'</div>';
+  $('cv-msgs').appendChild(row);
+  const m=$('cv-msgs');m.scrollTop=m.scrollHeight;
+}
+async function loadChatHistory(){
+  if($('cv-msgs')._loaded)return;
+  try{
+    const r=await fetch('/api/music/chat/history').then(r=>r.json());
+    if(r.ok&&r.messages){$('cv-msgs').innerHTML='';r.messages.forEach(m=>addMsg(m.text,m.me));}
+  }catch(e){}
+  $('cv-msgs')._loaded=true;
+}
+async function sendChat(){
+  const t=$('cv-text').value.trim();if(!t)return;
+  $('cv-text').value='';
+  addMsg(t,true);
+  // 存 + 触发凛回复(走app聊天后端)
+  const ctx=cur?('（正在一起听：'+cur.name+' - '+cur.artist+'）'):'';
+  try{
+    const r=await fetch('/api/music/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:t,song:cur?{name:cur.name,artist:cur.artist}:null})}).then(r=>r.json());
+    if(r.ok&&r.reply)addMsg(r.reply,false);
+  }catch(e){}
+}
+$('cv-send').onclick=sendChat;
+$('cv-text').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
 
 let lastSeq=0;
 setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
