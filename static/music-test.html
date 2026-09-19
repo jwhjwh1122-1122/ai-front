@@ -11,7 +11,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="随身听">
 <meta name="theme-color" content="#fbfcfd">
-<link rel="apple-touch-icon" href="/static/tt-icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/tt-icon-180.png">
+<link rel="apple-touch-icon" href="/static/tt-icon-180.png">
 <link rel="apple-touch-icon" sizes="512x512" href="/static/tt-icon-512.png">
 <link rel="icon" href="/static/tt-icon-192.png">
 <style>
@@ -420,28 +421,6 @@ const $=id=>document.getElementById(id);
 // 两个播放器轮流坐庄：下一首在后台那个里提前缓冲好，放完直接让它上，
 // 不重新下载。iOS 后台不让"新开的下载"出声，但已经缓冲好的可以接着放。
 const audio=$('audio');
-// ── 把音频接进 AudioContext ───────────────────────────────────────────
-// iOS 的毛病：网页在后台换了音源之后，允许继续播但不给声音通道
-//（锁屏进度在走、就是没声，就是这个）。接进 AudioContext 之后，
-// 声音走的是你第一次点播放时就打开的那条通道，换歌不会再被掐。
-let actx=null,asrc=null;
-function ensureAudioGraph(){
-  try{
-    const AC=window.AudioContext||window.webkitAudioContext;
-    if(!AC)return;
-    if(!actx)actx=new AC();
-    if(!asrc){asrc=actx.createMediaElementSource(audio);asrc.connect(actx.destination);}
-    if(actx.state==='suspended')actx.resume().catch(()=>{});
-  }catch(e){}
-}
-function wakeAudioGraph(){
-  try{if(actx&&actx.state==='suspended')actx.resume().catch(()=>{});}catch(e){}
-}
-// 任何一次真实触摸都顺手把通道唤醒（不影响别的操作）
-['touchend','click'].forEach(ev=>document.addEventListener(ev,()=>{
-  if(actx)wakeAudioGraph();
-},{passive:true,capture:true}));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)wakeAudioGraph();});
 let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
 let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
 function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
@@ -992,7 +971,6 @@ async function playSong(s){
   if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
   $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
   loadLyric(s.id);   // 歌词跟音频同时去拿，不再排队等
-  ensureAudioGraph();
   const cached=urlCache[s.id];
   if(cached){
     // 地址早就备好了：立刻开播，一点都不等（后台自动连播全靠这条）
@@ -1176,7 +1154,7 @@ function lyHideSeek(){
 
 function onBoth(ev,fn){audio.addEventListener(ev,fn);}
 onBoth('canplay',()=>{if(cur&&qualityCache[cur.id])$('prog-sub').textContent=qualityCache[cur.id];});
-onBoth('play',()=>{postNP();updPositionState();wakeAudioGraph();});onBoth('pause',()=>{postNP();updPositionState();});
+onBoth('play',()=>{postNP();updPositionState();});onBoth('pause',()=>{postNP();updPositionState();});
 onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(audio.duration||0);updPositionState();});
 onBoth('seeked',()=>{updPositionState();
   // 拖到后段就立刻催一次：免得"刚开播就拖到结尾"时地址还没拿回来
@@ -1192,9 +1170,7 @@ onBoth('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*1
 onBoth('play',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='playing';}catch(e){}$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
 onBoth('pause',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='paused';}catch(e){}$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
 
-function togglePlay(){if(!cur){collapse();showTab('search');return;}
-  ensureAudioGraph();
-  audio.paused?audio.play():audio.pause();}
+function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused?audio.play():audio.pause();}
 $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
 $('mini').addEventListener('click',e=>{
   if(e.target.closest('.mp'))return;
@@ -1238,7 +1214,6 @@ audio.addEventListener('ended',()=>{
     qIndex=ni;cur=nx;
     playToken++;                      // 作废掉还在路上的请求
     audio.src=urlCache[nx.id];
-    wakeAudioGraph();
     audio.play().catch(()=>{});
     $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
     $('scr-nm').textContent=nx.name;$('scr-ar').textContent=nx.artist;$('scr-al').textContent=nx.album||'';
