@@ -560,34 +560,126 @@ window.addEventListener('error', function (e) {
 
 <!-- ============ 网易云（外部服务） ============ -->
 <!-- ============ 迷你随身听（悬浮球）============ -->
+<!-- 就是那台 iPod 本人，整个等比缩小 30%，样式跟播放器同一套 -->
 <style>
-.ipod-ball{position:fixed;right:14px;z-index:120;width:56px;height:78px;border-radius:13px;
-  display:none;flex-direction:column;align-items:center;padding:5px 4px 0;
-  background:linear-gradient(150deg,#ffffff 0%,#f7f8f9 24%,#e9ebee 60%,#d9dce0 100%);
+.ipod-ball{position:fixed;right:12px;z-index:120;display:none;
+  width:74px;height:125px;touch-action:none;user-select:none;-webkit-user-select:none;
+  filter:drop-shadow(0 10px 18px rgba(40,50,70,.45));}
+.ipod-ball.show{display:block;}
+.ipod-ball .ib-scale{transform:scale(.3);transform-origin:top left;width:244px;}
+#ipod-ball .ipod{width:244px;height:auto;max-height:100%;aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
+  background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
+  box-shadow:0 3px 3px rgba(255,255,255,1) inset,-3px 0 7px rgba(255,255,255,.85) inset,
+    0 -5px 12px rgba(165,172,184,.55) inset,4px 5px 9px rgba(165,172,184,.4) inset,
+    0 28px 48px -20px rgba(50,60,80,.55),0 12px 24px -12px rgba(50,60,80,.4);
+  display:flex;flex-direction:column;z-index:1;}
+#ipod-ball .screen{margin-top:5.5%;border-radius:4px;overflow:hidden;border:1px solid #a8adb6;background:#e8ebee;box-shadow:0 1px 3px rgba(0,0,0,.22) inset,0 1px 0 rgba(255,255,255,.6);}
+#ipod-ball .scr-top{display:flex;align-items:center;justify-content:space-between;padding:3px 6px;background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
+#ipod-ball .scr-top b{font-size:8.5px;font-weight:600;color:#40454d;}
+#ipod-ball .scr-top .r{display:flex;align-items:center;gap:4px;}
+#ipod-ball .scr-top .pz{color:#4a90d9;font-size:7px;letter-spacing:-1px;}
+#ipod-ball .scr-top .bt{width:14px;height:8px;border:1px solid #5a6068;border-radius:2px;padding:1px;position:relative;}
+#ipod-ball .scr-top .bt::after{content:"";display:block;height:100%;width:72%;background:#5cb85c;border-radius:1px;}
+#ipod-ball .scr-top .bt::before{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:2px;height:4px;background:#5a6068;border-radius:0 1px 1px 0;}
+#ipod-ball .scr-body{display:flex;gap:7px;padding:7px;background:#f5f7f8;}
+#ipod-ball .scr-cover{width:33%;aspect-ratio:1;border-radius:2px;object-fit:cover;background:#d5dae0;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.15);}
+#ipod-ball .scr-meta{flex:1;min-width:0;padding-top:1px;}
+#ipod-ball .scr-meta .nm{font-size:11px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#ipod-ball .scr-meta .ar{font-size:9.5px;color:#525860;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#ipod-ball .scr-meta .al{font-size:8.5px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#ipod-ball .scr-prog{display:flex;align-items:center;gap:4px;padding:0 7px 7px;background:#f5f7f8;font-size:7px;color:#6a7078;}
+#ipod-ball .scr-track{flex:1;height:7px;border-radius:4px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.08) inset;}
+#ipod-ball .scr-fill{height:100%;width:0%;background:linear-gradient(#8fc4f0,#4a90d9);border-radius:3px;box-shadow:0 -1px 1px rgba(255,255,255,.3) inset;}
+#ipod-ball .wheel-box{flex:1;display:flex;align-items:center;justify-content:center;}
+#ipod-ball .wheel{width:65%;aspect-ratio:1;border-radius:50%;position:relative;background:radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e0e3e6 32%,#c8ccd1 58%,#b2b7bd 82%,#a4a9b1 100%);box-shadow:0 5px 14px rgba(70,78,95,.4),0 2px 0 rgba(255,255,255,1) inset,0 -5px 12px rgba(120,128,142,.5) inset,0 5px 10px rgba(255,255,255,.85) inset;display:grid;place-items:center;}
+#ipod-ball .wheel::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 50% 26%,rgba(255,255,255,.65),transparent 46%);pointer-events:none;}
+#ipod-ball .wheel::after{content:"";position:absolute;inset:6%;border-radius:50%;box-shadow:0 2px 5px rgba(100,108,122,.28) inset,0 -2px 4px rgba(255,255,255,.7) inset,0 0 0 1px rgba(150,156,166,.18);pointer-events:none;}
+#ipod-ball .wheel .menu{position:absolute;top:8%;font-size:8.5px;font-weight:600;color:#868b93;letter-spacing:1.6px;z-index:1;}
+#ipod-ball .wheel .wi{position:absolute;color:#7d828b;z-index:1;}
+#ipod-ball .wheel .wi svg{width:14px;height:14px;fill:currentColor;}
+#ipod-ball .wheel .wi.prev{left:11%;top:50%;transform:translateY(-50%);}
+#ipod-ball .wheel .wi.next{right:11%;top:50%;transform:translateY(-50%);}
+#ipod-ball .wheel .wi.play{bottom:9.5%;}
+#ipod-ball .wheel .center{width:39%;aspect-ratio:1;border-radius:50%;border:none;z-index:1;background:radial-gradient(circle at 50% 34%,#ffffff 0%,#f0f2f4 52%,#dadde1 100%);box-shadow:0 3px 8px rgba(90,100,120,.38),0 2px 0 rgba(255,255,255,1) inset,0 -3px 6px rgba(150,156,168,.4) inset;}
+/* 缩小之后这些细节看不清，索性藏掉，留干净的轮廓 */
+#ipod-ball .scr-meta .al{display:none;}
+#ipod-ball .ipod{display:flex;flex-direction:column;}
+
+/* ── 横版：屏幕在左，转盘挪到右边 ── */
+.hpod{position:fixed;right:12px;z-index:120;display:none;align-items:center;gap:6px;padding:5px 6px;
+  width:170px;height:56px;border-radius:13px;touch-action:none;user-select:none;-webkit-user-select:none;
+  background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
   box-shadow:0 2px 2px rgba(255,255,255,1) inset,-2px 0 5px rgba(255,255,255,.85) inset,
     0 -3px 8px rgba(165,172,184,.5) inset,3px 3px 6px rgba(165,172,184,.35) inset,
-    0 10px 22px -8px rgba(40,50,70,.5),0 4px 10px -4px rgba(40,50,70,.35);
-  touch-action:none;user-select:none;-webkit-user-select:none;}
-.ipod-ball.show{display:flex;}
-.ipod-ball .ib-screen{width:46px;height:32px;border-radius:3px;overflow:hidden;
-  border:1px solid #a8adb6;background:#e8ebee;display:grid;place-items:center;flex-shrink:0;
-  box-shadow:0 1px 2px rgba(0,0,0,.2) inset;}
-.ipod-ball .ib-screen img{width:100%;height:100%;object-fit:cover;display:block;}
-.ipod-ball .ib-wheel{width:36px;height:36px;border-radius:50%;margin-top:5px;position:relative;
-  background:radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e2e5e8 34%,#c9cdd2 62%,#b0b5bb 100%);
-  box-shadow:0 2px 5px rgba(70,78,95,.35),0 1px 0 rgba(255,255,255,1) inset,
-    0 -2px 5px rgba(120,128,142,.45) inset;display:grid;place-items:center;}
-.ipod-ball .ib-wheel:active{transform:scale(.94);}
-.ipod-ball .ib-wheel .ib-hub{width:14px;height:14px;border-radius:50%;
-  background:radial-gradient(circle at 50% 34%,#ffffff,#e4e7ea);
-  box-shadow:0 1px 3px rgba(90,100,120,.35);}
-.ipod-ball .ib-pp{position:absolute;bottom:2.5px;font-size:7px;color:#6f747c;letter-spacing:.5px;}
-.ipod-ball.playing .ib-screen img{animation:ibspin 14s linear infinite;}
-@keyframes ibspin{to{transform:rotate(360deg);}}
+    0 10px 20px -8px rgba(40,50,70,.45),0 4px 9px -4px rgba(40,50,70,.3);}
+.hpod.show{display:flex;}
+.hpod .hscreen{flex:1;min-width:0;border-radius:3px;overflow:hidden;border:1px solid #a8adb6;
+  background:#f5f7f8;box-shadow:0 1px 3px rgba(0,0,0,.22) inset;display:flex;flex-direction:column;height:100%;}
+.hpod .hstop{display:flex;align-items:center;justify-content:space-between;padding:2px 4px;
+  background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
+.hpod .hstop b{font-size:6px;font-weight:600;color:#40454d;letter-spacing:-.2px;}
+.hpod .hstop .r{display:flex;align-items:center;gap:3px;}
+.hpod .hstop .pz{color:#4a90d9;font-size:5px;letter-spacing:-1px;}
+.hpod .hstop .bt{width:9px;height:5px;border:1px solid #5a6068;border-radius:1.5px;padding:.5px;position:relative;}
+.hpod .hstop .bt::after{content:"";display:block;height:100%;width:72%;background:#5cb85c;border-radius:1px;}
+.hpod .hbody{display:flex;gap:4px;padding:3px 4px;background:#f5f7f8;flex:1;align-items:center;min-height:0;}
+.hpod .hcover{width:24px;height:24px;border-radius:2px;object-fit:cover;background:#d5dae0;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.15);}
+.hpod .hmeta{flex:1;min-width:0;}
+.hpod .hnm{font-size:8px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;}
+.hpod .har{font-size:6.5px;color:#525860;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.hpod .hprog{display:flex;align-items:center;gap:3px;padding:0 4px 3px;background:#f5f7f8;font-size:5px;color:#6a7078;}
+.hpod .htrack{flex:1;height:4px;border-radius:3px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;}
+.hpod .hfill{height:100%;width:0%;background:linear-gradient(#8fc4f0,#4a90d9);border-radius:2px;}
+.hpod .hwheel{width:44px;aspect-ratio:1;border-radius:50%;position:relative;flex-shrink:0;
+  background:radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e0e3e6 32%,#c8ccd1 58%,#b2b7bd 82%,#a4a9b1 100%);
+  box-shadow:0 3px 8px rgba(70,78,95,.4),0 1px 0 rgba(255,255,255,1) inset,
+    0 -3px 7px rgba(120,128,142,.5) inset,0 3px 6px rgba(255,255,255,.85) inset;
+  display:grid;place-items:center;}
+.hpod .hwheel::after{content:"";position:absolute;inset:7%;border-radius:50%;
+  box-shadow:0 1px 3px rgba(100,108,122,.28) inset,0 -1px 2px rgba(255,255,255,.7) inset;}
+.hpod .hhub{width:38%;aspect-ratio:1;border-radius:50%;z-index:1;
+  background:radial-gradient(circle at 50% 34%,#ffffff 0%,#f0f2f4 52%,#dadde1 100%);
+  box-shadow:0 2px 5px rgba(90,100,120,.38),0 1px 0 rgba(255,255,255,1) inset;}
+.hpod .hi{position:absolute;color:#7d828b;z-index:1;}
+.hpod .hi svg{fill:currentColor;display:block;width:7px;height:7px;}
+.hpod .hi.p{left:8%;top:50%;transform:translateY(-50%);}
+.hpod .hi.n{right:8%;top:50%;transform:translateY(-50%);}
+.hpod .hi.y{bottom:7%;left:50%;transform:translateX(-50%);}
+.hpod .hmenu{position:absolute;top:6%;font-size:4.5px;font-weight:600;color:#868b93;letter-spacing:.8px;z-index:1;}
 </style>
+<div class="hpod" id="ipod-bar" style="bottom:110px;">
+  <div class="hscreen">
+    <div class="hstop"><b>Now Playing</b><div class="r"><span class="pz" id="hb-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
+    <div class="hbody"><img class="hcover" id="hb-cover" src="" alt=""><div class="hmeta"><div class="hnm" id="hb-nm">—</div><div class="har" id="hb-ar">—</div></div></div>
+    <div class="hprog"><span id="hb-cur">0:00</span><div class="htrack"><div class="hfill" id="hb-fill"></div></div><span id="hb-rem">0:00</span></div>
+  </div>
+  <div class="hwheel"><span class="hmenu">MENU</span>
+    <span class="hi p"><svg viewBox="0 0 24 24"><path d="M18 5v14l-8-7zM8 5v14H6V5z"/></svg></span>
+    <span class="hi n"><svg viewBox="0 0 24 24"><path d="M6 5v14l8-7zM16 5v14h2V5z"/></svg></span>
+    <span class="hi y"><svg viewBox="0 0 24 24"><path d="M8 5v14l9-7z"/><path d="M4 5h1.5v14H4z"/></svg></span>
+    <span class="hhub"></span></div>
+</div>
+
 <div class="ipod-ball" id="ipod-ball" style="bottom:110px;">
-  <div class="ib-screen"><img id="ib-cover" alt=""></div>
-  <div class="ib-wheel" id="ib-wheel"><span class="ib-hub"></span><span class="ib-pp" id="ib-pp">&#10074;&#10074;</span></div>
+  <div class="ib-scale">
+    <div class="ipod">
+      <div class="screen">
+        <div class="scr-top"><b>Now Playing</b><div class="r"><span class="pz" id="ib-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
+        <div class="scr-body">
+          <img class="scr-cover" id="ib-cover" src="" alt="">
+          <div class="scr-meta"><div class="nm" id="ib-nm">—</div><div class="ar" id="ib-ar">—</div></div>
+        </div>
+        <div class="scr-prog"><span id="ib-cur">0:00</span><div class="scr-track"><div class="scr-fill" id="ib-fill"></div></div><span id="ib-rem">0:00</span></div>
+      </div>
+      <div class="wheel-box"><div class="wheel">
+        <span class="menu">MENU</span>
+        <span class="wi prev"><svg viewBox="0 0 24 24"><path d="M18 5v14l-8-7zM8 5v14H6V5z"/></svg></span>
+        <span class="wi next"><svg viewBox="0 0 24 24"><path d="M6 5v14l8-7zM16 5v14h2V5z"/></svg></span>
+        <span class="wi play"><svg viewBox="0 0 24 24"><path d="M8 5v14l9-7z"/><path d="M4 5h1.5v14H4z"/></svg></span>
+        <span class="center" id="ib-center"></span>
+      </div></div>
+    </div>
+  </div>
 </div>
 
 <div class="room" id="netease" style="background:var(--bg);">
