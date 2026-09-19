@@ -326,6 +326,13 @@ async function openNetease() {
   $('netease').classList.add('open');
   $('netease-title').textContent = url.replace(/^https?:\/\//, '').split('/')[0];
   const f = $('netease-frame'), fail = $('netease-fail');
+  // 播放器已经加载过了(可能正在后台放歌)：直接显示，别重新加载
+  if (f.src && f.src !== 'about:blank' && !/about:blank$/.test(f.src)) {
+    fail.style.display = 'none';
+    f.style.visibility = 'visible';
+    renderSplit('netease');
+    return;
+  }
   fail.style.display = 'none';
   f.style.visibility = 'hidden';
   let src = url;
@@ -354,7 +361,8 @@ async function openNetease() {
 function closeNetease() {
   clearTimeout(neteaseTimer);
   $('netease').classList.remove('open');
-  $('netease-frame').src = 'about:blank';
+  // 不要把 iframe 设成 about:blank —— 那等于把播放器整个销毁，歌会停。
+  // 只把面板收起来，播放器留在后台继续放。
   roomCtx = null;
 }
 
