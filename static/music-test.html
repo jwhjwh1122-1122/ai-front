@@ -97,11 +97,10 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:2px;}
 .prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
 .prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
-.prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);transition:width .12s,height .12s;}
-.prog .bar{padding:9px 0;margin:-9px 0;background-clip:content-box;touch-action:none;}
-.prog .bar.drag .dot{width:15px;height:15px;}
-.prog .bar.drag .f{background:#5a6068;}
-.prog.dragging{color:#5a6068;}
+.prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);}
+.prog .bar{touch-action:none;}
+/* 隐形的加大触摸区，手指好抓，外观不变 */
+.prog .bar::after{content:"";position:absolute;left:0;right:0;top:-15px;bottom:-15px;}
 .prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:8px;}
 .ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:22px;margin-bottom:52px;padding:0 2px;}
 .cb{background:none;border:none;color:#3a3f47;display:grid;place-items:center;}
@@ -113,21 +112,21 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .lyric-view.on{display:flex;}
 .ly-scroll{flex:1;overflow-y:auto;text-align:center;padding:16vh 8px 26vh;scrollbar-width:none;}
 .ly-scroll::-webkit-scrollbar{display:none;}
-.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 6px;transition:all .3s;}
-.ly-line.cur{font-size:19px;color:#20262c;font-weight:700;}
+.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 18px;margin:0 -12px;transition:color .25s,font-size .25s,background .2s;}
+.ly-line.cur{font-size:18px;color:#20262c;}
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
 .ly-line.cur .tr{color:#5a6068;}
 .ly-empty{color:#b0b6be;font-size:14px;padding-top:36vh;}
 /* 歌词滑动定位条（拖动时有线，松手后只剩时间和三角）*/
-.ly-seek{position:absolute;left:22px;right:22px;top:50%;transform:translateY(-50%);display:none;align-items:center;gap:12px;z-index:6;pointer-events:none;}
+.ly-seek{position:absolute;left:22px;right:22px;top:0;transform:translateY(-50%);display:none;align-items:center;gap:12px;z-index:6;pointer-events:none;}
 .ly-seek.on{display:flex;}
 .ly-seek .tm{font-size:11px;color:#9298a0;width:34px;flex-shrink:0;}
 .ly-seek .ln{flex:1;height:1px;background:#d3d8de;transition:opacity .2s;}
 .ly-seek.rest .ln{opacity:0;}
-.ly-seek .pl{width:26px;height:26px;display:grid;place-items:center;color:#3a3f47;flex-shrink:0;pointer-events:auto;}
-.ly-seek .pl svg{width:15px;height:15px;fill:currentColor;}
-.ly-line.pick{color:#20262c;font-weight:700;}
-.ly-line.pick.rest{background:rgba(120,130,145,.10);border-radius:12px;}
+.ly-seek .pl{width:26px;height:26px;display:grid;place-items:center;color:#3a3f47;flex-shrink:0;pointer-events:auto;background:none;border:none;padding:0;-webkit-appearance:none;appearance:none;box-shadow:none;}
+.ly-seek .pl svg{width:16px;height:16px;fill:currentColor;stroke:none;}
+.ly-line.pick{color:#20262c;}
+.ly-line.pick.rest{background:rgba(120,130,145,.10);border-radius:10px;}
 #list-page{z-index:1;padding-bottom:0;}
 .lp-top{display:flex;align-items:center;gap:14px;height:44px;flex-shrink:0;}
 .lp-tab{font-size:19px;font-weight:700;color:#b6bcc4;}
@@ -336,7 +335,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
   </div>
   <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
-    <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></button></div>
+    <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M9 3.5L16.5 12 9 20.5z"/></svg></button></div>
   </div>
 </div>
 <div class="queue-sheet" id="queue-sheet"></div>
@@ -697,6 +696,12 @@ function lyShowSeek(rest){
   sk.classList.add('on');
   sk.classList.toggle('rest',!!rest);
   if(lyPick>=0&&lyrics[lyPick])$('ly-seek-tm').textContent=fmt(lyrics[lyPick].t);
+  // 吸附到选中那行的正中间，不会卡在两句中间的空隙上
+  const el=document.querySelector('.ly-line[data-i="'+lyPick+'"]');
+  if(el){
+    const pr=$('lyric-view').getBoundingClientRect(),r=el.getBoundingClientRect();
+    sk.style.top=(r.top-pr.top+r.height/2)+'px';
+  }
 }
 function lyHideSeek(){
   $('ly-seek').classList.remove('on','rest');
@@ -704,12 +709,8 @@ function lyHideSeek(){
 }
 (function(){
   const sc=$('ly-scroll');
-  sc.addEventListener('touchstart',()=>{lyMoved=false;},{passive:true});
-  sc.addEventListener('touchmove',()=>{lyMoved=true;},{passive:true});
-  sc.addEventListener('scroll',()=>{
-    if(!lyrics.length)return;
-    lySeeking=true;lyResting=false;
-    clearTimeout(lyIdleT);clearTimeout(lyRestT);
+  let touching=false;
+  function pickNow(){
     const i=lyCenterIndex();
     if(i!==lyPick){
       lyClearPick();
@@ -717,16 +718,40 @@ function lyHideSeek(){
       const el=document.querySelector('.ly-line[data-i="'+i+'"]');
       if(el)el.classList.add('pick');
     }
+  }
+  function toRest(){
+    // 只有松开手(而且惯性滑完)才进"整行加深"这一态
+    if(touching)return;
+    lySeeking=false;lyResting=true;
+    const el=document.querySelector('.ly-line[data-i="'+lyPick+'"]');
+    if(el)el.classList.add('rest');
+    lyShowSeek(true);
+    clearTimeout(lyRestT);
+    lyRestT=setTimeout(()=>{lyHideSeek();lastLy=-1;updLyric(audio.currentTime);},4000);
+  }
+  sc.addEventListener('touchstart',()=>{
+    touching=true;lyMoved=false;
+    clearTimeout(lyIdleT);clearTimeout(lyRestT);
+    // 手指按住就回到线条模式，按多久都是线条模式
+    if(lyResting||lySeeking){lyResting=false;lySeeking=true;
+      document.querySelectorAll('.ly-line.rest').forEach(el=>el.classList.remove('rest'));
+      lyShowSeek(false);}
+  },{passive:true});
+  sc.addEventListener('touchmove',()=>{lyMoved=true;},{passive:true});
+  sc.addEventListener('touchend',()=>{
+    touching=false;
+    clearTimeout(lyIdleT);
+    lyIdleT=setTimeout(toRest,200);   // 等惯性滑完
+  },{passive:true});
+  sc.addEventListener('touchcancel',()=>{touching=false;},{passive:true});
+  sc.addEventListener('scroll',()=>{
+    if(!lyrics.length)return;
+    lySeeking=true;lyResting=false;
+    clearTimeout(lyIdleT);clearTimeout(lyRestT);
+    document.querySelectorAll('.ly-line.rest').forEach(el=>el.classList.remove('rest'));
+    pickNow();
     lyShowSeek(false);
-    // 滚动停下来 = 松手了：线消失，时间和三角留一会儿，那行整体加深
-    lyIdleT=setTimeout(()=>{
-      lySeeking=false;lyResting=true;
-      const el=document.querySelector('.ly-line[data-i="'+lyPick+'"]');
-      if(el)el.classList.add('rest');
-      lyShowSeek(true);
-      // 一会儿没动就恢复自动跟随
-      lyRestT=setTimeout(()=>{lyHideSeek();lastLy=-1;updLyric(audio.currentTime);},4000);
-    },260);
+    if(!touching)lyIdleT=setTimeout(toRest,200);  // 惯性停下来才算松手完成
   },{passive:true});
   // 点三角 → 跳到这句
   $('ly-seek-go').addEventListener('click',e=>{
@@ -797,17 +822,17 @@ $('lyric-view').addEventListener('click',e=>{
     if(audio.duration)$('p-cur').textContent=fmt(p*audio.duration);}
   bar.addEventListener('pointerdown',e=>{
     if(!audio.duration)return;
-    dragging=true;bar.classList.add('drag');
+    dragging=true;
     try{bar.setPointerCapture(e.pointerId);}catch(_){}
     paint(ratio(e.clientX));e.preventDefault();
   });
   bar.addEventListener('pointermove',e=>{if(dragging)paint(ratio(e.clientX));});
   function end(e){
-    if(!dragging)return;dragging=false;bar.classList.remove('drag');
+    if(!dragging)return;dragging=false;
     if(audio.duration)audio.currentTime=ratio(e.clientX)*audio.duration;
   }
   bar.addEventListener('pointerup',end);
-  bar.addEventListener('pointercancel',()=>{dragging=false;bar.classList.remove('drag');});
+  bar.addEventListener('pointercancel',()=>{dragging=false;});
   // 拖动时别让 timeupdate 把点拽回去
   audio.addEventListener('timeupdate',()=>{if(dragging){/*拖动中不刷新*/}},true);
   window._pbarDragging=()=>dragging;
