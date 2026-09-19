@@ -239,13 +239,16 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .room-empty{color:var(--ink-soft);text-align:center;padding:60px 20px;line-height:2.2;letter-spacing:1px;font-size:14px;}
 
 /* 分屏：上面内容，下面聊天 */
-.split{flex:1;display:flex;flex-direction:column;min-height:0;}
-.split-top{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
-.split-bar{flex-shrink:0;height:22px;display:flex;align-items:center;justify-content:center;cursor:ns-resize;background:var(--room-deep);position:relative;}
+.split{flex:1;display:flex;flex-direction:column;min-height:0;position:relative;}
+/* 上面那块(播放器/共读)永远占满，不会被聊天区挤扁 —— 聊天区是盖上来的，不是顶上来的 */
+.split-top{position:absolute;inset:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
+.split-bar{position:absolute;left:0;right:0;z-index:3;bottom:38vh;height:22px;display:flex;align-items:center;justify-content:center;cursor:ns-resize;background:var(--room-deep);transition:bottom .18s ease;}
 .split-bar::before{content:'';width:38px;height:3px;border-radius:2px;background:var(--ink-soft);opacity:.45;}
 .split-bar span{position:absolute;right:12px;font-size:10px;color:var(--ink-soft);letter-spacing:1px;}
-.split-chat{flex-shrink:0;height:38vh;min-height:0;display:flex;flex-direction:column;background:var(--bg);border-top:1px solid var(--border);}
+.split-chat{position:absolute;left:0;right:0;bottom:0;z-index:2;height:38vh;min-height:0;display:flex;flex-direction:column;background:var(--bg);border-top:1px solid var(--border);transition:height .18s ease;}
 .split-chat.hidden{height:0;border-top:none;}
+.split-chat.hidden + .split-bar,
+.split-bar.down{bottom:0;}
 .split-msgs{flex:1;overflow-y:auto;padding:10px 12px;}
 .split-msgs::-webkit-scrollbar{display:none;}
 
