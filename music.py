@@ -10,6 +10,7 @@
   · eapi/weapi 两套加密都用纯 Python 实现（Docker 镜像的加密过时，直接自己算更稳）
 """
 import os, json, time, hashlib, base64, secrets, threading, urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 import requests
 
 try:
@@ -152,6 +153,9 @@ class NeteaseClient:
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._uid_cache = ''
+        self._pl_cache = {}          # {pid: {'ts':.., 'count':.., 'data':{...}}}
+        self._pl_cache_ttl = 600     # 歌单缓存 10 分钟，第二次点进去秒开
+        self._pl_lock = threading.Lock()
 
     def _headers(self, pc=False, extra_cookie=''):
         ck = self.store.cookie()
@@ -282,11 +286,30 @@ class NeteaseClient:
         return out
 
     def song_url(self, song_id, br=320000):
-        """取音频直链。用你账号，会员歌也能拿。"""
-        j = self.eapi('/api/song/enhance/player/url',
-                      {'ids': f'[{song_id}]', 'br': br})
-        data = (j.get('data') or [{}])[0]
-        return data.get('url', '')
+        """取音频直链。用你账号，会员歌也能拿。
+
+        云盘里自己上传的歌，老接口(player/url)经常返回空，得走 v1 接口按音质档取。
+        这里依次试几条路，哪条出链接用哪条，所以云盘歌不用你一首首手动试。
+        """
+        tries = [
+            ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': br}),
+            ('/api/song/enhance/player/url/v1',
+             {'ids': f'[{song_id}]', 'level': 'exhigh', 'encodeType': 'aac'}),
+            ('/api/song/enhance/player/url/v1',
+             {'ids': f'[{song_id}]', 'level': 'standard', 'encodeType': 'aac'}),
+            ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': 128000}),
+        ]
+        for path, payload in tries:
+            try:
+                j = self.eapi(path, payload)
+                arr = j.get('data') or []
+                if arr and isinstance(arr[0], dict):
+                    u = arr[0].get('url') or ''
+                    if u:
+                        return u
+            except Exception:
+                continue
+        return ''
 
     def song_detail(self, song_id):
         r = requests.post('https://music.163.com/weapi/v3/song/detail',
@@ -387,28 +410,71 @@ class NeteaseClient:
             })
         return out
 
-    def playlist_songs(self, pid, limit=500):
-        """歌单里的所有歌。"""
-        j = self.eapi('/api/v6/playlist/detail', {'id': pid, 'n': limit, 's': 0})
+    def _song_detail_batch(self, ids):
+        """一批 id 换详情。失败返回空，不影响别的批。"""
+        try:
+            jj = self.eapi('/api/v3/song/detail',
+                           {'c': json.dumps([{'id': i} for i in ids])},
+                           timeout=20)
+            return self._fmt_songs(jj.get('songs', []) or [])
+        except Exception:
+            return []
+
+    def playlist_songs(self, pid, limit=10000, use_cache=True):
+        """歌单里的所有歌。
+
+        以前的写法有两个坑：
+          · n=500 只拿 500 首，补全又只补 limit(=500) 首 → 2000+ 首的歌单永远只出 1000 首
+          · 补全是一批批串行发请求，2000 首要发 20 次，所以打开要等半天
+        现在：trackIds 拿全 → 缺的按 300 一批**并发**取 → 按原顺序拼回来 → 结果缓存 10 分钟
+        """
+        pid = str(pid)
+        now = time.time()
+        if use_cache:
+            c = self._pl_cache.get(pid)
+            if c and now - c['ts'] < self._pl_cache_ttl:
+                return c['data']
+
+        j = self.eapi('/api/v6/playlist/detail', {'id': pid, 'n': 1000, 's': 0}, timeout=25)
         pl = j.get('playlist', {}) or {}
         tracks = pl.get('tracks', []) or []
-        # tracks 可能只返回部分，用 trackIds 补全
-        ids = [t['id'] for t in (pl.get('trackIds', []) or [])]
-        out = self._fmt_songs(tracks)
-        if len(out) < len(ids):
-            # 剩下的用 song/detail 批量补（某一批失败不影响其他批）
-            have = {s['id'] for s in out}
-            need = [i for i in ids if i not in have][:limit]
-            for k in range(0, len(need), 100):
-                batch = need[k:k+100]
-                try:
-                    jj = self.eapi('/api/v3/song/detail',
-                                   {'c': json.dumps([{'id': i} for i in batch])})
-                    out += self._fmt_songs(jj.get('songs', []) or [])
-                except Exception:
-                    continue
-        return {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
-                'count': pl.get('trackCount', len(out)), 'songs': out}
+
+        # trackIds 才是完整曲目表（tracks 只有前一部分）
+        ids = []
+        for t in (pl.get('trackIds', []) or []):
+            tid = t.get('id') if isinstance(t, dict) else t
+            if tid:
+                ids.append(tid)
+
+        got = {}
+        for s in self._fmt_songs(tracks):
+            got[s['id']] = s
+
+        need = [i for i in ids if i not in got][:limit]
+        if need:
+            batches = [need[k:k + 300] for k in range(0, len(need), 300)]
+            # 最多 8 条线并发，2000 多首也就一两秒
+            with ThreadPoolExecutor(max_workers=min(8, len(batches))) as ex:
+                for part in ex.map(self._song_detail_batch, batches):
+                    for s in part:
+                        got[s['id']] = s
+
+        # 按歌单原顺序拼回来
+        if ids:
+            out = [got[i] for i in ids if i in got]
+        else:
+            out = list(got.values())
+
+        data = {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
+                'count': pl.get('trackCount', len(out)), 'songs': out,
+                'total': len(out)}
+        with self._pl_lock:
+            self._pl_cache[pid] = {'ts': now, 'count': data['count'], 'data': data}
+            # 缓存别无限涨
+            if len(self._pl_cache) > 12:
+                oldest = min(self._pl_cache, key=lambda k: self._pl_cache[k]['ts'])
+                self._pl_cache.pop(oldest, None)
+        return data
 
     def _pick_records(self, j):
         """从各种形状的返回里把播放记录列表抠出来。"""
@@ -695,8 +761,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         pid = request.args.get('id', '')
         if not pid:
             return jsonify({'ok': False, 'error': '缺 id'})
+        fresh = request.args.get('fresh') in ('1', 'true', 'yes')
         try:
-            return jsonify({'ok': True, **nc.playlist_songs(pid)})
+            return jsonify({'ok': True, **nc.playlist_songs(pid, use_cache=not fresh)})
         except Exception as e:
             return jsonify({'ok': False, 'error': type(e).__name__ + ': ' + str(e)[:150]})
 
@@ -710,6 +777,39 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'songs': songs})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/cloud/check', methods=['GET'])
+    def music_cloud_check():
+        """云盘体检：把云盘每首歌都试着取一次音频链接，直接告诉你哪几首放不出来。
+        浏览器打开 /api/music/cloud/check 就行，不用一首首手点。"""
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        try:
+            songs = nc.cloud_songs()
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+        if not songs:
+            why = getattr(nc, '_last_cloud_err', '')
+            return jsonify({'ok': False, 'error': '云盘没拿到' + (('：' + why) if why else '')})
+
+        def _test(s):
+            try:
+                u = nc.song_url(s['id'])
+            except Exception:
+                u = ''
+            return {'id': s['id'], 'name': s.get('name', ''),
+                    'artist': s.get('artist', ''), 'ok': bool(u)}
+
+        with _TPE(max_workers=8) as ex:
+            res = list(ex.map(_test, songs))
+        bad = [r for r in res if not r['ok']]
+        return jsonify({
+            'ok': True,
+            'total': len(res),
+            'playable': len(res) - len(bad),
+            'broken': len(bad),
+            'broken_list': [f"{r['name']} - {r['artist']}（id:{r['id']}）" for r in bad],
+            'note': '全部 playable 就是都能放；broken_list 里的发给凛，他给你单独处理。',
+        })
 
     @app.route('/api/music/my/cloud', methods=['GET'])
     def music_my_cloud():
