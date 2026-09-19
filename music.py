@@ -161,6 +161,7 @@ class NeteaseClient:
             pass
         self._url_cache = {}      # {song_id: (到期时间, url)}
         self._lyric_cache = {}    # {song_id: 歌词} —— 歌词不会变，存着就行
+        self._artist_cache = {}   # {key: (到期时间, 数据)}
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._last_rank_err = ''
@@ -169,6 +170,7 @@ class NeteaseClient:
         self._liked_ttl = 300
         self._uid_cache = ''
         self._pl_cache = {}          # {pid: {'ts':.., 'count':.., 'data':{...}}}
+        self._pl_ids = {}            # {pid: (时间, 完整 trackIds)}
         self._pl_cache_ttl = 600     # 歌单缓存 10 分钟，第二次点进去秒开
         self._pl_lock = threading.Lock()
 
@@ -450,6 +452,49 @@ class NeteaseClient:
                 'special': p.get('specialType', 0),  # 5 = 我喜欢的音乐
             })
         return out
+
+    def playlist_head(self, pid, first=200):
+        """歌单第一屏：只取前 first 首，顺便把完整曲目表(trackIds)记下来。
+        以前一次性把两千多首全取完才返回，所以打开要等半天。"""
+        pid = str(pid)
+        j = self.eapi('/api/v6/playlist/detail', {'id': pid, 'n': first, 's': 0}, timeout=20)
+        pl = j.get('playlist', {}) or {}
+        ids = []
+        for t in (pl.get('trackIds', []) or []):
+            tid = t.get('id') if isinstance(t, dict) else t
+            if tid:
+                ids.append(tid)
+        songs = self._fmt_songs(pl.get('tracks', []) or [])
+        with self._pl_lock:
+            self._pl_ids[pid] = (time.time(), ids)
+            if len(self._pl_ids) > 12:
+                oldest = min(self._pl_ids, key=lambda k: self._pl_ids[k][0])
+                self._pl_ids.pop(oldest, None)
+        return {'name': pl.get('name', ''), 'cover': pl.get('coverImgUrl', ''),
+                'count': pl.get('trackCount', len(ids) or len(songs)),
+                'songs': songs, 'total': len(ids) or len(songs)}
+
+    def playlist_page(self, pid, offset=0, limit=300):
+        """歌单的第 N 段。用记下来的 trackIds 并发取详情。"""
+        pid = str(pid)
+        c = self._pl_ids.get(pid)
+        if not c or (time.time() - c[0]) > 1800:
+            self.playlist_head(pid, first=1)
+            c = self._pl_ids.get(pid)
+        ids = (c[1] if c else [])[int(offset):int(offset) + int(limit)]
+        if not ids:
+            return {'songs': [], 'offset': offset, 'done': True,
+                    'total': len(c[1]) if c else 0}
+        batches = [ids[k:k + 300] for k in range(0, len(ids), 300)]
+        got = {}
+        with ThreadPoolExecutor(max_workers=min(6, len(batches))) as ex:
+            for part in ex.map(self._song_detail_batch, batches):
+                for x in part:
+                    got[x['id']] = x
+        out = [got[i] for i in ids if i in got]
+        total = len(c[1]) if c else len(out)
+        return {'songs': out, 'offset': offset, 'total': total,
+                'done': (int(offset) + int(limit)) >= total}
 
     def _song_detail_batch(self, ids):
         """一批 id 换详情。失败返回空，不影响别的批。"""
@@ -734,7 +779,7 @@ class NeteaseClient:
         except Exception as e:
             return {'name': '', 'cover': '', 'songs': [], 'error': str(e)[:100]}
 
-    def artist_songs(self, artist_id, limit=200, order='hot'):
+    def artist_songs(self, artist_id, limit=50, order='hot'):
         """这个歌手名下的歌（真·歌手主页，不是关键词搜索的近似结果）。"""
         tries = [
             ('/api/v1/artist/songs',
@@ -992,12 +1037,33 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not pid:
             return jsonify({'ok': False, 'error': '缺 id'})
         fresh = request.args.get('fresh') in ('1', 'true', 'yes')
+        first = int(request.args.get('first', 0) or 0)
         try:
+            if first:
+                # 分段模式：只要第一屏，剩下的前端再来要
+                d = nc.playlist_head(pid, first=first)
+                d['songs'] = _apply_meta(list(d.get('songs') or []))
+                d['done'] = len(d['songs']) >= d.get('total', 0)
+                return jsonify({'ok': True, **d})
             data = dict(nc.playlist_songs(pid, use_cache=not fresh))
             data['songs'] = _apply_meta(list(data.get('songs') or []))
             return jsonify({'ok': True, **data})
         except Exception as e:
             return jsonify({'ok': False, 'error': type(e).__name__ + ': ' + str(e)[:150]})
+
+    @app.route('/api/music/playlist/page', methods=['GET'])
+    def music_playlist_page():
+        """歌单的下一段。前端一段一段要，不用干等全部加载完。"""
+        pid = request.args.get('id', '')
+        if not pid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            d = nc.playlist_page(pid, request.args.get('offset', 0),
+                                 request.args.get('limit', 300))
+            d['songs'] = _apply_meta(list(d.get('songs') or []))
+            return jsonify({'ok': True, **d})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
 
     @app.route('/api/music/my/recent', methods=['GET'])
     def music_my_recent():
@@ -1084,13 +1150,24 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 aid = info['id']
             if not aid:
                 return jsonify({'ok': False, 'error': '缺 id 或 q'})
-            songs = _apply_meta(nc.artist_songs(aid))
+            lim = int(request.args.get('limit', 300) or 300)
+            ck = '%s:%s' % (aid, lim)
+            c = nc._artist_cache.get(ck)
+            if c and c[0] > time.time():
+                return jsonify({'ok': True, **c[1]})
+            songs = nc.artist_songs(aid, limit=lim)
             if info is None:
                 info = nc.artist_info(aid)
             if not songs:
                 return jsonify({'ok': False, 'error': '这个歌手没拿到歌'})
-            return jsonify({'ok': True, 'artist': info, 'songs': songs,
-                            'name': (info or {}).get('name', '')})
+            data = {'artist': info, 'songs': songs, 'name': (info or {}).get('name', ''),
+                    'total': (info or {}).get('song_count') or len(songs)}
+            nc._artist_cache[ck] = (time.time() + 900, data)
+            if len(nc._artist_cache) > 30:
+                nc._artist_cache.clear()
+            out = dict(data)
+            out['songs'] = _apply_meta(list(songs))
+            return jsonify({'ok': True, **out})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
@@ -1382,6 +1459,55 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d['now'] = b.get('song')
         _listen_save(d)
         return jsonify({'ok': True})
+
+    @app.route('/api/music/perf', methods=['GET'])
+    def music_perf():
+        """体检：Procfile 生效没有、能不能并发、网易云那边多慢。"""
+        import sys
+        out = {}
+        # 1) 跑的是什么(gunicorn 还是 flask 自带)、几个线程
+        out['cmdline'] = ' '.join(sys.argv)[:200]
+        out['threads_alive'] = threading.active_count()
+        out['worker_pid'] = os.getpid()
+        try:
+            import gunicorn  # noqa
+            out['gunicorn_installed'] = True
+        except Exception:
+            out['gunicorn_installed'] = False
+        out['server_software'] = request.environ.get('SERVER_SOFTWARE', '')
+        # 2) 一次网易云往返要多久
+        t = time.time()
+        try:
+            j = nc.eapi('/api/cloudsearch/pc', {'s': '晴天', 'type': 1, 'limit': 1, 'offset': 0})
+            out['netease_one_call_ms'] = int((time.time() - t) * 1000)
+            out['netease_ok'] = j.get('code') == 200
+        except Exception as e:
+            out['netease_one_call_ms'] = int((time.time() - t) * 1000)
+            out['netease_error'] = str(e)[:100]
+        # 3) 第二次（连接池复用之后应该快很多）
+        t = time.time()
+        try:
+            nc.eapi('/api/cloudsearch/pc', {'s': '晴天', 'type': 1, 'limit': 1, 'offset': 0})
+            out['netease_second_call_ms'] = int((time.time() - t) * 1000)
+        except Exception:
+            pass
+        # 4) 歌手接口要多久
+        t = time.time()
+        try:
+            a = nc.find_artist('周杰伦')
+            out['find_artist_ms'] = int((time.time() - t) * 1000)
+            if a:
+                t = time.time()
+                sg = nc.artist_songs(a['id'])
+                out['artist_songs_ms'] = int((time.time() - t) * 1000)
+                out['artist_songs_count'] = len(sg)
+        except Exception as e:
+            out['artist_error'] = str(e)[:100]
+        # 5) 缓存里现在有多少东西
+        out['cache'] = {'url': len(nc._url_cache), 'lyric': len(nc._lyric_cache),
+                        'playlist': len(nc._pl_cache), 'artist': len(nc._artist_cache),
+                        'liked': bool(nc._liked_cache)}
+        return jsonify(out)
 
     @app.route('/api/music/diag2', methods=['GET'])
     def music_diag2():
