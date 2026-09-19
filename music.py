@@ -154,6 +154,8 @@ class NeteaseClient:
         self._last_cloud_err = ''
         self._last_rank_err = ''
         self._last_liked_err = ''
+        self._liked_cache = None      # (时间, ids)
+        self._liked_ttl = 300
         self._uid_cache = ''
         self._pl_cache = {}          # {pid: {'ts':.., 'count':.., 'data':{...}}}
         self._pl_cache_ttl = 600     # 歌单缓存 10 分钟，第二次点进去秒开
@@ -643,7 +645,17 @@ class NeteaseClient:
         """我红心过的所有歌曲ID（用于判断某首是否已红心）。
 
         song/like/get 有时候返回空，这时候直接去"我喜欢的音乐"歌单把 trackIds 拿回来兜底。
+        结果缓存 5 分钟：不缓存的话每放一首歌都要翻一遍两千多首的歌单，把后端堵死。
         """
+        c = self._liked_cache
+        if c and (time.time() - c[0]) < self._liked_ttl:
+            return c[1]
+        ids = self._liked_ids_fetch()
+        # 空结果也缓存（缓存短一点），避免失败时被反复重试打爆
+        self._liked_cache = (time.time() if ids else time.time() - self._liked_ttl + 60, ids)
+        return ids
+
+    def _liked_ids_fetch(self):
         uid = self.uid()
         if not uid:
             self._last_liked_err = '拿不到 uid'
@@ -688,7 +700,17 @@ class NeteaseClient:
         try:
             j = self.eapi('/api/song/like',
                           {'trackId': song_id, 'like': 'true' if like else 'false'})
-            return j.get('code') == 200
+            ok = j.get('code') == 200
+            if ok and self._liked_cache:
+                # 本地缓存跟着改，不用重新拉一遍
+                ids = list(self._liked_cache[1])
+                sid = int(song_id) if str(song_id).isdigit() else song_id
+                if like and sid not in ids:
+                    ids.append(sid)
+                elif not like and sid in ids:
+                    ids.remove(sid)
+                self._liked_cache = (self._liked_cache[0], ids)
+            return ok
         except Exception:
             return False
 
