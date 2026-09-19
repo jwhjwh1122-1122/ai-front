@@ -160,6 +160,7 @@ class NeteaseClient:
         except Exception:
             pass
         self._url_cache = {}      # {song_id: (到期时间, url)}
+        self._url_quality = {}    # {song_id: {level, br, type}} 真实音质
         self._lyric_cache = {}    # {song_id: 歌词} —— 歌词不会变，存着就行
         self._artist_cache = {}   # {key: (到期时间, 数据)}
         self._last_recent_err = ''
@@ -318,6 +319,11 @@ class NeteaseClient:
         if c and c[0] > now:
             return c[1]
         tries = [
+            # 你是 SVIP，先要母带/无损，拿不到再一级级降
+            ('/api/song/enhance/player/url/v1',
+             {'ids': f'[{song_id}]', 'level': 'jymaster', 'encodeType': 'flac'}),
+            ('/api/song/enhance/player/url/v1',
+             {'ids': f'[{song_id}]', 'level': 'lossless', 'encodeType': 'flac'}),
             ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': br}),
             ('/api/song/enhance/player/url/v1',
              {'ids': f'[{song_id}]', 'level': 'exhigh', 'encodeType': 'aac'}),
@@ -337,6 +343,10 @@ class NeteaseClient:
                 if isinstance(d, dict):
                     u = d.get('url') or ''
                     if u:
+                        # 顺便记下真实音质，界面别再写死"无损"
+                        self._url_quality[key] = {
+                            'level': d.get('level') or '', 'br': d.get('br') or 0,
+                            'type': (d.get('type') or '').lower(), 'size': d.get('size') or 0}
                         # 网易云直链大约 20 分钟有效，缓存 10 分钟够用
                         self._url_cache[key] = (now + 600, u)
                         if len(self._url_cache) > 400:
@@ -852,6 +862,20 @@ class NeteaseClient:
             self._last_liked_err = '红心歌单兜底: ' + str(e)[:80]
         return []
 
+    def scrobble(self, song_id, seconds=0, source_id=''):
+        """上报"这首听完了"。不报的话听歌排行/累计听歌/最近播放都不会涨。"""
+        try:
+            logs = json.dumps([{
+                'action': 'play',
+                'json': {'download': 0, 'end': 'playend', 'id': int(song_id),
+                         'sourceId': str(source_id or ''), 'time': int(seconds or 0),
+                         'type': 'song', 'wifi': 0, 'source': 'list'},
+            }], separators=(',', ':'))
+            j = self.eapi('/api/feedback/weblog', {'logs': logs})
+            return j.get('code') == 200
+        except Exception:
+            return False
+
     def set_like(self, song_id, like=True):
         """红心 / 取消红心。"""
         try:
@@ -917,6 +941,21 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         def jwrite(p, o):
             with open(p, 'w', encoding='utf-8') as f:
                 json.dump(o, f, ensure_ascii=False)
+
+    # ── 别再让浏览器缓存页面和脚本 ──────────────────────────────────────
+    # 之前踩的坑：chat.html 自己被缓存了，里面写的 ?v=xx 版本号根本读不到，
+    # 结果新代码永远到不了手机上，改十次也没用。
+    @app.after_request
+    def _no_cache_static(resp):
+        try:
+            path = request.path or ''
+            if path.endswith(('.html', '.js', '.css', '.webmanifest')) or path == '/':
+                resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                resp.headers['Pragma'] = 'no-cache'
+                resp.headers['Expires'] = '0'
+        except Exception:
+            pass
+        return resp
 
     store = MusicStore(data_dir, jread, jwrite)
     nc = NeteaseClient(store)
@@ -1218,6 +1257,25 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'songs': _apply_meta(hit), 'count': len(hit)})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/scrobble', methods=['POST', 'GET'])
+    def music_scrobble():
+        """听完一首上报给网易云，这样听歌排行、累计听歌、最近播放才会算上。"""
+        b = request.json if request.method == 'POST' else {}
+        b = b or {}
+        sid = b.get('id') or request.args.get('id')
+        sec = b.get('seconds') or request.args.get('seconds') or 0
+        src = b.get('source_id') or request.args.get('source_id') or ''
+        if not sid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            sec = int(float(sec))
+        except Exception:
+            sec = 0
+        ok = nc.scrobble(sid, sec, src)
+        # 上报之后"最近播放/排行"的缓存就旧了，清掉
+        nc._liked_cache = nc._liked_cache
+        return jsonify({'ok': ok})
 
     @app.route('/api/music/liked', methods=['GET'])
     def music_liked():
@@ -1585,7 +1643,17 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             # 直接给网易云直链，让浏览器自己放（http 的话换 https）
             if url.startswith('http://'):
                 url = 'https://' + url[len('http://'):]
-            return jsonify({'ok': True, 'url': url, 'direct': url})
+            q = nc._url_quality.get(str(sid), {})
+            names = {'jymaster': '超清母带', 'sky': '沉浸环绕声', 'jyeffect': '高清环绕声',
+                     'hires': 'Hi-Res', 'lossless': '无损音质', 'exhigh': '极高音质',
+                     'higher': '较高音质', 'standard': '标准音质'}
+            label = names.get(q.get('level'), '')
+            if not label:
+                br = q.get('br') or 0
+                label = '无损音质' if br >= 900000 else ('极高音质' if br >= 300000 else
+                        ('较高音质' if br >= 190000 else '标准音质' if br else ''))
+            return jsonify({'ok': True, 'url': url, 'direct': url,
+                            'quality': label, 'level': q.get('level', ''), 'br': q.get('br', 0)})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
