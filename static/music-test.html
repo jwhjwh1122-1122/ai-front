@@ -23,8 +23,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .tg-buds{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:200px;height:122px;pointer-events:none;overflow:visible;z-index:0;}
 .tg-faces{display:flex;position:relative;z-index:2;}
 .tg-face{width:56px;height:56px;border-radius:50%;background:#d8dce2 center/cover no-repeat;border:none;box-shadow:0 2px 8px rgba(60,70,90,.16);}
-.tg-face:last-child{margin-left:-8px;}
-.tg-tip{position:relative;z-index:2;margin-top:16px;font-size:12px;color:#aeb4bc;letter-spacing:.2px;}
+.tg-face:last-child{margin-left:0;}
+.tg-tip{position:relative;z-index:2;margin-top:16px;font-size:12px;color:#aeb4bc;letter-spacing:.2px;white-space:nowrap;}
 .ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0 0;}
 .ipod{width:min(66vw,244px);height:auto;max-height:100%;aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
   background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
@@ -168,12 +168,11 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 
 /* 单人/一起听 排版切换 */
 .together{display:none;}
+.mc-switch{display:none;}
 #play-page.listening .together{display:flex;}
 #play-page.listening .ipod{width:min(47vw,196px);}
-.mc-switch{display:none;}
 #play-page.listening .mc-switch{display:flex;}
-#play-page.listening .below{padding-top:24px;}
-.below{padding-top:14px;}
+/* 单人=原始排版(大iPod,原始间距),一起听才缩小加头像 */
 
 </style>
 </head>
@@ -203,16 +202,16 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
         <stop offset="55%" stop-color="#2b2f36" stop-opacity="0.5"/>
         <stop offset="100%" stop-color="#2b2f36" stop-opacity="0"/>
       </linearGradient></defs>
-      <path d="M46 26 Q36 46 42 66 Q46 78 52 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
-      <path d="M154 26 Q164 46 158 66 Q154 78 148 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
-      <ellipse cx="46" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(-14 46 24)"/>
-      <ellipse cx="154" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(14 154 24)"/>
+      <path d="M42 26 Q32 46 38 66 Q42 78 48 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M158 26 Q168 46 162 66 Q158 78 152 90" fill="none" stroke="url(#budG)" stroke-width="2" stroke-linecap="round"/>
+      <ellipse cx="42" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(-14 42 24)"/>
+      <ellipse cx="158" cy="24" rx="4" ry="5.5" fill="#2b2f36" transform="rotate(14 158 24)"/>
     </svg>
     <div class="tg-faces">
       <div class="tg-face" id="tg-user"></div>
       <div class="tg-face" id="tg-ai"></div>
     </div>
-    <div class="tg-tip" id="tg-tip">一起听了 0 分钟</div>
+    <div class="tg-tip" id="tg-tip">TA就在你身边，一起听了 0 分钟</div>
   </div>
   <div class="ipod-box">
     <div class="ipod" id="ipod-tap">
@@ -534,10 +533,16 @@ loadAvatars();
 function tgMins(){return parseInt(localStorage.getItem('together-mins')||'0',10);}
 function renderTip(){
   const m=tgMins(),h=Math.floor(m/60),mm=m%60;
-  $('tg-tip').textContent='一起听了 '+(h?h+' 小时 ':'')+mm+' 分钟';
+  const dur=h?(h+' 小时 '+mm+' 分钟'):(mm+' 分钟');
+  $('tg-tip').textContent='TA就在你身边，一起听了 '+dur;
 }
 renderTip();
-setInterval(()=>{if(!audio.paused&&audio.currentTime>0){localStorage.setItem('together-mins',tgMins()+1);renderTip();}},60000);
+setInterval(()=>{
+  // 只在一起听模式 + 正在放歌 才累计
+  if($('play-page').classList.contains('listening')&&!audio.paused&&audio.currentTime>0){
+    localStorage.setItem('together-mins',tgMins()+1);renderTip();
+  }
+},60000);
 
 // ── 音乐/评论切换 ──
 let chatMode=false;
