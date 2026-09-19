@@ -153,6 +153,7 @@ class NeteaseClient:
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._last_rank_err = ''
+        self._last_liked_err = ''
         self._uid_cache = ''
         self._pl_cache = {}          # {pid: {'ts':.., 'count':.., 'data':{...}}}
         self._pl_cache_ttl = 600     # 歌单缓存 10 分钟，第二次点进去秒开
@@ -639,15 +640,48 @@ class NeteaseClient:
             return []
 
     def liked_ids(self):
-        """我红心过的所有歌曲ID（用于判断某首是否已红心）。"""
+        """我红心过的所有歌曲ID（用于判断某首是否已红心）。
+
+        song/like/get 有时候返回空，这时候直接去"我喜欢的音乐"歌单把 trackIds 拿回来兜底。
+        """
         uid = self.uid()
         if not uid:
+            self._last_liked_err = '拿不到 uid'
             return []
         try:
             j = self.eapi('/api/song/like/get', {'uid': uid})
-            return j.get('ids', []) or []
-        except Exception:
-            return []
+            ids = j.get('ids') or []
+            if ids:
+                return ids
+            self._last_liked_err = 'song/like/get code=%s 空' % j.get('code')
+        except Exception as e:
+            self._last_liked_err = 'song/like/get: ' + str(e)[:80]
+        # 兜底：红心歌单(specialType=5，通常是第一个)的 trackIds
+        try:
+            pls = self.my_playlists()
+            liked = None
+            for p in pls:
+                if p.get('special') == 5:
+                    liked = p
+                    break
+            if not liked and pls:
+                liked = pls[0]
+            if liked:
+                j = self.eapi('/api/v6/playlist/detail',
+                              {'id': liked['id'], 'n': 1, 's': 0}, timeout=25)
+                pl = j.get('playlist', {}) or {}
+                out = []
+                for t in (pl.get('trackIds', []) or []):
+                    tid = t.get('id') if isinstance(t, dict) else t
+                    if tid:
+                        out.append(tid)
+                if out:
+                    self._last_liked_err = ''
+                    return out
+                self._last_liked_err = '红心歌单 trackIds 为空'
+        except Exception as e:
+            self._last_liked_err = '红心歌单兜底: ' + str(e)[:80]
+        return []
 
     def set_like(self, song_id, like=True):
         """红心 / 取消红心。"""
@@ -915,9 +949,11 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     @app.route('/api/music/liked', methods=['GET'])
     def music_liked():
         try:
-            return jsonify({'ok': True, 'ids': nc.liked_ids()})
+            ids = nc.liked_ids()
+            return jsonify({'ok': True, 'ids': ids, 'count': len(ids),
+                            'error': getattr(nc, '_last_liked_err', '')})
         except Exception as e:
-            return jsonify({'ok': False, 'error': str(e)[:150]})
+            return jsonify({'ok': False, 'ids': [], 'error': str(e)[:150]})
 
     @app.route('/api/music/like', methods=['POST'])
     def music_like():
