@@ -363,25 +363,37 @@ async function openNetease() {
   renderSplit('netease');
 }
 // ============ 迷你随身听（悬浮球）============
+// 两个造型：'pod'=竖版复刻整机，'bar'=横版(屏幕+右边转盘)。长按切换，记住选择。
 // 播放器在 iframe 里，外面靠 postMessage 通气：它报当前歌，我们报遥控指令
 let _ipodNP = null;
-function ipodBall() { return document.getElementById('ipod-ball'); }
+let _ipodMode = localStorage.getItem('ipod-ball-mode') || 'bar';
+function ipodEl() { return document.getElementById(_ipodMode === 'bar' ? 'ipod-bar' : 'ipod-ball'); }
+function ipodBoth() { return [document.getElementById('ipod-ball'), document.getElementById('ipod-bar')].filter(Boolean); }
 function ipodSend(cmd) {
   const f = $('netease-frame');
   if (f && f.contentWindow) { try { f.contentWindow.postMessage({ __ipodCmd: 1, cmd }, '*'); } catch (e) { } }
 }
+function setText(id, v) { const e = document.getElementById(id); if (e && v != null) e.textContent = v; }
 function refreshIpodBall() {
-  const b = ipodBall(); if (!b) return;
+  const cur = ipodEl(); if (!cur) return;
   const panelOpen = $('netease') && $('netease').classList.contains('open');
   const has = _ipodNP && _ipodNP.song;
-  // 有歌 + 播放器面板没开着 → 显示悬浮球
-  b.classList.toggle('show', !!has && !panelOpen);
-  if (!has) return;
-  const img = document.getElementById('ib-cover');
-  if (img && _ipodNP.song.cover && img.src !== _ipodNP.song.cover) img.src = _ipodNP.song.cover;
-  b.classList.toggle('playing', !!_ipodNP.playing);
-  const pp = document.getElementById('ib-pp');
-  if (pp) pp.innerHTML = _ipodNP.playing ? '&#10074;&#10074;' : '&#9654;';
+  ipodBoth().forEach(el => el.classList.remove('show'));
+  if (!has || panelOpen) return;
+  cur.classList.add('show');
+  const sg = _ipodNP.song, playing = !!_ipodNP.playing;
+  const pzHtml = playing ? '&#10074;&#10074;' : '&#9654;';
+  // 两套 DOM 一起喂，切换造型时不用重新拉数据
+  [['ib-cover', 'ib-nm', 'ib-ar', 'ib-fill', 'ib-cur', 'ib-rem', 'ib-pz'],
+   ['hb-cover', 'hb-nm', 'hb-ar', 'hb-fill', 'hb-cur', 'hb-rem', 'hb-pz']].forEach(ids => {
+    const img = document.getElementById(ids[0]);
+    if (img && sg.cover && img.src !== sg.cover) img.src = sg.cover;
+    setText(ids[1], sg.name || ''); setText(ids[2], sg.artist || '');
+    const fill = document.getElementById(ids[3]);
+    if (fill && _ipodNP.pct != null) fill.style.width = _ipodNP.pct + '%';
+    setText(ids[4], _ipodNP.cur); setText(ids[5], _ipodNP.rem);
+    const pz = document.getElementById(ids[6]); if (pz) pz.innerHTML = pzHtml;
+  });
 }
 window.addEventListener('message', e => {
   const d = e.data;
@@ -390,36 +402,64 @@ window.addEventListener('message', e => {
   refreshIpodBall();
 });
 function bindIpodBall() {
-  const b = ipodBall(); if (!b || b._bound) return; b._bound = true;
-  const wheel = document.getElementById('ib-wheel');
-  let moved = false, sy = 0, startBottom = 0;
-  // 转盘 = 播放/暂停
-  wheel.addEventListener('click', e => { e.stopPropagation(); ipodSend('toggle'); });
-  // 机身 = 回到播放器
-  b.addEventListener('click', () => { if (!moved) openNetease(); });
-  // 上下拖着走，位置记住
-  b.addEventListener('pointerdown', e => {
-    moved = false; sy = e.clientY;
-    startBottom = parseInt(b.style.bottom || '110', 10);
-    try { b.setPointerCapture(e.pointerId); } catch (_) { }
+  ipodBoth().forEach(b => {
+    if (b._bound) return; b._bound = true;
+    let moved = false, sy = 0, startBottom = 0, pressT = null, longPressed = false;
+    const wheel = b.querySelector('.wheel') || b.querySelector('.hwheel');
+    if (wheel) wheel.addEventListener('click', e => {
+      e.stopPropagation();
+      if (moved || longPressed) return;
+      // 转盘分区跟真 iPod 一样：左=上一首 右=下一首 下=播放/暂停 中间/MENU=回播放器
+      const r = wheel.getBoundingClientRect();
+      const dx = (e.clientX - r.left) / r.width - .5, dy = (e.clientY - r.top) / r.height - .5;
+      if (Math.hypot(dx, dy) < .22) { openNetease(); return; }
+      if (Math.abs(dx) > Math.abs(dy)) ipodSend(dx < 0 ? 'prev' : 'next');
+      else if (dy > 0) ipodSend('toggle');
+      else openNetease();
+    });
+    const scr = b.querySelector('.screen') || b.querySelector('.hscreen');
+    if (scr) scr.addEventListener('click', e => { e.stopPropagation(); if (!moved && !longPressed) openNetease(); });
+    b.addEventListener('pointerdown', e => {
+      moved = false; longPressed = false; sy = e.clientY;
+      startBottom = parseInt(b.style.bottom || '110', 10);
+      try { b.setPointerCapture(e.pointerId); } catch (_) { }
+      clearTimeout(pressT);
+      // 长按 550ms → 换造型
+      pressT = setTimeout(() => {
+        if (moved) return;
+        longPressed = true;
+        _ipodMode = _ipodMode === 'bar' ? 'pod' : 'bar';
+        localStorage.setItem('ipod-ball-mode', _ipodMode);
+        const other = ipodEl();
+        if (other) other.style.bottom = b.style.bottom || '110px';
+        refreshIpodBall();
+        if (window.toast) toast(_ipodMode === 'bar' ? '横着的' : '竖着的');
+        if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) { }
+      }, 550);
+    });
+    b.addEventListener('pointermove', e => {
+      if (!e.buttons) return;
+      const dy = sy - e.clientY;
+      if (Math.abs(dy) > 4) { moved = true; clearTimeout(pressT); }
+      if (moved) {
+        const nb = Math.min(window.innerHeight - 130, Math.max(20, startBottom + dy));
+        b.style.bottom = nb + 'px';
+      }
+    });
+    b.addEventListener('pointerup', () => {
+      clearTimeout(pressT);
+      if (moved) {
+        try { localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10)); } catch (_) { }
+        ipodBoth().forEach(x => x.style.bottom = b.style.bottom);
+      }
+      setTimeout(() => { moved = false; longPressed = false; }, 30);
+    });
+    const saved = localStorage.getItem('ipod-ball-bottom');
+    if (saved) b.style.bottom = saved + 'px';
   });
-  b.addEventListener('pointermove', e => {
-    if (!e.buttons) return;
-    const dy = sy - e.clientY;
-    if (Math.abs(dy) > 4) moved = true;
-    if (moved) {
-      const nb = Math.min(window.innerHeight - 120, Math.max(20, startBottom + dy));
-      b.style.bottom = nb + 'px';
-    }
-  });
-  b.addEventListener('pointerup', () => {
-    if (moved) { try { localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10)); } catch (_) { } }
-    setTimeout(() => { moved = false; }, 30);
-  });
-  const saved = localStorage.getItem('ipod-ball-bottom');
-  if (saved) b.style.bottom = saved + 'px';
-  // 问一次现在在放什么（比如刚刷新完）
-  setInterval(() => { if (_ipodNP === null) ipodSend('ask'); }, 3000);
+  if (!window._ipodAsk) {
+    window._ipodAsk = setInterval(() => { if (_ipodNP === null) ipodSend('ask'); }, 3000);
+  }
 }
 
 function closeNetease() {
