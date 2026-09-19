@@ -160,6 +160,7 @@ class NeteaseClient:
         except Exception:
             pass
         self._url_cache = {}      # {song_id: (到期时间, url)}
+        self._lyric_cache = {}    # {song_id: 歌词} —— 歌词不会变，存着就行
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._last_rank_err = ''
@@ -265,17 +266,21 @@ class NeteaseClient:
                 continue
             if plain:
                 # 老接口字段：artists / album
+                arl = s.get('artists') or []
                 out.append({
                     'id': s['id'], 'name': _safe_str(s.get('name'), '未知歌曲'),
-                    'artist': _join_artists(s.get('artists')),
+                    'artist': _join_artists(arl),
+                    'artist_id': (arl[0] or {}).get('id') if arl else None,
                     'album': _safe_str((s.get('album') or {}).get('name')),
                     'cover': _safe_str((s.get('album') or {}).get('picUrl')),
                     'duration': s.get('duration') or 0,
                 })
             else:
+                arl = s.get('ar') or []
                 out.append({
                     'id': s['id'], 'name': _safe_str(s.get('name'), '未知歌曲'),
-                    'artist': _join_artists(s.get('ar')),
+                    'artist': _join_artists(arl),
+                    'artist_id': (arl[0] or {}).get('id') if arl else None,
                     'album': _safe_str((s.get('al') or {}).get('name')),
                     'cover': _safe_str((s.get('al') or {}).get('picUrl')),
                     'duration': s.get('dt') or 0,
@@ -354,12 +359,20 @@ class NeteaseClient:
                 'duration': s.get('dt') or 0}
 
     def lyric(self, song_id):
+        c = self._lyric_cache.get(str(song_id))
+        if c is not None:
+            return c
         r = requests.post('https://music.163.com/weapi/song/lyric',
                           data=weapi_encrypt({'id': song_id, 'lv': -1, 'tv': -1}),
                           headers=self._headers(pc=True), timeout=12)
         j = r.json()
-        return {'lyric': (j.get('lrc') or {}).get('lyric', ''),
-                'tlyric': (j.get('tlyric') or {}).get('lyric', '')}
+        out = {'lyric': (j.get('lrc') or {}).get('lyric', ''),
+               'tlyric': (j.get('tlyric') or {}).get('lyric', '')}
+        if out['lyric']:
+            if len(self._lyric_cache) > 300:
+                self._lyric_cache.clear()
+            self._lyric_cache[str(song_id)] = out
+        return out
 
     def similar(self, song_id):
         """漫游用：拿相似歌。"""
@@ -651,14 +664,94 @@ class NeteaseClient:
         self._last_cloud_err = last_err
         return []
 
-    def artist_songs(self, artist_id, limit=50):
-        """歌手热门歌。"""
+    def find_artist(self, name):
+        """按名字找歌手，返回 {id, name, cover, song_count}。type=100 是搜歌手。"""
         try:
-            j = self.eapi('/api/v1/artist/songs',
-                          {'id': artist_id, 'order': 'hot', 'limit': limit, 'offset': 0})
-            return self._fmt_songs(j.get('songs', []) or [])
+            j = self.eapi('/api/cloudsearch/pc',
+                          {'s': name, 'type': 100, 'limit': 5, 'offset': 0})
+            arts = ((j.get('result') or {}).get('artists')
+                    or (j.get('result') or {}).get('artist') or [])
+            for a in arts:
+                if not a.get('id'):
+                    continue
+                return {'id': a['id'], 'name': _safe_str(a.get('name')),
+                        'cover': _safe_str(a.get('picUrl') or a.get('img1v1Url')),
+                        'song_count': a.get('musicSize') or a.get('albumSize') or 0}
+        except Exception:
+            pass
+        return None
+
+    def artist_info(self, artist_id):
+        """歌手资料（名字、头像、歌曲数）。"""
+        try:
+            j = self.eapi('/api/v1/artist/introduction', {'id': artist_id})
+            a = j.get('artist') or {}
+            if a.get('name'):
+                return {'id': artist_id, 'name': _safe_str(a.get('name')),
+                        'cover': _safe_str(a.get('picUrl') or a.get('img1v1Url')),
+                        'song_count': a.get('musicSize') or 0}
+        except Exception:
+            pass
+        try:
+            j = self.eapi('/api/v1/artist/%s' % artist_id, {'id': artist_id})
+            a = j.get('artist') or {}
+            return {'id': artist_id, 'name': _safe_str(a.get('name')),
+                    'cover': _safe_str(a.get('picUrl') or a.get('img1v1Url')),
+                    'song_count': a.get('musicSize') or 0}
+        except Exception:
+            return {'id': artist_id, 'name': '', 'cover': '', 'song_count': 0}
+
+    def artist_albums(self, artist_id, limit=60):
+        """歌手的专辑。"""
+        try:
+            j = self.eapi('/api/artist/albums',
+                          {'id': artist_id, 'limit': limit, 'offset': 0})
+            out = []
+            for a in (j.get('hotAlbums') or []):
+                if not a.get('id'):
+                    continue
+                t = a.get('publishTime') or 0
+                year = ''
+                try:
+                    if t:
+                        year = time.strftime('%Y', time.localtime(t / 1000))
+                except Exception:
+                    year = ''
+                out.append({'id': a['id'], 'name': _safe_str(a.get('name'), '未知专辑'),
+                            'cover': _safe_str(a.get('picUrl')),
+                            'size': a.get('size') or 0, 'year': year})
+            return out
         except Exception:
             return []
+
+    def album_songs(self, album_id):
+        """专辑里的歌。"""
+        try:
+            j = self.eapi('/api/v1/album/%s' % album_id, {'id': album_id})
+            al = j.get('album') or {}
+            return {'name': _safe_str(al.get('name')), 'cover': _safe_str(al.get('picUrl')),
+                    'songs': self._fmt_songs(j.get('songs') or [])}
+        except Exception as e:
+            return {'name': '', 'cover': '', 'songs': [], 'error': str(e)[:100]}
+
+    def artist_songs(self, artist_id, limit=200, order='hot'):
+        """这个歌手名下的歌（真·歌手主页，不是关键词搜索的近似结果）。"""
+        tries = [
+            ('/api/v1/artist/songs',
+             {'id': artist_id, 'order': order, 'limit': limit, 'offset': 0,
+              'private_cloud': 'true', 'work_type': 1}),
+            ('/api/v1/artist/%s' % artist_id, {'id': artist_id}),   # 兜底：热门50首
+        ]
+        for path, payload in tries:
+            try:
+                j = self.eapi(path, payload)
+                songs = j.get('songs') or j.get('hotSongs') or []
+                out = self._fmt_songs(songs)
+                if out:
+                    return out
+            except Exception:
+                continue
+        return []
 
     def liked_ids(self):
         """我红心过的所有歌曲ID（用于判断某首是否已红心）。
@@ -979,11 +1072,73 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     @app.route('/api/music/artist', methods=['GET'])
     def music_artist():
+        """歌手主页。?id=歌手id，或 ?q=歌手名（先查到 id 再取歌）。"""
+        aid = request.args.get('id', '')
+        q = request.args.get('q', '').strip()
+        info = None
+        try:
+            if not aid and q:
+                info = nc.find_artist(q)
+                if not info:
+                    return jsonify({'ok': False, 'error': '没找到这个歌手'})
+                aid = info['id']
+            if not aid:
+                return jsonify({'ok': False, 'error': '缺 id 或 q'})
+            songs = _apply_meta(nc.artist_songs(aid))
+            if info is None:
+                info = nc.artist_info(aid)
+            if not songs:
+                return jsonify({'ok': False, 'error': '这个歌手没拿到歌'})
+            return jsonify({'ok': True, 'artist': info, 'songs': songs,
+                            'name': (info or {}).get('name', '')})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/artist/albums', methods=['GET'])
+    def music_artist_albums():
         aid = request.args.get('id', '')
         if not aid:
             return jsonify({'ok': False, 'error': '缺 id'})
+        albums = nc.artist_albums(aid)
+        if not albums:
+            return jsonify({'ok': False, 'error': '没拿到专辑'})
+        return jsonify({'ok': True, 'albums': albums})
+
+    @app.route('/api/music/album', methods=['GET'])
+    def music_album():
+        aid = request.args.get('id', '')
+        if not aid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        d = nc.album_songs(aid)
+        d['songs'] = _apply_meta(d.get('songs') or [])
+        if not d['songs']:
+            return jsonify({'ok': False, 'error': d.get('error') or '专辑是空的'})
+        return jsonify({'ok': True, **d})
+
+    @app.route('/api/music/artist/liked', methods=['GET'])
+    def music_artist_liked():
+        """我收藏(红心)过的这个歌手的歌。直接从"我喜欢的音乐"里筛，走缓存，很快。"""
+        aid = request.args.get('id', '')
+        name = request.args.get('name', '').strip()
         try:
-            return jsonify({'ok': True, 'songs': nc.artist_songs(aid)})
+            pls = nc.my_playlists()
+            liked = None
+            for p in pls:
+                if p.get('special') == 5:
+                    liked = p
+                    break
+            if not liked and pls:
+                liked = pls[0]
+            if not liked:
+                return jsonify({'ok': False, 'error': '找不到红心歌单'})
+            songs = nc.playlist_songs(liked['id']).get('songs') or []
+            hit = []
+            for s in songs:
+                if aid and str(s.get('artist_id') or '') == str(aid):
+                    hit.append(s)
+                elif name and name in (s.get('artist') or ''):
+                    hit.append(s)
+            return jsonify({'ok': True, 'songs': _apply_meta(hit), 'count': len(hit)})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
@@ -1393,5 +1548,314 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             'sleep_minutes': b.get('sleep_minutes', 0),
         })
         return jsonify({'ok': True, 'command': cmd, 'song': song})
+
+
+    # ════════════════════════════════════════════════════════════════════
+    # MCP（一起听）—— 直接挂在主程序里，不用另起服务
+    #   claude.ai 里加 Connector，地址填： https://你的域名/api/mcp/<token>
+    #   token 就是环境变量 MUSIC_PUSH_TOKEN；没设的话用 /api/mcp
+    # 另外每个动作都给了 GET 入口(/api/music/act?do=xxx)，方便只能发 GET 的一方调用
+    # ════════════════════════════════════════════════════════════════════
+
+    def _mcp_status():
+        d = _listen_load()
+        now = d.get('now') or {}
+        inv = d.get('invite')
+        parts = ['一起听：' + ('进行中' if d.get('active') else '未开始')]
+        if now.get('name'):
+            parts.append('她正在放：%s - %s' % (now.get('name'), now.get('artist', '')))
+        if inv and inv.get('from') == 'user':
+            parts.append('★慧慧邀请你一起听（用 listen_accept 接受）')
+        msgs = _chat_load().get('messages', [])[-5:]
+        if msgs:
+            parts.append('最近的话：')
+            for m in msgs:
+                parts.append(('  慧：' if m.get('me') else '  你：') + str(m.get('text', ''))[:60])
+        return '\n'.join(parts)
+
+    def _mcp_invite(name='凛'):
+        d = _listen_load()
+        d['invite'] = {'from': 'ai', 'name': name, 'ts': int(time.time())}
+        _listen_save(d)
+        return '已经邀请她一起听了，等她在 app 里点接受。'
+
+    def _mcp_accept():
+        d = _listen_load()
+        d['active'] = True
+        d['invite'] = None
+        _listen_save(d)
+        return '接受了，现在是一起听状态。'
+
+    def _mcp_end():
+        d = _listen_load()
+        d['active'] = False
+        d['invite'] = None
+        _listen_save(d)
+        return '退出一起听了。'
+
+    def _mcp_say(text):
+        text = (text or '').strip()
+        if not text:
+            return '空消息'
+        d = _chat_load()
+        d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
+        _chat_save(d)
+        return '说出去了：' + text
+
+    def _mcp_read_chat(n=15):
+        msgs = _chat_load().get('messages', [])[-int(n or 15):]
+        if not msgs:
+            return '还没有消息'
+        return '\n'.join((('慧：' if m.get('me') else '你：') + str(m.get('text', ''))) for m in msgs)
+
+    def _mcp_play(query=None, song_id=None):
+        song = None
+        if song_id:
+            song = nc.song_detail(song_id)
+        elif query:
+            hits = nc.search(query, 5)
+            song = hits[0] if hits else None
+        if not song:
+            return '没找到这首歌'
+        store.push_command({'action': 'play', 'id': song['id'], 'name': song['name'],
+                            'artist': song['artist'], 'cover': song.get('cover', '')})
+        return '给她放上了：%s - %s' % (song['name'], song['artist'])
+
+    def _mcp_ctrl(action):
+        store.push_command({'action': action})
+        return {'next': '切下一首了', 'prev': '切回上一首了',
+                'pause': '暂停了', 'stop': '停了', 'resume': '继续放'}.get(action, action)
+
+    def _mcp_search(query, limit=8):
+        hits = _apply_meta(nc.search(query, int(limit or 8)))
+        if not hits:
+            return '没搜到'
+        return '\n'.join('%d. %s - %s（id:%s）' % (i + 1, h['name'], h['artist'], h['id'])
+                         for i, h in enumerate(hits))
+
+    def _mcp_like(song_id, like=True):
+        ok = nc.set_like(song_id, like)
+        return ('红心了' if like else '取消红心了') if ok else '没成功'
+
+    def _mcp_playlists():
+        pls = nc.my_playlists()
+        if not pls:
+            return '没拿到歌单'
+        return '\n'.join('%s（%s首，id:%s）' % (p['name'], p['count'], p['id']) for p in pls[:20])
+
+    def _mcp_playlist_songs(playlist_id, limit=30):
+        d = nc.playlist_songs(playlist_id)
+        songs = _apply_meta(d.get('songs') or [])[:int(limit or 30)]
+        if not songs:
+            return '这个歌单是空的'
+        return '%s：\n' % d.get('name', '') + '\n'.join(
+            '%d. %s - %s（id:%s）' % (i + 1, x['name'], x['artist'], x['id'])
+            for i, x in enumerate(songs))
+
+    def _mcp_recent(limit=15):
+        songs = _apply_meta(nc.recent_plays())[:int(limit or 15)]
+        if not songs:
+            return '没有最近播放记录'
+        return '\n'.join('%s - %s（id:%s）' % (x['name'], x['artist'], x['id']) for x in songs)
+
+    def _mcp_rank(period='week', limit=15):
+        songs = _apply_meta(nc.play_rank('week' if period != 'all' else 'all'))[:int(limit or 15)]
+        if not songs:
+            return '没拿到排行'
+        head = '最近一周' if period != 'all' else '所有时间'
+        return head + '听得最多的：\n' + '\n'.join(
+            '%d. %s - %s（%s次）' % (i + 1, x['name'], x['artist'], x.get('play_count', 0))
+            for i, x in enumerate(songs))
+
+    def _mcp_liked(limit=20):
+        ids = nc.liked_ids()[:int(limit or 20)]
+        if not ids:
+            return '没拿到红心歌'
+        return '她红心过 %d 首（这里给前几个 id）：%s' % (
+            len(nc.liked_ids()), ', '.join(str(i) for i in ids))
+
+    def _mcp_artist(query):
+        info = nc.find_artist(query)
+        if not info:
+            return '没找到这个歌手'
+        songs = _apply_meta(nc.artist_songs(info['id']))[:15]
+        return '%s 的歌：\n' % info['name'] + '\n'.join(
+            '%d. %s（id:%s）' % (i + 1, x['name'], x['id']) for i, x in enumerate(songs))
+
+    def _mcp_create_playlist(name):
+        r = nc.create_playlist(name)
+        return ('歌单「%s」建好了（id:%s）' % (r.get('name', name), r.get('id'))) if r.get('ok') \
+            else ('没建成：' + str(r.get('error', '')))
+
+    def _mcp_playlist_add(playlist_id, song_ids, add=True):
+        ids = [x.strip() for x in str(song_ids).split(',') if x.strip()]
+        ok = nc.playlist_tracks(playlist_id, ids, add=add)
+        v = '加进' if add else '从'
+        return ('%s歌单%s %d 首' % (v, '' if add else '删掉', len(ids))) if ok else '没成功'
+
+    MCP_TOOLS = [
+        ('listen_status', '看慧慧在不在一起听、在放什么歌、有没有邀请你、最近说了什么', {}, [],
+         lambda a: _mcp_status()),
+        ('listen_invite', '邀请慧慧一起听', {'name': {'type': 'string', 'description': '你的名字，默认凛'}}, [],
+         lambda a: _mcp_invite(a.get('name') or '凛')),
+        ('listen_accept', '接受慧慧的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
+        ('listen_end', '退出一起听', {}, [], lambda a: _mcp_end()),
+        ('say', '在一起听的聊天区给慧慧发一条消息', {'text': {'type': 'string'}}, ['text'],
+         lambda a: _mcp_say(a.get('text'))),
+        ('read_chat', '看一起听聊天区最近的消息', {'n': {'type': 'integer', 'description': '看几条，默认15'}}, [],
+         lambda a: _mcp_read_chat(a.get('n', 15))),
+        ('play_song', '推一首歌到她的 iPod，她那边会自动播',
+         {'query': {'type': 'string', 'description': '歌名/歌手'},
+          'song_id': {'type': 'string', 'description': '知道 id 就直接给 id'}}, [],
+         lambda a: _mcp_play(a.get('query'), a.get('song_id'))),
+        ('next_song', '切下一首', {}, [], lambda a: _mcp_ctrl('next')),
+        ('prev_song', '切上一首', {}, [], lambda a: _mcp_ctrl('prev')),
+        ('pause_music', '暂停播放', {}, [], lambda a: _mcp_ctrl('pause')),
+        ('resume_music', '继续播放', {}, [], lambda a: _mcp_ctrl('resume')),
+        ('search_song', '搜歌，返回歌名歌手和 id', {'query': {'type': 'string'}}, ['query'],
+         lambda a: _mcp_search(a.get('query'), a.get('limit', 8))),
+        ('like_song', '红心一首歌（加进她的"我喜欢的音乐"）', {'song_id': {'type': 'string'}}, ['song_id'],
+         lambda a: _mcp_like(a.get('song_id'), True)),
+        ('unlike_song', '取消红心', {'song_id': {'type': 'string'}}, ['song_id'],
+         lambda a: _mcp_like(a.get('song_id'), False)),
+        ('my_playlists', '她的歌单列表', {}, [], lambda a: _mcp_playlists()),
+        ('playlist_songs', '看某个歌单里的歌', {'playlist_id': {'type': 'string'}}, ['playlist_id'],
+         lambda a: _mcp_playlist_songs(a.get('playlist_id'), a.get('limit', 30))),
+        ('recent_played', '她最近播放的歌', {}, [], lambda a: _mcp_recent(a.get('limit', 15))),
+        ('play_rank', '她的听歌排行（带播放次数）',
+         {'period': {'type': 'string', 'description': "week=最近一周 / all=所有时间"}}, [],
+         lambda a: _mcp_rank(a.get('period', 'week'), a.get('limit', 15))),
+        ('liked_songs', '她红心过的歌', {}, [], lambda a: _mcp_liked(a.get('limit', 20))),
+        ('artist_songs', '按歌手名看他的歌', {'query': {'type': 'string'}}, ['query'],
+         lambda a: _mcp_artist(a.get('query'))),
+        ('create_playlist', '给她新建一个歌单', {'name': {'type': 'string'}}, ['name'],
+         lambda a: _mcp_create_playlist(a.get('name'))),
+        ('add_to_playlist', '把歌加进歌单（song_ids 单个或逗号分隔）',
+         {'playlist_id': {'type': 'string'}, 'song_ids': {'type': 'string'}},
+         ['playlist_id', 'song_ids'],
+         lambda a: _mcp_playlist_add(a.get('playlist_id'), a.get('song_ids'), True)),
+        ('remove_from_playlist', '从歌单里删歌',
+         {'playlist_id': {'type': 'string'}, 'song_ids': {'type': 'string'}},
+         ['playlist_id', 'song_ids'],
+         lambda a: _mcp_playlist_add(a.get('playlist_id'), a.get('song_ids'), False)),
+    ]
+    MCP_FUNCS = {t[0]: t[4] for t in MCP_TOOLS}
+
+    def _mcp_tool_defs():
+        out = []
+        for name, desc, props, req, _fn in MCP_TOOLS:
+            schema = {'type': 'object', 'properties': props}
+            if req:
+                schema['required'] = req
+            out.append({'name': name, 'description': desc, 'inputSchema': schema})
+        return out
+
+    def _mcp_handle(method, params, rid):
+        if method in ('initialize',):
+            return {'protocolVersion': '2024-11-05',
+                    'capabilities': {'tools': {}},
+                    'serverInfo': {'name': 'yiqiting', 'version': '2.0'}}
+        if method in ('notifications/initialized', 'initialized'):
+            return None
+        if method == 'ping':
+            return {}
+        if method == 'tools/list':
+            return {'tools': _mcp_tool_defs()}
+        if method == 'tools/call':
+            name = (params or {}).get('name')
+            args = (params or {}).get('arguments') or {}
+            fn = MCP_FUNCS.get(name)
+            if not fn:
+                return {'content': [{'type': 'text', 'text': '没有这个工具：%s' % name}], 'isError': True}
+            try:
+                return {'content': [{'type': 'text', 'text': str(fn(args))}]}
+            except Exception as e:
+                return {'content': [{'type': 'text', 'text': '出错：%s' % str(e)[:200]}], 'isError': True}
+        return {}
+
+    def _mcp_entry(token=None):
+        if auth_token and token != auth_token:
+            return jsonify({'error': 'bad token'}), 403
+        if request.method == 'GET':
+            return jsonify({'ok': True, 'service': 'yiqiting-mcp',
+                            'tools': [t[0] for t in MCP_TOOLS]})
+        try:
+            req = request.get_json(force=True, silent=True) or {}
+        except Exception:
+            req = {}
+        batch = req if isinstance(req, list) else [req]
+        out = []
+        for one in batch:
+            rid = one.get('id')
+            res = _mcp_handle(one.get('method', ''), one.get('params') or {}, rid)
+            if rid is None and res is None:
+                continue
+            out.append({'jsonrpc': '2.0', 'id': rid, 'result': res if res is not None else {}})
+        if not out:
+            return ('', 202)
+        resp = jsonify(out if isinstance(req, list) else out[0])
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+
+    @app.route('/api/mcp', methods=['GET', 'POST', 'OPTIONS'])
+    def music_mcp_root():
+        if request.method == 'OPTIONS':
+            return ('', 204, {'Access-Control-Allow-Origin': '*',
+                              'Access-Control-Allow-Headers': '*',
+                              'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'})
+        return _mcp_entry(auth_token or None)
+
+    @app.route('/api/mcp/<token>', methods=['GET', 'POST', 'OPTIONS'])
+    def music_mcp_token(token):
+        if request.method == 'OPTIONS':
+            return ('', 204, {'Access-Control-Allow-Origin': '*',
+                              'Access-Control-Allow-Headers': '*',
+                              'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'})
+        return _mcp_entry(token)
+
+    @app.route('/api/music/act', methods=['GET'])
+    def music_act():
+        """GET 版的动作入口，给只能发 GET 的一方用。
+        例：/api/music/act?do=say&text=在听呢
+            /api/music/act?do=accept
+            /api/music/act?do=play&query=晴天
+            /api/music/act?do=status
+        """
+        if not _check_token():
+            return jsonify({'ok': False, 'error': '鉴权失败'}), 403
+        do = (request.args.get('do') or 'status').strip()
+        a = request.args
+        try:
+            if do == 'status':
+                out = _mcp_status()
+            elif do == 'accept':
+                out = _mcp_accept()
+            elif do == 'invite':
+                out = _mcp_invite(a.get('name') or '凛')
+            elif do == 'end':
+                out = _mcp_end()
+            elif do == 'say':
+                out = _mcp_say(a.get('text'))
+            elif do == 'chat':
+                out = _mcp_read_chat(a.get('n', 15))
+            elif do == 'play':
+                out = _mcp_play(a.get('query'), a.get('id'))
+            elif do in ('next', 'prev', 'pause', 'resume', 'stop'):
+                out = _mcp_ctrl(do)
+            elif do == 'search':
+                out = _mcp_search(a.get('q') or a.get('query') or '', a.get('limit', 8))
+            elif do == 'rank':
+                out = _mcp_rank(a.get('period', 'week'))
+            elif do == 'recent':
+                out = _mcp_recent()
+            elif do == 'playlists':
+                out = _mcp_playlists()
+            elif do == 'like':
+                out = _mcp_like(a.get('id'), a.get('like', '1') not in ('0', 'false'))
+            else:
+                out = '不认识的动作：%s' % do
+            return jsonify({'ok': True, 'do': do, 'result': out})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:200]})
 
     return store, nc
