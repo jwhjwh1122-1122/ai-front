@@ -285,7 +285,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 </style>
 </head>
 <body>
-<audio id="audio" playsinline></audio><audio id="audio2" playsinline></audio>
+<audio id="audio" playsinline preload="auto"></audio>
 <div class="page" id="list-page">
   <div class="lp-top">
     <span class="lp-tab on" id="tab-mine" data-tab="mine">我的</span>
@@ -419,7 +419,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 const $=id=>document.getElementById(id);
 // 两个播放器轮流坐庄：下一首在后台那个里提前缓冲好，放完直接让它上，
 // 不重新下载。iOS 后台不让"新开的下载"出声，但已经缓冲好的可以接着放。
-let audio=$('audio'),audioB=$('audio2');
+const audio=$('audio');
 let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
 let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
 function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0');}
@@ -444,30 +444,24 @@ function addNext(song){
 let urlCache={},qualityCache={};
 // 下一首用一个隐藏的 <audio> 提前缓冲好。放完直接拿这个已经载好的播，
 // 临时新建的音频 iOS 在后台不让开声，这是"第二首没动静"的根因。
-let nextId=null;
+// 把后面两首的"地址"提前取回来存着（只存地址，不下载整首——下载会抢带宽，
+// 点一首歌要等半天就是被它拖的）。换歌那一刻直接用，不发任何网络请求，
+// iOS 在后台才肯让它出声。
 function prefetchNext(){
   if(!queue.length||qIndex<0)return;
-  const n=queue[(qIndex+1)%queue.length];
-  if(!n||!n.id)return;
-  if(nextId===n.id)return;
-  const use=u=>{
-    urlCache[n.id]=u;
-    try{
-      audioB.pause();
-      audioB.preload='auto';
-      audioB.src=u;
-      audioB.load();             // 真的开始缓冲，不是记个地址
-      nextId=n.id;
-    }catch(e){}
-  };
-  if(urlCache[n.id]){use(urlCache[n.id]);return;}
-  fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
-  fetch('/api/music/url?id='+n.id).then(r=>r.json()).then(r=>{
-    if(r&&r.ok&&r.url){qualityCache[n.id]=r.quality||'';use(r.url);}
-  }).catch(()=>{});
+  for(let k=1;k<=2;k++){
+    const n=queue[(qIndex+k)%queue.length];
+    if(!n||!n.id||urlCache[n.id])continue;
+    fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
+    fetch('/api/music/url?id='+n.id).then(r=>r.json()).then(r=>{
+      if(r&&r.ok&&r.url){urlCache[n.id]=r.url;qualityCache[n.id]=r.quality||'';
+        if(Object.keys(urlCache).length>40)urlCache={};}
+    }).catch(()=>{});
+  }
 }
 function playNext(){
   if(!queue.length)return;
+  prefetchNext();
   if(loopMode===1){playSong(queue[qIndex]);return;} // 单曲循环
   if(loopMode===2){qIndex=Math.floor(Math.random()*queue.length);} // 随机
   else{qIndex=(qIndex+1)%queue.length;} // 列表循环
@@ -898,6 +892,18 @@ function setMediaSession(s){
     navigator.mediaSession.setActionHandler('seekto',e=>{
       if(e.seekTime!=null&&audio.duration)audio.currentTime=e.seekTime;});
   }catch(e){}
+  updPositionState();
+}
+// 锁屏进度：不报的话会一直停在 0:00、看着像暂停
+function updPositionState(){
+  if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
+  try{
+    const d=audio.duration;
+    if(!d||!isFinite(d))return;
+    navigator.mediaSession.setPositionState({
+      duration:d,playbackRate:audio.playbackRate||1,
+      position:Math.min(audio.currentTime||0,d)});
+  }catch(e){}
 }
 // 被切到后台时别停，回来时把状态补上
 document.addEventListener('visibilitychange',()=>{
@@ -948,7 +954,6 @@ let playToken=0;
 function resetPlayUI(){
   flushScrobble();
   try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}
-  nextId=null;try{audioB.pause();audioB.removeAttribute('src');audioB.load();}catch(e){}
   $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
   $('p-cur').textContent='0:00';$('p-dur').textContent='0:00';
   $('scr-cur').textContent='0:00';$('scr-rem').textContent='0:00';
@@ -1146,13 +1151,14 @@ function lyHideSeek(){
   });
 })();
 
-function onBoth(ev,fn){[$('audio'),$('audio2')].forEach(el=>el.addEventListener(ev,e=>{
-  if(e.target!==audio)return;   // 只有当前坐庄的那个说了算
-  fn(e);
-}));}
+function onBoth(ev,fn){audio.addEventListener(ev,fn);}
 onBoth('canplay',()=>{if(cur&&qualityCache[cur.id])$('prog-sub').textContent=qualityCache[cur.id];});
-onBoth('play',postNP);onBoth('pause',postNP);
-onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(audio.duration||0);});
+onBoth('play',()=>{postNP();updPositionState();});onBoth('pause',()=>{postNP();updPositionState();});
+onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(audio.duration||0);updPositionState();});
+onBoth('seeked',()=>{updPositionState();
+  // 拖到后段就立刻催一次：免得"刚开播就拖到结尾"时地址还没拿回来
+  if(audio.duration&&audio.currentTime>audio.duration*0.7)prefetchNext();});
+setInterval(()=>{if(!audio.paused)updPositionState();},5000);
 onBoth('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
   $('scr-fill').style.width=p+'%';$('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);
   $('p-dur').textContent=fmt(d);
@@ -1201,16 +1207,14 @@ audio.addEventListener('ended',()=>{
   else if(loopMode===2)ni=Math.floor(Math.random()*queue.length);
   else ni=(qIndex+1)%queue.length;
   const nx=queue[ni];
-  if(nx&&nextId===nx.id&&audioB.src){
-    // 交换：备用的那个已经缓冲好了，让它直接上，不碰 src 不重新下载
-    const old=audio;
-    audio=audioB;audioB=old;
-    nextId=null;
+  if(nx&&urlCache[nx.id]){
+    // 地址早就存好了：直接换上去播，中间一次网络都不发。
+    // 只要中间有等待，iOS 在后台就会掐掉——这是连播的关键。
     qIndex=ni;cur=nx;
     playToken++;                      // 作废掉还在路上的请求
-    try{audioB.pause();audioB.removeAttribute('src');audioB.load();}catch(e){}
+    audio.src=urlCache[nx.id];
+    audio.play().catch(()=>{});
     $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
-    audio.play().catch(()=>{});       // 已经缓冲好，后台也能出声
     $('scr-nm').textContent=nx.name;$('scr-ar').textContent=nx.artist;$('scr-al').textContent=nx.album||'';
     $('b-title').textContent=nx.name;$('b-artist').textContent=nx.artist;
     if(nx.cover){$('scr-cover').src=nx.cover;$('mini-cover').src=nx.cover;}
