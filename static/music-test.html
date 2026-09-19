@@ -12,8 +12,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .page{position:absolute;inset:0;display:flex;flex-direction:column;
   padding:calc(env(safe-area-inset-top) + 8px) 22px calc(env(safe-area-inset-bottom) + 14px);
   transition:transform .34s cubic-bezier(.3,.7,.3,1);background:linear-gradient(180deg,#fbfcfd,#eef1f4);}
-
-/* ===== 播放页 ===== */
 #play-page{z-index:2;}
 #play-page.hid{transform:translateY(100%);}
 .top{display:flex;align-items:center;justify-content:space-between;height:44px;flex-shrink:0;}
@@ -21,64 +19,53 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .top .down svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
 .top .ttl{font-size:16px;font-weight:500;color:#2b2f36;}
 .top .share{width:24px;height:24px;color:#3a3f47;}
+.together{position:relative;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding:22px 0 0;}
+.tg-buds{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:200px;height:122px;pointer-events:none;overflow:visible;z-index:0;}
+.tg-faces{display:flex;position:relative;z-index:2;}
+.tg-face{width:56px;height:56px;border-radius:50%;background:#d8dce2 center/cover no-repeat;border:none;box-shadow:0 2px 8px rgba(60,70,90,.16);}
+.tg-face:last-child{margin-left:-8px;}
+.tg-tip{position:relative;z-index:2;margin-top:16px;font-size:12px;color:#aeb4bc;letter-spacing:.2px;}
 .ipod-box{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:10px 0 0;}
-.ipod{width:min(47vw,196px);aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
+.ipod{width:min(66vw,244px);height:auto;max-height:100%;aspect-ratio:264/446;padding:3% 3.3%;border-radius:8.5% / 5%;position:relative;
   background:linear-gradient(150deg,#ffffff 0%,#f8f9fa 22%,#eaecee 58%,#d8dbdf 100%);
   box-shadow:0 3px 3px rgba(255,255,255,1) inset,-3px 0 7px rgba(255,255,255,.85) inset,
     0 -5px 12px rgba(165,172,184,.55) inset,4px 5px 9px rgba(165,172,184,.4) inset,
-    0 34px 60px -22px rgba(50,60,80,.6),0 14px 28px -12px rgba(50,60,80,.42);
-  display:flex;flex-direction:column;}
-
-.screen{margin-top:5.5%;border-radius:4px;overflow:hidden;border:1px solid #a8adb6;
-  background:#e8ebee;box-shadow:0 1px 3px rgba(0,0,0,.22) inset,0 1px 0 rgba(255,255,255,.6);}
-.scr-top{display:flex;align-items:center;justify-content:space-between;padding:4px 7px;
-  background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
-.scr-top b{font-size:10px;font-weight:600;color:#40454d;}
+    0 28px 48px -20px rgba(50,60,80,.55),0 12px 24px -12px rgba(50,60,80,.4);
+  display:flex;flex-direction:column;z-index:1;}
+.screen{margin-top:5.5%;border-radius:4px;overflow:hidden;border:1px solid #a8adb6;background:#e8ebee;box-shadow:0 1px 3px rgba(0,0,0,.22) inset,0 1px 0 rgba(255,255,255,.6);}
+.scr-top{display:flex;align-items:center;justify-content:space-between;padding:3px 6px;background:linear-gradient(#e2e5e9,#c7ccd2);border-bottom:1px solid #a8adb6;}
+.scr-top b{font-size:8.5px;font-weight:600;color:#40454d;}
 .scr-top .r{display:flex;align-items:center;gap:4px;}
-.scr-top .pz{color:#4a90d9;font-size:8px;letter-spacing:-1px;}
-.scr-top .bt{width:17px;height:9px;border:1px solid #5a6068;border-radius:2px;padding:1px;position:relative;}
+.scr-top .pz{color:#4a90d9;font-size:7px;letter-spacing:-1px;}
+.scr-top .bt{width:14px;height:8px;border:1px solid #5a6068;border-radius:2px;padding:1px;position:relative;}
 .scr-top .bt::after{content:"";display:block;height:100%;width:72%;background:#5cb85c;border-radius:1px;}
 .scr-top .bt::before{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:2px;height:4px;background:#5a6068;border-radius:0 1px 1px 0;}
-.scr-body{display:flex;gap:8px;padding:8px;background:#f5f7f8;}
+.scr-body{display:flex;gap:7px;padding:7px;background:#f5f7f8;}
 .scr-cover{width:33%;aspect-ratio:1;border-radius:2px;object-fit:cover;background:#d5dae0;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.15);}
 .scr-meta{flex:1;min-width:0;padding-top:1px;}
-.scr-meta .nm{font-size:13px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .ar{font-size:11px;color:#525860;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-meta .al{font-size:10px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scr-prog{display:flex;align-items:center;gap:5px;padding:0 8px 8px;background:#f5f7f8;font-size:8px;color:#6a7078;}
-.scr-track{flex:1;height:8px;border-radius:4px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.08) inset;}
+.scr-meta .nm{font-size:11px;font-weight:700;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-meta .ar{font-size:9.5px;color:#525860;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-meta .al{font-size:8.5px;color:#8a9098;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scr-prog{display:flex;align-items:center;gap:4px;padding:0 7px 7px;background:#f5f7f8;font-size:7px;color:#6a7078;}
+.scr-track{flex:1;height:7px;border-radius:4px;background:linear-gradient(#d2d6da,#e2e5e8);border:1px solid #b5bac0;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.08) inset;}
 .scr-fill{height:100%;width:0%;background:linear-gradient(#8fc4f0,#4a90d9);border-radius:3px;box-shadow:0 -1px 1px rgba(255,255,255,.3) inset;}
 .wheel-box{flex:1;display:flex;align-items:center;justify-content:center;}
-.wheel{width:65%;aspect-ratio:1;border-radius:50%;position:relative;
-  background:
-    radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e0e3e6 32%,#c8ccd1 58%,#b2b7bd 82%,#a4a9b1 100%);
-  box-shadow:
-    0 5px 14px rgba(70,78,95,.4),
-    0 2px 0 rgba(255,255,255,1) inset,
-    0 -5px 12px rgba(120,128,142,.5) inset,
-    0 5px 10px rgba(255,255,255,.85) inset;
-  display:grid;place-items:center;}
-.wheel::before{content:"";position:absolute;inset:0;border-radius:50%;
-  background:radial-gradient(circle at 50% 26%,rgba(255,255,255,.65),transparent 46%);pointer-events:none;}
-.wheel::after{content:"";position:absolute;inset:6%;border-radius:50%;
-  box-shadow:0 2px 5px rgba(100,108,122,.28) inset,0 -2px 4px rgba(255,255,255,.7) inset,
-    0 0 0 1px rgba(150,156,166,.18);pointer-events:none;}
-.wheel .menu{position:absolute;top:8%;font-size:10px;font-weight:600;color:#868b93;letter-spacing:2px;z-index:1;}
+.wheel{width:65%;aspect-ratio:1;border-radius:50%;position:relative;background:radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e0e3e6 32%,#c8ccd1 58%,#b2b7bd 82%,#a4a9b1 100%);box-shadow:0 5px 14px rgba(70,78,95,.4),0 2px 0 rgba(255,255,255,1) inset,0 -5px 12px rgba(120,128,142,.5) inset,0 5px 10px rgba(255,255,255,.85) inset;display:grid;place-items:center;}
+.wheel::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 50% 26%,rgba(255,255,255,.65),transparent 46%);pointer-events:none;}
+.wheel::after{content:"";position:absolute;inset:6%;border-radius:50%;box-shadow:0 2px 5px rgba(100,108,122,.28) inset,0 -2px 4px rgba(255,255,255,.7) inset,0 0 0 1px rgba(150,156,166,.18);pointer-events:none;}
+.wheel .menu{position:absolute;top:8%;font-size:8.5px;font-weight:600;color:#868b93;letter-spacing:1.6px;z-index:1;}
 .wheel .wi{position:absolute;color:#7d828b;z-index:1;}
-.wheel .wi svg{width:17px;height:17px;fill:currentColor;}
+.wheel .wi svg{width:14px;height:14px;fill:currentColor;}
 .wheel .wi.prev{left:11%;top:50%;transform:translateY(-50%);}
 .wheel .wi.next{right:11%;top:50%;transform:translateY(-50%);}
 .wheel .wi.play{bottom:9.5%;}
-.wheel .center{width:39%;aspect-ratio:1;border-radius:50%;border:none;z-index:1;
-  background:radial-gradient(circle at 50% 34%,#ffffff 0%,#f0f2f4 52%,#dadde1 100%);
-  box-shadow:0 3px 8px rgba(90,100,120,.38),0 2px 0 rgba(255,255,255,1) inset,
-    0 -3px 6px rgba(150,156,168,.4) inset;}
+.wheel .center{width:39%;aspect-ratio:1;border-radius:50%;border:none;z-index:1;background:radial-gradient(circle at 50% 34%,#ffffff 0%,#f0f2f4 52%,#dadde1 100%);box-shadow:0 3px 8px rgba(90,100,120,.38),0 2px 0 rgba(255,255,255,1) inset,0 -3px 6px rgba(150,156,168,.4) inset;}
 .wbtn{position:absolute;width:30%;height:30%;background:none;border:none;}
 .wbtn.m{top:0;left:35%;} .wbtn.p{left:0;top:35%;} .wbtn.n{right:0;top:35%;} .wbtn.y{bottom:0;left:35%;}
 .below{flex-shrink:0;padding-top:24px;}
 .b-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;}
 .b-title{font-size:20px;font-weight:700;color:#20262c;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.b-artist{font-size:13px;color:#8a9098;margin-top:5px;display:flex;align-items:center;gap:7px;}
+.b-artist{font-size:13px;color:#8a9098;margin-top:6px;display:flex;align-items:center;gap:7px;}
 .b-follow{font-size:11px;color:#8a9098;border:1px solid #d5dae0;border-radius:9px;padding:1px 8px;}
 .b-social{display:flex;align-items:center;gap:18px;flex-shrink:0;}
 .b-heart{color:#9298a0;background:none;border:none;}
@@ -87,15 +74,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-heart.liked svg path{fill:currentColor;stroke:none;}
 .b-heart svg{width:26px;height:26px;fill:currentColor;}
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
-/* 两头像戴耳机 */
-.together{position:relative;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding:22px 0 0;}
-.tg-buds{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:200px;height:122px;pointer-events:none;overflow:visible;z-index:0;}
-.tg-faces{display:flex;position:relative;z-index:2;}
-.tg-face{width:56px;height:56px;border-radius:50%;background:#d8dce2 center/cover no-repeat;box-shadow:0 2px 8px rgba(60,70,90,.16);}
-.tg-face:last-child{margin-left:-8px;}
-.tg-tip{position:relative;z-index:2;margin-top:16px;font-size:12px;color:#aeb4bc;letter-spacing:.2px;}
-/* 评论/聊天视图 */
-.chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:76px;display:none;flex-direction:column;padding:0 18px;}
+.chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:80px;display:none;flex-direction:column;padding:0 18px;}
 .chat-view.on{display:flex;}
 .cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:8px 0;display:flex;flex-direction:column;gap:12px;}
 .cv-msgs::-webkit-scrollbar{display:none;}
@@ -107,9 +86,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-input{display:flex;gap:8px;padding:10px 0;flex-shrink:0;}
 .cv-input input{flex:1;padding:11px 15px;border-radius:20px;border:none;background:#e9ecef;font-size:15px;outline:none;color:#2b2f36;}
 .cv-input button{padding:0 18px;border-radius:20px;border:none;background:#ec4141;color:#fff;font-size:14px;font-weight:600;}
-/* 音乐/评论切换 */
-.mc-switch{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);
-  display:flex;background:#e9ecef;border-radius:22px;padding:3px;gap:2px;z-index:4;}
+.mc-switch{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);display:flex;background:#e9ecef;border-radius:22px;padding:3px;gap:2px;z-index:4;}
 .mc-btn{width:52px;height:36px;border:none;background:none;border-radius:19px;display:grid;place-items:center;color:#8a9098;}
 .mc-btn svg{width:22px;height:22px;}
 .mc-btn.on{background:#fff;color:#2b2f36;box-shadow:0 1px 4px rgba(60,70,90,.12);}
@@ -117,17 +94,14 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
 .prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
 .prog .bar .dot{position:absolute;top:50%;left:0%;width:10px;height:10px;border-radius:50%;background:#fff;border:1px solid #b0b6be;transform:translate(-50%,-50%);box-shadow:0 1px 3px rgba(0,0,0,.15);}
-.prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:7px;}
+.prog-sub{text-align:center;font-size:11px;color:#b0b6be;margin-top:8px;}
 .ctrl{display:flex;align-items:center;justify-content:space-between;margin-top:22px;margin-bottom:52px;padding:0 2px;}
 .cb{background:none;border:none;color:#3a3f47;display:grid;place-items:center;}
 .cb svg{fill:currentColor;}
 .cb.mode svg,.cb.list svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
 .cb.side svg{width:30px;height:30px;}
 .cb.main svg{width:52px;height:52px;}
-
-/* ===== 歌词覆盖 ===== */
-.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;
-  padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;}
+.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;}
 .lyric-view.on{display:flex;}
 .ly-scroll{flex:1;overflow-y:auto;text-align:center;padding:16vh 8px 26vh;scrollbar-width:none;}
 .ly-scroll::-webkit-scrollbar{display:none;}
@@ -136,8 +110,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
 .ly-line.cur .tr{color:#5a6068;}
 .ly-empty{color:#b0b6be;font-size:14px;padding-top:36vh;}
-
-/* ===== 列表页(搜索+我的) ===== */
 #list-page{z-index:1;padding-bottom:0;}
 .lp-top{display:flex;align-items:center;gap:14px;height:44px;flex-shrink:0;}
 .lp-tab{font-size:19px;font-weight:700;color:#b6bcc4;}
@@ -162,11 +134,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res .go{color:#ec4141;font-size:22px;}
 .hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
-
-/* ===== 迷你播放条 ===== */
-.mini{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);
-  height:56px;border-radius:28px;background:rgba(255,255,255,.92);backdrop-filter:blur(16px);
-  box-shadow:0 6px 20px -6px rgba(60,70,90,.3);display:none;align-items:center;gap:11px;padding:6px 12px 6px 6px;z-index:5;}
+.mini{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);height:56px;border-radius:28px;background:rgba(255,255,255,.92);backdrop-filter:blur(16px);box-shadow:0 6px 20px -6px rgba(60,70,90,.3);display:none;align-items:center;gap:11px;padding:6px 12px 6px 6px;z-index:5;}
 .mini.show{display:flex;}
 .mini img{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#d8dce2;animation:spin 12s linear infinite;animation-play-state:paused;}
 .mini.playing img{animation-play-state:running;}
@@ -178,7 +146,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .mini .mp svg{width:26px;height:26px;fill:currentColor;}
 .mini .ml{width:30px;height:30px;color:#5a6068;background:none;border:none;}
 .mini .ml svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;}
-/* 播放列表抽屉 */
 .queue-sheet{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.34);display:none;align-items:flex-end;}
 .queue-sheet.open{display:flex;}
 .q-inner{width:100%;max-height:72vh;background:#f4f6f8;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden;}
@@ -198,12 +165,20 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .q-del{background:none;border:none;font-size:15px;color:#c0c4ca;flex-shrink:0;padding:4px;}
 .q-foot{padding:14px 18px;border-top:1px solid #e4e7ea;text-align:center;}
 .q-foot span{font-size:14px;color:#5a6068;}
+
+/* 单人/一起听 排版切换 */
+.together{display:none;}
+#play-page.listening .together{display:flex;}
+#play-page.listening .ipod{width:min(47vw,196px);}
+.mc-switch{display:none;}
+#play-page.listening .mc-switch{display:flex;}
+#play-page.listening .below{padding-top:24px;}
+.below{padding-top:14px;}
+
 </style>
 </head>
 <body>
 <audio id="audio"></audio>
-
-<!-- 列表页 -->
 <div class="page" id="list-page">
   <div class="lp-top">
     <span class="lp-tab on" id="tab-mine" data-tab="mine">我的</span>
@@ -215,15 +190,12 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   </div>
   <div class="lp-body" id="lp-body"></div>
 </div>
-
-<!-- 播放页 -->
 <div class="page" id="play-page">
   <div class="top">
     <button class="down" id="btn-down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <div class="ttl" id="top-title">一起听</div>
-    <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M12 3v13M8 7l4-4 4 4"/></svg>
+    <button class="share" id="btn-together" style="background:none;border:none;padding:0;color:#3a3f47;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;"><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg></button>
   </div>
-  <!-- 两头像戴耳机 -->
   <div class="together" id="together-bar">
     <svg class="tg-buds" viewBox="0 0 200 122" preserveAspectRatio="xMidYMin meet">
       <defs><linearGradient id="budG" x1="0" y1="0" x2="0" y2="1">
@@ -241,7 +213,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
       <div class="tg-face" id="tg-ai"></div>
     </div>
     <div class="tg-tip" id="tg-tip">一起听了 0 分钟</div>
-  </div>
   </div>
   <div class="ipod-box">
     <div class="ipod" id="ipod-tap">
@@ -285,7 +256,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
       <button class="cb list" id="c-list"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6l1 1M3 12h.01M3 18h.01"/></svg></button>
     </div>
   </div>
-  <!-- 评论/聊天视图 -->
   <div class="chat-view" id="chat-view">
     <div class="cv-msgs" id="cv-msgs"></div>
     <div class="cv-input">
@@ -293,25 +263,21 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
       <button id="cv-send">发送</button>
     </div>
   </div>
-  <!-- 音乐/评论切换 -->
   <div class="mc-switch">
     <button class="mc-btn on" id="mc-music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
     <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
   </div>
   <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div></div>
 </div>
-
-<!-- 迷你条 -->
 <div class="queue-sheet" id="queue-sheet"></div>
-
 <div class="mini" id="mini">
   <img id="mini-cover" src="">
   <div class="mt"><div class="nm" id="mini-nm">—</div><div class="ar" id="mini-ar">—</div></div>
   <button class="mp" id="mini-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
   <button class="ml"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
 </div>
-
 <script>
+
 const $=id=>document.getElementById(id);const audio=$('audio');
 let cur=null,lyrics=[],lyView=false,lastLy=-1,collapsed=false;
 let queue=[],qIndex=-1,loopMode=0; // loopMode: 0列表循环 1单曲 2随机
@@ -553,6 +519,15 @@ function loadAvatars(){
   if(aav)$('tg-ai').style.backgroundImage='url('+aav+')';
   window._uav=uav;window._aav=aav;
 }
+
+// 单人/一起听 切换
+function toggleTogether(){
+  const on=$('play-page').classList.toggle('listening');
+  $('top-title').textContent=on?'一起听':'一起听';
+  if(!on){setMode(false);} // 退出一起听回音乐视图
+}
+$('btn-together').onclick=toggleTogether;
+
 loadAvatars();
 
 // ── 一起听累计时长 ──
@@ -617,6 +592,7 @@ setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.jso
   if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}else if(c.action==='stop')audio.pause();}}catch(e){}},5000);
 
 showTab('mine');
+
 </script>
 </body>
 </html>
