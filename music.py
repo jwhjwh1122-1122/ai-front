@@ -1657,6 +1657,52 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
+    @app.route('/api/music/hls', methods=['GET'])
+    def music_hls():
+        """把一串歌做成一张 HLS 播放列表（m3u8）。
+
+        实验目的：iOS 原生支持 HLS，连播是系统自己完成的，JS 完全不参与，
+        所以理论上后台锁屏也能一首接一首。音频仍然直接从网易云 CDN 到手机，
+        不经过这台服务器。就看 Safari 肯不肯把 mp3 直接当片段吃。
+        """
+        ids = [x.strip() for x in (request.args.get('ids') or '').split(',') if x.strip()]
+        if not ids:
+            return Response('#EXTM3U\n#EXT-X-ENDLIST\n', mimetype='application/vnd.apple.mpegurl')
+        lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-PLAYLIST-TYPE:VOD',
+                 '#EXT-X-TARGETDURATION:600', '#EXT-X-MEDIA-SEQUENCE:0']
+
+        def one(sid):
+            try:
+                url = nc.song_url(sid)
+                if not url:
+                    return None
+                if url.startswith('http://'):
+                    url = 'https://' + url[len('http://'):]
+                d = nc.song_detail(sid) or {}
+                dur = (d.get('duration') or 0) / 1000.0 or 240.0
+                return (dur, url, d.get('name', ''))
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=min(6, len(ids))) as ex:
+            got = list(ex.map(one, ids))
+        n = 0
+        for item in got:
+            if not item:
+                continue
+            dur, url, name = item
+            lines.append('#EXTINF:%.3f,%s' % (dur, name.replace(',', ' ')))
+            lines.append(url)
+            n += 1
+        if not n:
+            return Response('#EXTM3U\n#EXT-X-ENDLIST\n',
+                            mimetype='application/vnd.apple.mpegurl')
+        lines.append('#EXT-X-ENDLIST')
+        return Response('\n'.join(lines) + '\n',
+                        mimetype='application/vnd.apple.mpegurl',
+                        headers={'Cache-Control': 'no-store',
+                                 'Access-Control-Allow-Origin': '*'})
+
     @app.route('/api/music/prefetch', methods=['GET'])
     def music_prefetch():
         """提前把下一首的直链取好放缓存里，切歌时就不用等了。"""
