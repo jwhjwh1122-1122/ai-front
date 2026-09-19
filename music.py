@@ -1878,8 +1878,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     def _mcp_handle(method, params, rid):
         if method in ('initialize',):
-            return {'protocolVersion': '2024-11-05',
-                    'capabilities': {'tools': {}},
+            # 客户端要哪个协议版本就回哪个，不认识的才用默认
+            want = (params or {}).get('protocolVersion') or ''
+            known = ('2025-06-18', '2025-03-26', '2024-11-05')
+            ver = want if want in known else '2025-06-18'
+            return {'protocolVersion': ver,
+                    'capabilities': {'tools': {'listChanged': False}},
                     'serverInfo': {'name': 'yiqiting', 'version': '2.0'}}
         if method in ('notifications/initialized', 'initialized'):
             return None
@@ -1899,12 +1903,29 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 return {'content': [{'type': 'text', 'text': '出错：%s' % str(e)[:200]}], 'isError': True}
         return {}
 
+    MCP_SESSION = 'yiqiting-' + hashlib.md5(str(data_dir).encode()).hexdigest()[:16]
+
+    def _mcp_cors(resp):
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Expose-Headers'] = 'Mcp-Session-Id, MCP-Protocol-Version'
+        resp.headers['Mcp-Session-Id'] = MCP_SESSION
+        resp.headers['MCP-Protocol-Version'] = '2025-06-18'
+        return resp
+
     def _mcp_entry(token=None):
         if auth_token and token != auth_token:
             return jsonify({'error': 'bad token'}), 403
+        accept = (request.headers.get('Accept') or '')
+        wants_sse = 'text/event-stream' in accept
+
         if request.method == 'GET':
-            return jsonify({'ok': True, 'service': 'yiqiting-mcp',
-                            'tools': [t[0] for t in MCP_TOOLS]})
+            # 规范里 GET 是用来开 SSE 长连接的；我们不需要服务端主动推，
+            # 按规范回 405 让客户端只用 POST。普通浏览器访问还是给个人看的信息。
+            if wants_sse:
+                return _mcp_cors(Response('', status=405, headers={'Allow': 'POST'}))
+            return _mcp_cors(jsonify({'ok': True, 'service': 'yiqiting-mcp',
+                                      'tools': [t[0] for t in MCP_TOOLS]}))
+
         try:
             req = request.get_json(force=True, silent=True) or {}
         except Exception:
@@ -1912,31 +1933,46 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         batch = req if isinstance(req, list) else [req]
         out = []
         for one in batch:
+            if not isinstance(one, dict):
+                continue
             rid = one.get('id')
             res = _mcp_handle(one.get('method', ''), one.get('params') or {}, rid)
-            if rid is None and res is None:
-                continue
-            out.append({'jsonrpc': '2.0', 'id': rid, 'result': res if res is not None else {}})
+            if rid is None:
+                continue          # 通知类消息不用回
+            out.append({'jsonrpc': '2.0', 'id': rid,
+                        'result': res if res is not None else {}})
         if not out:
-            return ('', 202)
-        resp = jsonify(out if isinstance(req, list) else out[0])
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        return resp
+            return _mcp_cors(Response('', status=202))
 
-    @app.route('/api/mcp', methods=['GET', 'POST', 'OPTIONS'])
+        body = out if isinstance(req, list) else out[0]
+        if wants_sse:
+            # claude.ai 要 SSE 就给 SSE
+            payload = 'event: message\ndata: %s\n\n' % json.dumps(body, ensure_ascii=False)
+            return _mcp_cors(Response(payload, mimetype='text/event-stream',
+                                      headers={'Cache-Control': 'no-cache',
+                                               'X-Accel-Buffering': 'no'}))
+        return _mcp_cors(jsonify(body))
+
+    @app.route('/api/mcp', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
     def music_mcp_root():
         if request.method == 'OPTIONS':
             return ('', 204, {'Access-Control-Allow-Origin': '*',
                               'Access-Control-Allow-Headers': '*',
-                              'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'})
+                              'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+                              'Access-Control-Expose-Headers': 'Mcp-Session-Id'})
+        if request.method == 'DELETE':
+            return ('', 204)
         return _mcp_entry(auth_token or None)
 
-    @app.route('/api/mcp/<token>', methods=['GET', 'POST', 'OPTIONS'])
+    @app.route('/api/mcp/<token>', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
     def music_mcp_token(token):
         if request.method == 'OPTIONS':
             return ('', 204, {'Access-Control-Allow-Origin': '*',
                               'Access-Control-Allow-Headers': '*',
-                              'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'})
+                              'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+                              'Access-Control-Expose-Headers': 'Mcp-Session-Id'})
+        if request.method == 'DELETE':
+            return ('', 204)
         return _mcp_entry(token)
 
     @app.route('/api/music/act', methods=['GET'])
