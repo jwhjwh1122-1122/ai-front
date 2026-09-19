@@ -425,11 +425,18 @@ function addNext(song){
   queue.splice(qIndex+1,0,song);
   toast(song.name+' 已加到下一首');
 }
-// 提前把下一首的直链在后端备好，切过去就不用等
+// 下一首的直链提前取回来存本地。放完那一刻直接换上去播，
+// 中间一旦有等待，iOS 在后台就会掐掉播放，这是"放完不接下一首"的根因。
+let urlCache={};
 function prefetchNext(){
   if(!queue.length||qIndex<0)return;
   const n=queue[(qIndex+1)%queue.length];
-  if(n&&n.id)fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
+  if(!n||!n.id||urlCache[n.id])return;
+  fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
+  fetch('/api/music/url?id='+n.id).then(r=>r.json()).then(r=>{
+    if(r&&r.ok&&r.url){urlCache[n.id]=r.url;
+      if(Object.keys(urlCache).length>30)urlCache={};}
+  }).catch(()=>{});
 }
 function playNext(){
   if(!queue.length)return;
@@ -864,6 +871,23 @@ function setMediaSession(s){
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&cur){refreshMini();setMediaSession(cur);}
 });
+// ── 跟外层 app 通气（悬浮球用）──
+function postNP(){
+  try{
+    parent.postMessage({__ipod:1,type:'np',
+      song:cur?{name:cur.name,artist:cur.artist,cover:cur.cover||'',id:cur.id}:null,
+      playing:!audio.paused&&!!cur},'*');
+  }catch(e){}
+}
+window.addEventListener('message',e=>{
+  const d=e.data;
+  if(!d||!d.__ipodCmd)return;
+  if(d.cmd==='toggle')togglePlay();
+  else if(d.cmd==='next')playNext();
+  else if(d.cmd==='prev')playPrev();
+  else if(d.cmd==='ask')postNP();
+});
+setInterval(postNP,2000);
 let playToken=0;
 // 换歌时把上一首的痕迹一次清干净，避免"信息是新的、进度条还是旧的"这种错位
 function resetPlayUI(){
@@ -884,17 +908,26 @@ async function playSong(s){
   if(s.cover){$('scr-cover').src=s.cover;$('mini-cover').src=s.cover;}
   $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
   loadLyric(s.id);   // 歌词跟音频同时去拿，不再排队等
-  try{
-    let r=null;
-    try{r=await fetchT('/api/music/url?id='+s.id,12000);}
-    catch(e){r=await fetchT('/api/music/url?id='+s.id,15000).catch(()=>null);}  // 超时再给一次机会
-    if(my!==playToken)return;      // 这期间又切歌了，丢掉这次结果
-    if(!r||!r.ok){$('prog-sub').textContent='拿不到音源';toast('这首拿不到音源');return;}
-    audio.src=r.url;audio.preload='auto';
-    await audio.play().catch(()=>{});
-  }catch(e){if(my===playToken){$('prog-sub').textContent='加载失败';toast('加载失败，再点一次');}}
+  const cached=urlCache[s.id];
+  if(cached){
+    // 地址早就备好了：立刻开播，一点都不等（后台自动连播全靠这条）
+    audio.src=cached;audio.preload='auto';
+    audio.play().catch(()=>{});
+    $('prog-sub').textContent='无损音质';
+  }else{
+    try{
+      let r=null;
+      try{r=await fetchT('/api/music/url?id='+s.id,12000);}
+      catch(e){r=await fetchT('/api/music/url?id='+s.id,15000).catch(()=>null);}
+      if(my!==playToken)return;      // 这期间又切歌了，丢掉这次结果
+      if(!r||!r.ok){$('prog-sub').textContent='拿不到音源';toast('这首拿不到音源');return;}
+      urlCache[s.id]=r.url;
+      audio.src=r.url;audio.preload='auto';
+      await audio.play().catch(()=>{});
+    }catch(e){if(my===playToken){$('prog-sub').textContent='加载失败';toast('加载失败，再点一次');}}
+  }
   if(my!==playToken)return;
-  refreshMini();syncHeart(s.id);prefetchNext();setMediaSession(s);
+  refreshMini();syncHeart(s.id);prefetchNext();setMediaSession(s);postNP();
   // 一起听时上报当前歌
   if($('play-page').classList.contains('listening')){
     fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({song:{name:s.name,artist:s.artist,id:s.id}})}).catch(()=>{});
@@ -1055,6 +1088,7 @@ function lyHideSeek(){
 })();
 
 audio.addEventListener('canplay',()=>{$('prog-sub').textContent='无损音质';});
+audio.addEventListener('play',postNP);audio.addEventListener('pause',postNP);
 audio.addEventListener('loadedmetadata',()=>{$('p-dur').textContent=fmt(audio.duration||0);});
 audio.addEventListener('timeupdate',()=>{const t=audio.currentTime,d=audio.duration||0,p=d?t/d*100:0;
   $('scr-fill').style.width=p+'%';$('scr-cur').textContent=fmt(t);$('scr-rem').textContent='-'+fmt(d-t);
