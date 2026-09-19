@@ -428,14 +428,29 @@ function addNext(song){
 // 下一首的直链提前取回来存本地。放完那一刻直接换上去播，
 // 中间一旦有等待，iOS 在后台就会掐掉播放，这是"放完不接下一首"的根因。
 let urlCache={};
+// 下一首用一个隐藏的 <audio> 提前缓冲好。放完直接拿这个已经载好的播，
+// 临时新建的音频 iOS 在后台不让开声，这是"第二首没动静"的根因。
+let nextAudio=null,nextId=null;
 function prefetchNext(){
   if(!queue.length||qIndex<0)return;
   const n=queue[(qIndex+1)%queue.length];
-  if(!n||!n.id||urlCache[n.id])return;
+  if(!n||!n.id)return;
+  if(nextId===n.id&&nextAudio)return;
+  const use=u=>{
+    urlCache[n.id]=u;
+    try{
+      if(nextAudio){nextAudio.src='';}
+      nextAudio=new Audio();
+      nextAudio.preload='auto';
+      nextAudio.src=u;
+      nextAudio.load();          // 真的开始缓冲，不只是记个地址
+      nextId=n.id;
+    }catch(e){}
+  };
+  if(urlCache[n.id]){use(urlCache[n.id]);return;}
   fetch('/api/music/prefetch?id='+n.id).catch(()=>{});
   fetch('/api/music/url?id='+n.id).then(r=>r.json()).then(r=>{
-    if(r&&r.ok&&r.url){urlCache[n.id]=r.url;
-      if(Object.keys(urlCache).length>30)urlCache={};}
+    if(r&&r.ok&&r.url)use(r.url);
   }).catch(()=>{});
 }
 function playNext(){
@@ -1131,7 +1146,37 @@ $('c-mode').onclick=()=>{
   toast(['列表循环','单曲循环','随机播放'][loopMode]);
 };
 // 放完自动下一首
-audio.addEventListener('ended',()=>{playNext();});
+audio.addEventListener('ended',()=>{
+  // 下一首已经缓冲好了 → 立刻接上，中间不留任何空隙
+  if(!queue.length){return;}
+  let ni;
+  if(loopMode===1)ni=qIndex;
+  else if(loopMode===2)ni=Math.floor(Math.random()*queue.length);
+  else ni=(qIndex+1)%queue.length;
+  const nx=queue[ni];
+  if(nx&&nextAudio&&nextId===nx.id){
+    const src=nextAudio.src;
+    nextAudio=null;nextId=null;
+    qIndex=ni;cur=nx;
+    playToken++;                      // 作废掉还在路上的请求
+    resetPlayUI();
+    audio.src=src;audio.preload='auto';
+    audio.play().catch(()=>{});       // 已经缓冲过，后台也能开声
+    $('scr-nm').textContent=nx.name;$('scr-ar').textContent=nx.artist;$('scr-al').textContent=nx.album||'';
+    $('b-title').textContent=nx.name;$('b-artist').textContent=nx.artist;
+    if(nx.cover){$('scr-cover').src=nx.cover;$('mini-cover').src=nx.cover;}
+    $('mini-nm').textContent=nx.name;$('mini-ar').textContent=nx.artist;
+    $('prog-sub').textContent='无损音质';
+    loadLyric(nx.id);refreshMini();syncHeart(nx.id);setMediaSession(nx);postNP();
+    prefetchNext();
+    if($('play-page').classList.contains('listening')){
+      fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({song:{name:nx.name,artist:nx.artist,id:nx.id}})}).catch(()=>{});
+    }
+    return;
+  }
+  playNext();
+});
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
 function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);
