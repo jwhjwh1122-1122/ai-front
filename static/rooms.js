@@ -361,6 +361,7 @@ async function openNetease() {
 function closeNetease() {
   clearTimeout(neteaseTimer);
   $('netease').classList.remove('open');
+  $('musicroom').classList.remove('open');
   // 不要把 iframe 设成 about:blank —— 那等于把播放器整个销毁，歌会停。
   // 只把面板收起来，播放器留在后台继续放。
   roomCtx = null;
@@ -370,6 +371,7 @@ function closeCoread() {
   clearTimeout(coreadTimer);
   $('coread').classList.remove('open');
   $('coread-frame').src = 'about:blank';
+  $('study').classList.remove('open');
   roomCtx = 'reader';
 }
 
@@ -2096,9 +2098,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // 门 / 抽屉
   document.querySelectorAll('.room-card').forEach(d => d.onclick = () => {
     const r = d.dataset.room;
-    if (r === 'study') openStudy();
+    // 房间点开就是那个页面本身：书房=共读，听音房=网易云播放器。
+    // 底下的书架/碟片列表不再打开，✕ 直接退回主界面。
+    // （地址没填时退回旧界面，免得点了没反应）
+    if (r === 'study') { if (coreadUrl()) openCoread(); else openStudy(); }
     else if (r === 'cinema') openRoomMedia('video');
-    else if (r === 'music') openRoomMedia('music');
+    else if (r === 'music') { if (neteaseUrl()) openNetease(); else openRoomMedia('music'); }
     else if (r === 'mailbox') openMailbox();
     else if (r === 'moments') openMoments();
     else if (r === 'desire') openDesire();
