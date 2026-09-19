@@ -559,10 +559,42 @@ window.addEventListener('error', function (e) {
 </div>
 
 <!-- ============ 网易云（外部服务） ============ -->
+<!-- ============ 迷你随身听（悬浮球）============ -->
+<style>
+.ipod-ball{position:fixed;right:14px;z-index:120;width:56px;height:78px;border-radius:13px;
+  display:none;flex-direction:column;align-items:center;padding:5px 4px 0;
+  background:linear-gradient(150deg,#ffffff 0%,#f7f8f9 24%,#e9ebee 60%,#d9dce0 100%);
+  box-shadow:0 2px 2px rgba(255,255,255,1) inset,-2px 0 5px rgba(255,255,255,.85) inset,
+    0 -3px 8px rgba(165,172,184,.5) inset,3px 3px 6px rgba(165,172,184,.35) inset,
+    0 10px 22px -8px rgba(40,50,70,.5),0 4px 10px -4px rgba(40,50,70,.35);
+  touch-action:none;user-select:none;-webkit-user-select:none;}
+.ipod-ball.show{display:flex;}
+.ipod-ball .ib-screen{width:46px;height:32px;border-radius:3px;overflow:hidden;
+  border:1px solid #a8adb6;background:#e8ebee;display:grid;place-items:center;flex-shrink:0;
+  box-shadow:0 1px 2px rgba(0,0,0,.2) inset;}
+.ipod-ball .ib-screen img{width:100%;height:100%;object-fit:cover;display:block;}
+.ipod-ball .ib-wheel{width:36px;height:36px;border-radius:50%;margin-top:5px;position:relative;
+  background:radial-gradient(circle at 50% 30%,#f4f5f6 0%,#e2e5e8 34%,#c9cdd2 62%,#b0b5bb 100%);
+  box-shadow:0 2px 5px rgba(70,78,95,.35),0 1px 0 rgba(255,255,255,1) inset,
+    0 -2px 5px rgba(120,128,142,.45) inset;display:grid;place-items:center;}
+.ipod-ball .ib-wheel:active{transform:scale(.94);}
+.ipod-ball .ib-wheel .ib-hub{width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 50% 34%,#ffffff,#e4e7ea);
+  box-shadow:0 1px 3px rgba(90,100,120,.35);}
+.ipod-ball .ib-pp{position:absolute;bottom:2.5px;font-size:7px;color:#6f747c;letter-spacing:.5px;}
+.ipod-ball.playing .ib-screen img{animation:ibspin 14s linear infinite;}
+@keyframes ibspin{to{transform:rotate(360deg);}}
+</style>
+<div class="ipod-ball" id="ipod-ball" style="bottom:110px;">
+  <div class="ib-screen"><img id="ib-cover" alt=""></div>
+  <div class="ib-wheel" id="ib-wheel"><span class="ib-hub"></span><span class="ib-pp" id="ib-pp">&#10074;&#10074;</span></div>
+</div>
+
 <div class="room" id="netease" style="background:var(--bg);">
-  <div class="reader-head" style="background:var(--bg2);">
-    <div class="reader-book" id="netease-title">一起听</div>
-    <div class="reader-size">
+  <!-- 顶栏跟播放器连成一体：白底、不显示网址，只留三个按钮 -->
+  <div class="reader-head" style="background:#fbfcfd;border-bottom:none;">
+    <div class="reader-book" id="netease-title" style="color:transparent;"></div>
+    <div class="reader-size" style="color:#8a9098;">
       <span id="netease-reload" title="重新加载">↻</span>
       <span id="netease-open" title="在浏览器打开">↗</span>
       <span id="netease-close" style="margin-left:4px;">✕</span>
@@ -570,7 +602,7 @@ window.addEventListener('error', function (e) {
   </div>
   <div class="split">
     <div class="split-top" style="position:relative;">
-      <iframe id="netease-frame" style="flex:1;width:100%;border:none;background:var(--bg);"
+      <iframe id="netease-frame" style="flex:1;width:100%;border:none;background:#fbfcfd;"
         allow="autoplay; clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
       <div id="netease-fail" style="display:none;position:absolute;inset:0;background:var(--bg);
         align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:30px;text-align:center;">
