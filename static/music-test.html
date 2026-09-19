@@ -73,6 +73,10 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-heart.liked{color:#ec4141;}
 .b-heart.liked svg path{fill:currentColor;stroke:none;}
 .b-heart svg{width:26px;height:26px;fill:currentColor;}
+/* 单人显单颗,一起听显双人红心 */
+.heart-double{display:none;}
+#play-page.listening .heart-single{display:none;}
+#play-page.listening .heart-double{display:block;width:30px;height:28px;}
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
 .chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:80px;display:none;flex-direction:column;padding:0 18px;}
 .chat-view.on{display:flex;}
@@ -165,6 +169,16 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .q-del{background:none;border:none;font-size:15px;color:#c0c4ca;flex-shrink:0;padding:4px;}
 .q-foot{padding:14px 18px;border-top:1px solid #e4e7ea;text-align:center;}
 .q-foot span{font-size:14px;color:#5a6068;}
+/* 邀请弹窗 */
+.invite-mask{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;padding:40px;}
+.invite-mask.show{display:flex;}
+.invite-card{background:#fff;border-radius:22px;padding:28px 24px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 50px -12px rgba(0,0,0,.4);}
+.invite-ic{font-size:44px;margin-bottom:12px;}
+.invite-tx{font-size:16px;color:#20262c;font-weight:600;margin-bottom:22px;line-height:1.4;}
+.invite-btns{display:flex;gap:12px;}
+.invite-btns button{flex:1;padding:12px;border-radius:22px;border:none;font-size:15px;font-weight:600;}
+.inv-no{background:#eef0f2;color:#8a9098;}
+.inv-yes{background:#ec4141;color:#fff;}
 
 /* 单人/一起听 排版切换 */
 .together{display:none;}
@@ -241,7 +255,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
         <div class="b-artist"><span id="b-artist">向下收起，去搜一首</span><span class="b-follow" style="display:none">关注</span></div>
       </div>
       <div class="b-social">
-        <button class="b-heart" id="btn-heart"><svg viewBox="0 0 24 24"><path d="M12 20.3l-1.45-1.32C5.4 14.24 2 11.16 2 7.38 2 4.3 4.42 2 7.5 2c1.74 0 3.41.81 4.5 2.09C13.09 2.81 14.76 2 16.5 2 19.58 2 22 4.3 22 7.38c0 3.78-3.4 6.86-8.55 11.61L12 20.3z"/></svg></button>
+        <button class="b-heart" id="btn-heart"><svg class="heart-single" viewBox="0 0 24 24"><path d="M12 20.3l-1.45-1.32C5.4 14.24 2 11.16 2 7.38 2 4.3 4.42 2 7.5 2c1.74 0 3.41.81 4.5 2.09C13.09 2.81 14.76 2 16.5 2 19.58 2 22 4.3 22 7.38c0 3.78-3.4 6.86-8.55 11.61L12 20.3z"/></svg><svg class="heart-double" viewBox="0 0 32 30"><defs><path id="bigH" transform="rotate(-25 13 16)" d="M13 24l-1.6-1.45C6.3 18 3 14.6 3 10.4 3 7 5.4 4.5 8.5 4.5c1.9 0 3.75.9 4.5 2.3C13.75 5.4 15.6 4.5 17.5 4.5 20.6 4.5 23 7 23 10.4c0 4.2-3.3 7.6-8.4 12.15L13 24z"/><clipPath id="clipBig"><use href="#bigH"/></clipPath></defs><use href="#bigH" fill="#ec4141"/><g clip-path="url(#clipBig)"><path transform="rotate(25 21 18)" d="M21 23l-1.1-1C16.5 18.7 14 16.3 14 13.4 14 11 15.7 9.3 17.9 9.3c1.36 0 2.66.63 3.1 1.6C21.44 9.93 22.74 9.3 24.1 9.3 26.3 9.3 28 11 28 13.4c0 2.9-2.5 5.3-6.9 9.6L21 23z" fill="none" stroke="#fff" stroke-width="2.4"/></g><path transform="rotate(25 21 18)" d="M21 23l-1.1-1C16.5 18.7 14 16.3 14 13.4 14 11 15.7 9.3 17.9 9.3c1.36 0 2.66.63 3.1 1.6C21.44 9.93 22.74 9.3 24.1 9.3 26.3 9.3 28 11 28 13.4c0 2.9-2.5 5.3-6.9 9.6L21 23z" fill="#ec4141"/></svg></button>
         <button class="b-cmt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
       </div>
     </div>
@@ -269,6 +283,18 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div></div>
 </div>
 <div class="queue-sheet" id="queue-sheet"></div>
+
+<!-- 邀请弹窗 -->
+<div class="invite-mask" id="invite-mask">
+  <div class="invite-card">
+    <div class="invite-ic">🎧</div>
+    <div class="invite-tx" id="invite-tx">Claude 邀请你一起听</div>
+    <div class="invite-btns">
+      <button class="inv-no" id="inv-no">以后再说</button>
+      <button class="inv-yes" id="inv-yes">一起听</button>
+    </div>
+  </div>
+</div>
 <div class="mini" id="mini">
   <img id="mini-cover" src="">
   <div class="mt"><div class="nm" id="mini-nm">—</div><div class="ar" id="mini-ar">—</div></div>
@@ -416,6 +442,10 @@ async function playSong(s){
   $('mini-nm').textContent=s.name;$('mini-ar').textContent=s.artist;
   try{const r=await fetch('/api/music/url?id='+s.id).then(r=>r.json());if(!r.ok)return;audio.src=r.url;await audio.play().catch(()=>{});}catch(e){}
   loadLyric(s.id);refreshMini();syncHeart(s.id);
+  // 一起听时上报当前歌
+  if($('play-page').classList.contains('listening')){
+    fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({song:{name:s.name,artist:s.artist,id:s.id}})}).catch(()=>{});
+  }
 }
 // 红心状态同步
 let likedSet=null;
@@ -520,12 +550,53 @@ function loadAvatars(){
 }
 
 // 单人/一起听 切换
-function toggleTogether(){
-  const on=$('play-page').classList.toggle('listening');
-  $('top-title').textContent=on?'一起听':'一起听';
-  if(!on){setMode(false);} // 退出一起听回音乐视图
+// 单人/一起听 + 互相邀请
+function enterTogether(){
+  $('play-page').classList.add('listening');
+}
+function exitTogether(){
+  $('play-page').classList.remove('listening');
+  setMode(false);
+  fetch('/api/music/listen/end',{method:'POST'}).catch(()=>{});
+}
+async function toggleTogether(){
+  const on=$('play-page').classList.contains('listening');
+  if(on){exitTogether();}
+  else{
+    // 你发起一起听:进模式 + 邀请AI + 标记active
+    enterTogether();
+    try{
+      await fetch('/api/music/listen/accept',{method:'POST'}); // 标记一起听active
+      await fetch('/api/music/listen/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from:'user',name:'慧'})});
+      toast('已开始一起听');
+    }catch(e){}
+  }
 }
 $('btn-together').onclick=toggleTogether;
+
+// 收到AI邀请 → 弹窗
+let inviteShown=false;
+async function pollInvite(){
+  try{
+    const r=await fetch('/api/music/listen/state').then(r=>r.json());
+    if(r.invite&&r.invite.from==='ai'&&!inviteShown&&!$('play-page').classList.contains('listening')){
+      inviteShown=true;
+      $('invite-tx').textContent=(r.invite.name||'Claude')+' 邀请你一起听';
+      $('invite-mask').classList.add('show');
+    }
+  }catch(e){}
+}
+setInterval(pollInvite,8000);pollInvite();
+$('inv-yes').onclick=async()=>{
+  $('invite-mask').classList.remove('show');inviteShown=false;
+  enterTogether();
+  await fetch('/api/music/listen/accept',{method:'POST'}).catch(()=>{});
+  toast('开始一起听');
+};
+$('inv-no').onclick=async()=>{
+  $('invite-mask').classList.remove('show');
+  await fetch('/api/music/listen/end',{method:'POST'}).catch(()=>{});
+};
 
 loadAvatars();
 
@@ -592,9 +663,32 @@ async function sendChat(){
 $('cv-send').onclick=sendChat;
 $('cv-text').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
 
+// 轮询收新消息(AI通过MCP push的,一起听时)
+let chatLastTs=0;
+async function pollChat(){
+  if(!$('play-page').classList.contains('listening'))return;
+  try{
+    const r=await fetch('/api/music/chat/history').then(r=>r.json());
+    if(r.ok&&r.messages){
+      const newMsgs=r.messages.filter(m=>!m.me&&m.ts>chatLastTs);
+      if(chatLastTs>0&&newMsgs.length&&$('cv-msgs')._loaded){
+        newMsgs.forEach(m=>addMsg(m.text,false));
+      }
+      if(r.messages.length)chatLastTs=Math.max(...r.messages.map(m=>m.ts||0));
+    }
+  }catch(e){}
+}
+setInterval(pollChat,6000);
+
 let lastSeq=0;
 setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
-  if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}else if(c.action==='stop')audio.pause();}}catch(e){}},5000);
+  if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;
+    if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}
+    else if(c.action==='stop'||c.action==='pause')audio.pause();
+    else if(c.action==='resume')audio.play().catch(()=>{});
+    else if(c.action==='next')playNext();
+    else if(c.action==='prev')playPrev();
+  }}catch(e){}},5000);
 
 showTab('mine');
 
