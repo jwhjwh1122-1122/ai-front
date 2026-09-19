@@ -326,7 +326,6 @@ async function openNetease() {
   $('netease').classList.add('open');
   bindIpodBall(); setTimeout(refreshIpodBall, 30);
   forceSplitLayout('netease');
-  setTimeout(probeBlank, 600);
   $('netease-title').textContent = '';   // 不显示网址
   const f = $('netease-frame'), fail = $('netease-fail');
   // 播放器已经加载过了(可能正在后台放歌)：直接显示，别重新加载
@@ -520,33 +519,6 @@ function renderSplit(which) {
   });
   roomCtx = keep;
   box.scrollTop = box.scrollHeight;
-}
-// 排查用：屏幕上取几个点，看那儿到底是什么元素（找到原因后会删掉）
-function probeBlank() {
-  try {
-    const W = window.innerWidth, H = window.innerHeight, lines = [];
-    [0.2, 0.4, 0.6, 0.8].forEach(r => {
-      const el = document.elementFromPoint(Math.round(W / 2), Math.round(H * r));
-      if (!el) { lines.push(Math.round(r * 100) + '%: null'); return; }
-      const id = el.id ? '#' + el.id : '';
-      const cl = (el.className && typeof el.className === 'string')
-        ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-      lines.push(Math.round(r * 100) + '%: ' + el.tagName.toLowerCase() + id + cl);
-    });
-    const f = document.getElementById('netease-frame');
-    lines.push('iframe: ' + (f ? (f.clientWidth + 'x' + f.clientHeight + ' src=' +
-      String(f.src || '').replace(location.origin, '').slice(0, 40)) : 'none'));
-    let box = document.getElementById('_probe');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = '_probe';
-      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:rgba(30,20,26,.92);' +
-        'color:#ffd9e3;font:11px/1.5 -apple-system,monospace;padding:8px 10px;white-space:pre-wrap;';
-      box.onclick = () => box.remove();
-      document.body.appendChild(box);
-    }
-    box.textContent = W + 'x' + H + '（点一下关掉）\n' + lines.join('\n');
-  } catch (e) { }
 }
 // 强制把布局钉死（内联样式优先级最高，缓存的旧 CSS 盖不过它）
 function forceSplitLayout(which) {
