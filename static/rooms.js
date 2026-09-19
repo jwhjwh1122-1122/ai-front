@@ -404,7 +404,7 @@ window.addEventListener('message', e => {
 function bindIpodBall() {
   ipodBoth().forEach(b => {
     if (b._bound) return; b._bound = true;
-    let moved = false, sy = 0, startBottom = 0, pressT = null, longPressed = false;
+    let moved = false, sx = 0, sy = 0, startBottom = 0, startRight = 0, pressT = null, longPressed = false;
     const wheel = b.querySelector('.wheel') || b.querySelector('.hwheel');
     if (wheel) wheel.addEventListener('click', e => {
       e.stopPropagation();
@@ -420,8 +420,9 @@ function bindIpodBall() {
     const scr = b.querySelector('.screen') || b.querySelector('.hscreen');
     if (scr) scr.addEventListener('click', e => { e.stopPropagation(); if (!moved && !longPressed) openNetease(); });
     b.addEventListener('pointerdown', e => {
-      moved = false; longPressed = false; sy = e.clientY;
+      moved = false; longPressed = false; sx = e.clientX; sy = e.clientY;
       startBottom = parseInt(b.style.bottom || '110', 10);
+      startRight = parseInt(b.style.right || '12', 10);
       try { b.setPointerCapture(e.pointerId); } catch (_) { }
       clearTimeout(pressT);
       // 长按 550ms → 换造型
@@ -431,7 +432,7 @@ function bindIpodBall() {
         _ipodMode = _ipodMode === 'bar' ? 'pod' : 'bar';
         localStorage.setItem('ipod-ball-mode', _ipodMode);
         const other = ipodEl();
-        if (other) other.style.bottom = b.style.bottom || '110px';
+        if (other) { other.style.bottom = b.style.bottom || '110px'; other.style.right = b.style.right || '12px'; }
         refreshIpodBall();
         if (window.toast) toast(_ipodMode === 'bar' ? '横着的' : '竖着的');
         if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) { }
@@ -439,23 +440,32 @@ function bindIpodBall() {
     });
     b.addEventListener('pointermove', e => {
       if (!e.buttons) return;
-      const dy = sy - e.clientY;
-      if (Math.abs(dy) > 4) { moved = true; clearTimeout(pressT); }
+      const dy = sy - e.clientY, dx = sx - e.clientX;
+      if (Math.abs(dy) > 8 || Math.abs(dx) > 8) { moved = true; clearTimeout(pressT); }   // 手抖不算拖
       if (moved) {
-        const nb = Math.min(window.innerHeight - 130, Math.max(20, startBottom + dy));
+        // 全屏任意位置，只留 8px 边距，别飞出屏幕
+        const w = b.offsetWidth, h = b.offsetHeight;
+        const nb = Math.min(window.innerHeight - h - 8, Math.max(8, startBottom + dy));
+        const nr = Math.min(window.innerWidth - w - 8, Math.max(8, startRight + dx));
         b.style.bottom = nb + 'px';
+        b.style.right = nr + 'px';
       }
     });
     b.addEventListener('pointerup', () => {
       clearTimeout(pressT);
       if (moved) {
-        try { localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10)); } catch (_) { }
-        ipodBoth().forEach(x => x.style.bottom = b.style.bottom);
+        try {
+          localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10));
+          localStorage.setItem('ipod-ball-right', parseInt(b.style.right, 10));
+        } catch (_) { }
+        ipodBoth().forEach(x => { x.style.bottom = b.style.bottom; x.style.right = b.style.right; });
       }
       setTimeout(() => { moved = false; longPressed = false; }, 30);
     });
     const saved = localStorage.getItem('ipod-ball-bottom');
     if (saved) b.style.bottom = saved + 'px';
+    const savedR = localStorage.getItem('ipod-ball-right');
+    if (savedR) b.style.right = savedR + 'px';
   });
   if (!window._ipodAsk) {
     window._ipodAsk = setInterval(() => { if (_ipodNP === null) ipodSend('ask'); }, 3000);
@@ -524,15 +534,22 @@ function bindSplit(which) {
   bar.addEventListener('touchmove', e => {
     if (!dragging) return;
     const dy = startY - e.touches[0].clientY;
-    place(Math.max(0, Math.min(window.innerHeight * 0.7, startH + dy)));
+    const box = chat.parentElement ? chat.parentElement.clientHeight : window.innerHeight;
+    place(Math.max(0, Math.min(box * 0.75, startH + dy)));
   }, { passive: true });
   bar.addEventListener('touchend', () => { dragging = false; bar.style.transition = ''; chat.style.transition = ''; });
   bar.addEventListener('click', () => {
     const hidden = chat.classList.contains('hidden') || chat.offsetHeight < 30;
-    place(hidden ? Math.round(window.innerHeight * 0.38) : 0);
+    if (hidden) {                 // 展开：交回给 CSS 的 38vh，别自己算高度
+      chat.style.height = '';
+      bar.style.bottom = '';
+      chat.classList.remove('hidden');
+      $('split-hint-' + which).textContent = '收起';
+    } else {
+      place(0);
+    }
   });
-  // 初始位置
-  place(Math.round(window.innerHeight * 0.38));
+  place(0);   // 默认收起：一进来整屏都是播放器，想聊天自己往上拉
 }
 
 // ============ 放映室 / 听音房 ============
