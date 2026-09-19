@@ -90,7 +90,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-input{display:flex;gap:8px;padding:10px 0;flex-shrink:0;}
 .cv-input input{flex:1;padding:11px 15px;border-radius:20px;border:none;background:#e9ecef;font-size:15px;outline:none;color:#2b2f36;}
 .cv-input button{padding:0 18px;border-radius:20px;border:none;background:#ec4141;color:#fff;font-size:14px;font-weight:600;}
-.mc-switch{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);display:flex;background:#e9ecef;border-radius:22px;padding:3px;gap:2px;z-index:4;}
+.mc-switch{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);display:flex;background:#e9ecef;border-radius:22px;padding:3px;gap:2px;z-index:8;}
 .mc-btn{width:52px;height:36px;border:none;background:none;border-radius:19px;display:grid;place-items:center;color:#8a9098;}
 .mc-btn svg{width:22px;height:22px;}
 .mc-btn.on{background:#fff;color:#2b2f36;box-shadow:0 1px 4px rgba(60,70,90,.12);}
@@ -108,25 +108,25 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cb.mode svg,.cb.list svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
 .cb.side svg{width:30px;height:30px;}
 .cb.main svg{width:52px;height:52px;}
-.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;}
+.lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;overflow-x:hidden;}
 .lyric-view.on{display:flex;}
-.ly-scroll{flex:1;overflow-y:auto;text-align:center;padding:16vh 8px 26vh;scrollbar-width:none;}
+.ly-scroll{flex:1;overflow-y:auto;overflow-x:hidden;text-align:center;padding:16vh 0 26vh;margin:0 -12px;scrollbar-width:none;}
 .ly-scroll::-webkit-scrollbar{display:none;}
-.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:12px 18px;margin:0 -12px;transition:color .25s,font-size .25s,background .2s;}
+.ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:8px 10px;margin:9px 0;transition:color .25s,font-size .25s,background .2s;}
 .ly-line.cur{font-size:18px;color:#20262c;}
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
 .ly-line.cur .tr{color:#5a6068;}
 .ly-empty{color:#b0b6be;font-size:14px;padding-top:36vh;}
 /* 歌词滑动定位条（拖动时有线，松手后只剩时间和三角）*/
-.ly-seek{position:absolute;left:22px;right:22px;top:0;transform:translateY(-50%);display:none;align-items:center;gap:12px;z-index:6;pointer-events:none;}
+.ly-seek{position:absolute;left:14px;right:14px;top:0;transform:translateY(-50%);display:none;align-items:center;gap:12px;z-index:6;pointer-events:none;}
 .ly-seek.on{display:flex;}
 .ly-seek .tm{font-size:11px;color:#9298a0;width:34px;flex-shrink:0;}
-.ly-seek .ln{flex:1;height:1px;background:#d3d8de;transition:opacity .2s;}
+.ly-seek .ln{flex:1;height:1px;background:rgba(130,140,152,.22);transition:opacity .2s;}
 .ly-seek.rest .ln{opacity:0;}
 .ly-seek .pl{width:26px;height:26px;display:grid;place-items:center;color:#3a3f47;flex-shrink:0;pointer-events:auto;background:none;border:none;padding:0;-webkit-appearance:none;appearance:none;box-shadow:none;}
-.ly-seek .pl svg{width:16px;height:16px;fill:currentColor;stroke:none;}
-.ly-line.pick{color:#20262c;}
-.ly-line.pick.rest{background:rgba(120,130,145,.10);border-radius:10px;}
+.ly-seek .pl svg{width:15px;height:15px;fill:currentColor;stroke:none;}
+.ly-line.pick{color:#7b818a;}
+.ly-line.pick.rest{background:rgba(120,130,145,.10);border-radius:16px;}
 #list-page{z-index:1;padding-bottom:0;}
 .lp-top{display:flex;align-items:center;gap:14px;height:44px;flex-shrink:0;}
 .lp-tab{font-size:19px;font-weight:700;color:#b6bcc4;}
@@ -335,7 +335,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
   </div>
   <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
-    <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M9 3.5L16.5 12 9 20.5z"/></svg></button></div>
+    <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></button></div>
   </div>
 </div>
 <div class="queue-sheet" id="queue-sheet"></div>
@@ -626,12 +626,23 @@ async function playSong(s){
   }
 }
 // 红心状态同步
-let likedSet=null;
+let likedSet=null,likedLoading=null;
+async function loadLiked(){
+  // 拿不到就下次再试，不要一次失败就永远当成"没红心过"
+  try{
+    const r=await fetch('/api/music/liked').then(r=>r.json());
+    const ids=(r&&r.ids)||[];
+    if(ids.length){likedSet=new Set(ids.map(String));}
+    else{likedSet=null;console.log('红心列表空:',r&&r.error);}
+  }catch(e){likedSet=null;}
+  likedLoading=null;
+}
 async function syncHeart(id){
   if(likedSet===null){
-    try{const r=await fetch('/api/music/liked').then(r=>r.json());likedSet=new Set((r.ids||[]).map(String));}catch(e){likedSet=new Set();}
+    if(!likedLoading)likedLoading=loadLiked();
+    await likedLoading;
   }
-  $('btn-heart').classList.toggle('liked',likedSet.has(String(id)));
+  $('btn-heart').classList.toggle('liked',!!likedSet&&likedSet.has(String(id)));
 }
 function showQueue(){
   if(!queue.length){toast('还没有歌');return;}
@@ -809,10 +820,9 @@ function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyVi
   if(lyView){lyHideSeek();lastLy=-1;updLyric(audio.currentTime);}else{lyHideSeek();}}
 $('ipod-tap').addEventListener('click',e=>{if(e.target.closest('.wheel'))return;if(e.target.closest('.screen'))toggleLyric();});
 $('lyric-view').addEventListener('click',e=>{
-  if(e.target.closest('#ly-seek'))return;       // 点定位条不关页面
-  if(lyMoved){lyMoved=false;return;}            // 刚才是在滑歌词
-  if(lySeeking||lyResting){lyHideSeek();lastLy=-1;updLyric(audio.currentTime);return;}
-  toggleLyric();
+  if(e.target.closest('#ly-seek'))return;   // 点定位条(三角)不关页面
+  if(lyMoved){lyMoved=false;return;}        // 刚才是在滑歌词，不算点击
+  toggleLyric();                            // 其他情况：轻点一下就回随身听
 });
 // 进度条：点一下跳，按住圆点也能拖
 (function(){
@@ -957,6 +967,7 @@ setInterval(()=>{
 let chatMode=false;
 function setMode(chat){
   chatMode=chat;
+  if(chat&&lyView){lyView=false;$('lyric-view').classList.remove('on');lyHideSeek();}
   $('chat-view').classList.toggle('on',chat);
   $('mc-music').classList.toggle('on',!chat);
   $('mc-chat').classList.toggle('on',chat);
@@ -965,10 +976,10 @@ function setMode(chat){
   document.querySelector('.below').style.display=chat?'none':'block';
   if(chat){loadChatHistory();setTimeout(()=>{const m=$('cv-msgs');m.scrollTop=m.scrollHeight;},100);}
 }
-$('mc-music').onclick=()=>setMode(false);
-$('mc-chat').onclick=()=>setMode(true);
+$('mc-music').onclick=()=>{if(lyView)toggleLyric();setMode(false);};
+$('mc-chat').onclick=()=>{if(lyView)toggleLyric();setMode(true);};
 // 播放页那个💬也切到聊天
-document.querySelector('.b-cmt').onclick=()=>setMode(true);
+document.querySelector('.b-cmt').onclick=()=>{if(lyView)toggleLyric();setMode(true);};
 
 // ── 聊天 ──
 function addMsg(text,me){
