@@ -138,6 +138,28 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res .go{color:#ec4141;font-size:22px;}
 .hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
+.more-tip{text-align:center;color:#c0c4ca;font-size:12px;padding:14px 0 26px;}
+/* 听歌排行入口图标(第一名封面+白色阶梯) */
+.rank-ic{width:46px;height:46px;border-radius:10px;flex-shrink:0;position:relative;display:grid;place-items:center;background:#8a9098 center/cover no-repeat;}
+.rank-ic::after{content:"";position:absolute;inset:0;border-radius:10px;background:rgba(0,0,0,.28);}
+.rank-ic svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;position:relative;z-index:1;}
+/* 听歌排行页 */
+.rk-head{display:flex;align-items:center;gap:8px;padding:4px 2px 10px;}
+.rk-back{font-size:20px;color:#5a6068;}
+.rk-title{font-size:17px;font-weight:700;}
+.rk-tabs{display:flex;gap:26px;padding:2px 2px 12px;}
+.rk-tab{font-size:14px;color:#9298a0;position:relative;padding-bottom:7px;}
+.rk-tab.on{color:#20262c;font-weight:600;}
+.rk-tab.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:18px;height:3px;border-radius:2px;background:#ec4141;}
+.rk-sub{font-size:12px;color:#b0b6be;padding:0 2px 10px;}
+.rk-row{display:flex;align-items:center;gap:11px;padding:10px 2px;}
+.rk-row:active{opacity:.6;}
+.rk-i{width:24px;text-align:center;font-size:13px;color:#b0b6be;flex-shrink:0;}
+.rk-mid{flex:1;min-width:0;}
+.rk-nm{font-size:15px;color:#20262c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rk-ar{font-size:12px;color:#9298a0;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rk-n{font-size:12px;color:#9298a0;flex-shrink:0;display:flex;align-items:center;gap:3px;justify-content:flex-end;min-width:50px;}
+.rk-n svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;flex-shrink:0;}
 .mini{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 10px);height:56px;border-radius:28px;background:rgba(255,255,255,.92);backdrop-filter:blur(16px);box-shadow:0 6px 20px -6px rgba(60,70,90,.3);display:none;align-items:center;gap:11px;padding:6px 12px 6px 6px;z-index:5;}
 .mini.show{display:flex;}
 .mini img{width:44px;height:44px;border-radius:50%;object-fit:cover;background:#d8dce2;animation:spin 12s linear infinite;animation-play-state:paused;}
@@ -354,6 +376,7 @@ function showTab(t,keep){
 document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
 
 async function renderMine(){
+  $('lp-body').onscroll=null;$('lp-body').scrollTop=0;
   $('lp-body').innerHTML='<div class="hint">加载中…</div>';
   const fixed=[
     {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
@@ -367,9 +390,14 @@ async function renderMine(){
       // 固定入口(最近/网盘)
       h+=fixed.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div></div></div>`).join('');
       h+='<div style="font-size:12px;color:#9298a0;padding:16px 2px 6px;">我的歌单</div>';
-      h+=r.playlists.map(p=>{
+      h+=r.playlists.map((p,pi)=>{
         const cover=p.cover?`<img src="${p.cover}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0;">`:`<div class="mine-ic">♪</div>`;
-        return `<div class="mine-item" data-pl="${p.id}" data-name="${p.name.replace(/"/g,'')}">${cover}<div class="mine-tx"><div class="nm">${p.name}</div><div class="sub">${p.count} 首</div></div></div>`;
+        let row=`<div class="mine-item" data-pl="${p.id}" data-name="${p.name.replace(/"/g,'')}">${cover}<div class="mine-tx"><div class="nm">${p.name}</div><div class="sub">${p.count} 首</div></div></div>`;
+        // 听歌排行紧跟在"我喜欢的音乐"(第一个歌单)下面
+        if(pi===0){
+          row+=`<div class="mine-item" data-act="rank"><div class="rank-ic" id="rank-ic"><svg viewBox="0 0 24 24"><path d="M5 20V13M10 20V8M15 20V4M20 20v-9"/></svg></div><div class="mine-tx"><div class="nm">听歌排行</div><div class="sub" id="rank-sub">看看这段时间在循环什么</div></div></div>`;
+        }
+        return row;
       }).join('');
     }else{h+='<div class="hint">'+(r.error||'没拿到歌单')+'</div>';}
   }catch(e){h+='<div class="hint">出错：'+e+'</div>';}
@@ -379,10 +407,13 @@ async function renderMine(){
     const a=el.dataset.act;
     if(a==='recent')openList('/api/music/my/recent','最近播放');
     else if(a==='cloud')openList('/api/music/my/cloud','音乐网盘');
+    else if(a==='rank')openRank(rankPeriod);
   });
+  primeRankEntry();
 }
 // 打开歌单 → 显示里面的歌
 async function openPlaylist(pid,name){
+  $('lp-body').onscroll=null;$('lp-body').scrollTop=0;
   $('lp-body').innerHTML='<div class="hint">加载歌单…</div>';
   showTab('mine',true);
   try{
@@ -392,6 +423,7 @@ async function openPlaylist(pid,name){
   }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
 }
 async function openList(url,name){
+  $('lp-body').onscroll=null;$('lp-body').scrollTop=0;
   $('lp-body').innerHTML='<div class="hint">加载…</div>';showTab('mine',true);
   try{
     const r=await fetch(url).then(r=>r.json());
@@ -400,17 +432,108 @@ async function openList(url,name){
   }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
 }
 // 渲染歌曲列表(点歌→整个列表成为队列,从这首开始放)
+// 2000+首一次性塞进DOM会把Safari卡死,所以分批渲染:先出80首,往下滚再续
+const CHUNK=80;
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderSongList(songs,title,queue){
   if(!songs.length){$('lp-body').innerHTML='<div class="hint">'+title+'：空的</div>';return;}
-  let h='<div style="display:flex;align-items:center;gap:8px;padding:4px 2px 12px;"><span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span><span style="font-size:17px;font-weight:700;">'+title+'</span><span style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>';
-  h+=songs.map((s,i)=>`<div class="res" data-i="${i}"><div style="width:22px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">${i+1}</div><div class="i"><div class="nm">${s.name}</div><div class="ar">${s.artist}</div></div><div class="go" data-add="${i}">＋</div></div>`).join('');
-  $('lp-body').innerHTML=h;
+  $('lp-body').innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:4px 2px 12px;">'+
+    '<span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span>'+
+    '<span style="font-size:17px;font-weight:700;">'+esc(title)+'</span>'+
+    '<span style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>'+
+    '<div id="song-rows"></div><div class="more-tip" id="more-tip"></div>';
   $('pl-back').onclick=()=>renderMine();
-  document.querySelectorAll('.res[data-i]').forEach(el=>{
-    const i=+el.dataset.i;
-    el.querySelector('.i').onclick=()=>{setQueue(queue,i);expand();};
-    el.querySelector('[data-add]').onclick=(e)=>{e.stopPropagation();addNext(queue[i]);};
-  });
+  const rows=$('song-rows'),tip=$('more-tip');
+  let shown=0;
+  function chunk(){
+    const end=Math.min(shown+CHUNK,songs.length);
+    let h='';
+    for(let i=shown;i<end;i++){
+      const s=songs[i];
+      h+='<div class="res" data-i="'+i+'"><div style="width:26px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">'+(i+1)+'</div>'+
+         '<div class="i"><div class="nm">'+esc(s.name)+'</div><div class="ar">'+esc(s.artist)+'</div></div>'+
+         '<div class="go" data-add="'+i+'">＋</div></div>';
+    }
+    rows.insertAdjacentHTML('beforeend',h);
+    shown=end;
+    tip.textContent=shown<songs.length?('已显示 '+shown+' / '+songs.length+'，继续下滑加载'):(songs.length>CHUNK?'到底啦':'');
+  }
+  chunk();
+  // 事件委托:一个监听器管全部,不再给每行挂两个
+  rows.onclick=e=>{
+    const add=e.target.closest('[data-add]');
+    if(add){e.stopPropagation();addNext(queue[+add.dataset.add]);return;}
+    const row=e.target.closest('.res[data-i]');
+    if(row){setQueue(queue,+row.dataset.i);expand();}
+  };
+  const body=$('lp-body');
+  body.onscroll=()=>{
+    if(shown>=songs.length)return;
+    if(body.scrollTop+body.clientHeight>=body.scrollHeight-400)chunk();
+  };
+}
+
+// ── 听歌排行 ──
+let rankPeriod='week',rankCache={};
+async function primeRankEntry(){
+  // 入口图标用第一名的封面(网易云就是这么做的)
+  try{
+    const r=await fetchRank('week');
+    if(r&&r.ok&&r.songs&&r.songs.length){
+      const ic=$('rank-ic');
+      if(ic&&r.songs[0].cover)ic.style.backgroundImage='url('+r.songs[0].cover+')';
+      const sub=$('rank-sub');
+      if(sub&&r.listen_total)sub.textContent='累计听歌 '+r.listen_total+' 首';
+    }
+  }catch(e){}
+}
+async function fetchRank(period){
+  if(rankCache[period])return rankCache[period];
+  const r=await fetch('/api/music/my/rank?period='+period).then(r=>r.json());
+  if(r&&r.ok)rankCache[period]=r;
+  return r;
+}
+async function openRank(period){
+  rankPeriod=period||'week';
+  showTab('mine',true);
+  $('lp-body').innerHTML='<div class="hint">加载中…</div>';
+  let r;
+  try{r=await fetchRank(rankPeriod);}catch(e){r={ok:false,error:String(e)};}
+  if(!r||!r.ok){$('lp-body').innerHTML='<div class="hint">'+((r&&r.error)||'拿不到排行')+'</div>';return;}
+  const songs=r.songs||[];
+  $('lp-body').innerHTML=
+    '<div class="rk-head"><span class="rk-back" id="rk-back">‹</span><span class="rk-title">听歌排行</span></div>'+
+    '<div class="rk-tabs"><span class="rk-tab'+(rankPeriod==='week'?' on':'')+'" data-p="week">最近一周</span>'+
+    '<span class="rk-tab'+(rankPeriod==='all'?' on':'')+'" data-p="all">所有时间</span></div>'+
+    (r.listen_total?'<div class="rk-sub">累计听歌 '+r.listen_total+' 首</div>':'')+
+    '<div id="rk-rows"></div><div class="more-tip" id="rk-tip"></div>';
+  $('rk-back').onclick=()=>renderMine();
+  document.querySelectorAll('.rk-tab').forEach(t=>t.onclick=()=>openRank(t.dataset.p));
+  const rows=$('rk-rows'),tip=$('rk-tip');
+  let shown=0;
+  function chunk(){
+    const end=Math.min(shown+CHUNK,songs.length);
+    let h='';
+    for(let i=shown;i<end;i++){
+      const s=songs[i];
+      h+='<div class="rk-row" data-i="'+i+'"><div class="rk-i">'+(i+1)+'</div>'+
+         '<div class="rk-mid"><div class="rk-nm">'+esc(s.name)+'</div><div class="rk-ar">'+esc(s.artist)+'</div></div>'+
+         '<div class="rk-n"><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg>'+(s.play_count||0)+'</div></div>';
+    }
+    rows.insertAdjacentHTML('beforeend',h);
+    shown=end;
+    tip.textContent=shown<songs.length?('已显示 '+shown+' / '+songs.length+'，继续下滑加载'):'';
+  }
+  chunk();
+  rows.onclick=e=>{
+    const row=e.target.closest('.rk-row[data-i]');
+    if(row){setQueue(songs,+row.dataset.i);expand();}
+  };
+  const body=$('lp-body');
+  body.onscroll=()=>{
+    if(shown>=songs.length)return;
+    if(body.scrollTop+body.clientHeight>=body.scrollHeight-400)chunk();
+  };
 }
 
 // ── 搜索 ──
