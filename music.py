@@ -150,6 +150,16 @@ class MusicStore:
 class NeteaseClient:
     def __init__(self, store: MusicStore):
         self.store = store
+        # 连接池：每次请求重新建 TLS 连接要几百毫秒，复用之后快很多
+        self.sess = requests.Session()
+        try:
+            from requests.adapters import HTTPAdapter
+            ad = HTTPAdapter(pool_connections=8, pool_maxsize=24, max_retries=0)
+            self.sess.mount('https://', ad)
+            self.sess.mount('http://', ad)
+        except Exception:
+            pass
+        self._url_cache = {}      # {song_id: (到期时间, url)}
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._last_rank_err = ''
@@ -172,7 +182,7 @@ class NeteaseClient:
             'Referer': 'https://music.163.com',
         }
 
-    def eapi(self, path: str, payload: dict, timeout=12):
+    def eapi(self, path: str, payload: dict, timeout=9):
         """path 形如 /api/xxx。自动换成 /eapi/ 发出去。写操作 body 要带 header:{}。"""
         payload = dict(payload)
         payload.setdefault('header', '{}')
@@ -180,11 +190,11 @@ class NeteaseClient:
         params = eapi_encrypt(path, text)
         url = 'https://interface.music.163.com/eapi/' + path[len('/api/'):]
         ck = (DEVICE_INFO + '; ' + self.store.cookie()).strip('; ')
-        r = requests.post(url, data={'params': params},
-                          headers={'User-Agent': UA_IOS,
-                                   'Content-Type': 'application/x-www-form-urlencoded',
-                                   'Cookie': ck},
-                          timeout=timeout)
+        r = self.sess.post(url, data={'params': params},
+                           headers={'User-Agent': UA_IOS,
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                    'Cookie': ck},
+                           timeout=timeout)
         try:
             return r.json()
         except Exception:
@@ -196,9 +206,9 @@ class NeteaseClient:
         payload['csrf_token'] = self._csrf()
         body = weapi_encrypt(payload)
         url = 'https://music.163.com' + path
-        r = requests.post(url, data=body,
-                          headers=self._headers(pc=True, extra_cookie='os=pc'),
-                          timeout=timeout)
+        r = self.sess.post(url, data=body,
+                           headers=self._headers(pc=True, extra_cookie='os=pc'),
+                           timeout=timeout)
         try:
             return r.json()
         except Exception:
@@ -295,6 +305,11 @@ class NeteaseClient:
         云盘里自己上传的歌，老接口(player/url)经常返回空，得走 v1 接口按音质档取。
         这里依次试几条路，哪条出链接用哪条，所以云盘歌不用你一首首手动试。
         """
+        key = str(song_id)
+        c = self._url_cache.get(key)
+        now = time.time()
+        if c and c[0] > now:
+            return c[1]
         tries = [
             ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': br}),
             ('/api/song/enhance/player/url/v1',
@@ -315,6 +330,10 @@ class NeteaseClient:
                 if isinstance(d, dict):
                     u = d.get('url') or ''
                     if u:
+                        # 网易云直链大约 20 分钟有效，缓存 10 分钟够用
+                        self._url_cache[key] = (now + 600, u)
+                        if len(self._url_cache) > 400:
+                            self._url_cache.clear()
                         return u
             except Exception:
                 continue
@@ -1288,6 +1307,18 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'url': url, 'direct': url})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
+
+    @app.route('/api/music/prefetch', methods=['GET'])
+    def music_prefetch():
+        """提前把下一首的直链取好放缓存里，切歌时就不用等了。"""
+        sid = request.args.get('id', '')
+        if not sid:
+            return jsonify({'ok': False})
+        try:
+            threading.Thread(target=nc.song_url, args=(sid,), daemon=True).start()
+        except Exception:
+            pass
+        return jsonify({'ok': True})
 
     @app.route('/api/music/stream', methods=['GET'])
     def music_stream():
