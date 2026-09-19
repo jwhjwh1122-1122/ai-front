@@ -298,13 +298,18 @@ class NeteaseClient:
             ('/api/song/enhance/player/url/v1',
              {'ids': f'[{song_id}]', 'level': 'standard', 'encodeType': 'aac'}),
             ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': 128000}),
+            # 下面两条是云盘/下架歌的救命路：直接要自己账号里那份文件，绕开曲库
+            ('/api/song/enhance/download/url', {'id': song_id, 'br': br}),
+            ('/api/song/enhance/download/url/v1', {'id': song_id, 'level': 'exhigh'}),
         ]
         for path, payload in tries:
             try:
                 j = self.eapi(path, payload)
-                arr = j.get('data') or []
-                if arr and isinstance(arr[0], dict):
-                    u = arr[0].get('url') or ''
+                d = j.get('data')
+                if isinstance(d, list) and d and isinstance(d[0], dict):
+                    d = d[0]
+                if isinstance(d, dict):
+                    u = d.get('url') or ''
                     if u:
                         return u
             except Exception:
