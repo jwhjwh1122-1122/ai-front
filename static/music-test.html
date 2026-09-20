@@ -492,6 +492,10 @@ function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0
 // 两种模式：
 //   连播(hls)  —— 整个队列一条流，后台锁屏一首接一首，音质 320k mp3
 //   音质(solo) —— 单曲直连，超清母带/无损，但后台放完这首就停
+// userPaused：是不是你自己按的暂停。
+// 不能拿 audio.paused 判断——play() 在 iOS 上加载被打断时会失败，
+// 一失败 paused 就变 true，保险机制会误以为是你按的，然后什么都不做。
+let userPaused=false;
 let hlsMode=(localStorage.getItem('play-mode')||'hls')==='hls';
 const HLS_WIN=22;   // 一次拼多少首。太多了误差会攒，太少了会频繁重建              // 一张列表放多少首（够听两三个小时）
 let segs=[],segBase=0,segIdx=-1,hlsReady=false;
@@ -534,6 +538,7 @@ function startStream(idx,autoplay){
   idx=((idx%queue.length)+queue.length)%queue.length;
   const url=buildPlaylist(idx);
   warm(segs[0]&&segs[0].id);
+  userPaused=false;
   playToken++;
   flushScrobble();
   hlsReady=false;
@@ -550,43 +555,33 @@ function startStream(idx,autoplay){
   onSegChanged(0,true);
   if(autoplay!==false){audio.play().catch(playBlocked);armHlsFallback();}
 }
-// 保险：连播这条流有时候会卡在坏状态里，seek 不动也不报错，表现就是"点了没反应"。
-// 6 秒还没出声就用单曲模式把这首放出来，宁可这一首不连播，也别让人干等。
-let hlsFbTimer=null,hlsFbCount=0,hlsNudgeTimer=null;
-function armHlsFallback(){
-  clearTimeout(hlsFbTimer);clearTimeout(hlsNudgeTimer);
-  const my=playToken,sg=cur;
-  // 第一步：踹一脚。iOS 上 HLS 第一次加载经常卡死在缓冲里，不报错也不前进，
-  // 手动"暂停再播放"就能救活，这里替你按。
-  hlsNudgeTimer=setTimeout(()=>{
-    if(my!==playToken||!hlsMode)return;
-    if(audio.currentTime>0)return;
-    if(audio.paused)return;
-    try{audio.pause();audio.play().catch(()=>{});}catch(e){}
-    // 再补一脚：有的时候第一下踹不醒
-    setTimeout(()=>{
-      if(my!==playToken||!hlsMode||audio.currentTime>0||audio.paused)return;
-      try{audio.pause();audio.play().catch(()=>{});}catch(e){}
-    },3500);
-  },2500);
-  hlsFbTimer=setTimeout(()=>{
-    if(my!==playToken||!hlsMode)return;          // 中途换歌了，不管
-    if(!audio.paused&&audio.currentTime>0)return; // 已经在响了
-    if(audio.paused)return;                       // 是你自己按的暂停，不插手
-    if(!sg)return;
-    hlsFbCount++;
+// ── 卡死看门狗 ─────────────────────────────────────────────────────
+// 教训：以前用"currentTime 是不是 0"判断卡没卡，结果这条流卡住时
+// 照样报一个大于 0 的进度、图标也显示在播放，三道保险全都以为一切正常。
+// 该看的不是它等于几，是它有没有在往前走。
+let stallSec=0,lastT=-1,hlsFbCount=0;
+function armHlsFallback(){stallSec=0;lastT=-1;}
+function disarmHlsFallback(){stallSec=0;}
+setInterval(()=>{
+  if(!cur||userPaused||!audio.getAttribute('src')){stallSec=0;lastT=audio.currentTime;return;}
+  const t=audio.currentTime;
+  if(t!==lastT&&t>0){stallSec=0;lastT=t;hlsFbCount=0;return;}   // 在走，一切正常
+  lastT=t;stallSec++;
+  // 卡了 3 秒、7 秒：踹一脚（就是手动"暂停再播放"那下）
+  if(stallSec===3||stallSec===7){try{audio.pause();audio.play().catch(()=>{});}catch(e){}}
+  // 卡满 12 秒：这条流是真不行了，用单曲模式把这首放出来
+  if(stallSec>=12&&hlsMode){
+    stallSec=0;hlsFbCount++;
+    const sg=cur;
     if(hlsFbCount>=2){
-      // 连着两次都卡，说明这条流现在就是不行，别再反复试了
       hlsMode=false;localStorage.setItem('play-mode','solo');
       toast('连播老卡，先留在单曲模式');
     }else{
       toast('连播这首卡住了，换单曲模式放');
     }
-    soloPlay(sg);
-    setModeLabel();
-  },12000);
-}
-function disarmHlsFallback(){clearTimeout(hlsFbTimer);clearTimeout(hlsNudgeTimer);hlsFbCount=0;}
+    soloPlay(sg);setModeLabel();
+  }
+},1000);
 // iOS 上网页第一次出声之前，解码管道还没建起来，第一首歌就得一边搭管道一边缓冲，
 // 所以特别慢。这里在你第一次碰屏幕的那一刻，用一段 0.05 秒的静音把管道先点着，
 // 等你真点歌的时候它已经是热的了。只做一次。
@@ -1237,6 +1232,7 @@ function resetPlayUI(){
 async function soloPlay(sg){
   if(!sg)return;
   const my=++playToken;
+  userPaused=false;
   segs=[];segIdx=-1;hlsReady=false;
   flushScrobble();
   try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}
@@ -1473,8 +1469,6 @@ function lyHideSeek(){
 
 function onBoth(ev,fn){audio.addEventListener(ev,fn);}
 onBoth('canplay',()=>{setModeLabel();});
-audio.addEventListener('playing',disarmHlsFallback);
-audio.addEventListener('timeupdate',()=>{if(audio.currentTime>0)disarmHlsFallback();});
 onBoth('play',()=>{postNP();updPositionState();});onBoth('pause',()=>{postNP();updPositionState();});
 onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(localDur()||audio.duration||0);updPositionState();});
 onBoth('seeked',()=>{updPositionState();
@@ -1500,7 +1494,9 @@ onBoth('timeupdate',()=>{
 onBoth('play',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='playing';}catch(e){}$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
 onBoth('pause',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='paused';}catch(e){}$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
 
-function togglePlay(){if(!cur){collapse();showTab('search');return;}audio.paused?audio.play():audio.pause();}
+function togglePlay(){if(!cur){collapse();showTab('search');return;}
+  if(audio.paused){userPaused=false;audio.play().catch(playBlocked);}
+  else{userPaused=true;audio.pause();}}
 $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
 $('mini').addEventListener('click',e=>{
   if(e.target.closest('.mp'))return;
@@ -1853,12 +1849,13 @@ async function pollRemote(){
     if(remoteFirst){remoteFirst=false;if(c&&c.seq)lastSeq=c.seq;schedRemote();return;}
     if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;
       if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}
-      else if(c.action==='stop'||c.action==='pause')audio.pause();
-      else if(c.action==='resume')audio.play().catch(playBlocked);
+      else if(c.action==='stop'||c.action==='pause'){userPaused=true;audio.pause();}
+      else if(c.action==='resume'){userPaused=false;audio.play().catch(playBlocked);}
       else if(c.action==='next')playNext();
       else if(c.action==='prev')playPrev();
     }
   }catch(e){}
+  try{pollInvite();}catch(e){}   // 顺路把邀请也看一眼，别单开一条容易被冻住的线
   schedRemote();
 }
 function schedRemote(){
@@ -1868,11 +1865,17 @@ function schedRemote(){
 }
 schedRemote();
 // 从后台回来：定时器被系统冻过，立刻补拉一次，攒下的指令不丢
-document.addEventListener('visibilitychange',()=>{
+// 从后台回来就把两条都补一次。
+// iOS 把页面冻起来之后再唤醒，走的不一定是 visibilitychange，
+// 也可能是 pageshow 或 focus，所以三个都听着。
+function wakeUp(){
   if(document.hidden)return;
   pollRemote();
-  try{pollInvite();}catch(e){}   // 邀请是另一条轮询，以前漏了，切回来也得补一次
-});
+  try{pollInvite();}catch(e){}
+}
+document.addEventListener('visibilitychange',wakeUp);
+window.addEventListener('pageshow',wakeUp);
+window.addEventListener('focus',wakeUp);
 
 // 开屏唱片：首页数据到了就淡出；最多转 6 秒，免得网络卡住一直挡着
 function hideSplash(){
