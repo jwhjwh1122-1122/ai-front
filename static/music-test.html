@@ -99,7 +99,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:30px 0 8px;display:flex;flex-direction:column;gap:12px;}
 .cv-msgs::-webkit-scrollbar{display:none;}
 .cv-row{display:flex;gap:8px;max-width:82%;}
-.cv-row.me{align-self:flex-end;flex-direction:row-reverse;}
+.cv-row.me{margin-left:auto;flex-direction:row-reverse;}
 .cv-av{width:34px;height:34px;border-radius:50%;background:#d8dce2 center/cover no-repeat;flex-shrink:0;}
 .cv-bubble{padding:9px 13px;border-radius:15px;font-size:15px;line-height:1.4;color:#20262c;background:#fff;box-shadow:0 1px 3px rgba(60,70,90,.08);}
 .cv-row.me .cv-bubble{background:#d5e8fb;}
@@ -107,7 +107,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-col.me{align-items:flex-end;}
 /* 被回复的那句：灰白小框，跟在气泡下面，只有内容不带昵称 */
 .cv-quote{background:#e8ebef;border-radius:10px;padding:6px 10px;font-size:12.5px;line-height:1.35;color:#868d96;}
-.cv-item{display:flex;align-items:center;gap:10px;}
+.cv-item{display:flex;align-items:center;gap:10px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 .ck{width:22px;height:22px;border-radius:50%;border:1.6px solid #c4cad2;flex-shrink:0;display:none;place-items:center;background:#fff;}
 .selmode .ck{display:grid;}
 .ck.on{background:#ec4141;border-color:#ec4141;}
@@ -129,7 +129,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .reply-bar .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .reply-bar .x{color:#a8aeb6;font-size:15px;padding:0 2px;background:none;border:none;}
 /* 多选时底下那条 */
-.sel-bar{display:none;align-items:center;justify-content:center;padding:14px 0 10px;flex-shrink:0;}
+.sel-bar{display:none;align-items:center;justify-content:space-evenly;padding:14px 0 10px;flex-shrink:0;}
 .selmode .sel-bar{display:flex;}
 .selmode .cv-input{display:none;}
 .sel-bar .b{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:#2b2f36;background:none;border:none;}
@@ -144,20 +144,19 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .mc-btn svg{width:22px;height:22px;}
 .mc-btn.on{background:#fff;color:#2b2f36;box-shadow:0 1px 4px rgba(60,70,90,.12);}
 /* 聊天分两间房，标签告诉你现在在跟哪个凛说话 */
-.cv-room{flex-shrink:0;display:flex;justify-content:center;padding:6px 0 2px;}
-.cv-room button{font:inherit;font-size:11px;color:#8a9098;background:#e9ecef;border:none;
-  border-radius:14px;padding:5px 13px;display:flex;align-items:center;gap:5px;}
-.cv-room button b{font-weight:600;color:#3a3f47;}
-.cv-room button svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;}
-.rm-mask{position:fixed;inset:0;background:rgba(20,24,30,.34);z-index:60;display:none;align-items:flex-end;}
-.rm-mask.show{display:flex;}
-.rm-sheet{width:100%;background:#f7f8fa;border-radius:18px 18px 0 0;padding:10px 10px calc(env(safe-area-inset-bottom) + 10px);}
-.rm-sheet h4{font-size:12px;font-weight:500;color:#9298a0;text-align:center;padding:8px 0 10px;}
-.rm-sheet button{width:100%;font:inherit;font-size:16px;color:#2b2f36;background:#fff;border:none;
-  border-radius:12px;padding:14px;margin-bottom:8px;text-align:left;display:flex;flex-direction:column;gap:3px;}
-.rm-sheet button span{font-size:11.5px;color:#9298a0;}
-.rm-sheet button.on{box-shadow:0 0 0 2px #ec4141 inset;}
-.rm-sheet .rm-x{text-align:center;color:#8a9098;background:#ececef;margin:2px 0 0;}
+.rm-pop{position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom) + 65px);background:#fff;border-radius:12px;overflow:hidden;
+  min-width:96px;display:none;z-index:10;
+  box-shadow:0 10px 26px -8px rgba(45,55,75,.32),0 1px 4px rgba(45,55,75,.10);}
+.rm-pop.show{display:block;}
+.rm-pop .it{padding:9px 16px;font-size:13.5px;color:#8a9098;text-align:center;
+  -webkit-user-select:none;user-select:none;}
+.rm-pop .it + .it{border-top:1px solid #edeff2;}
+.rm-pop .it.on{color:#2b2f36;font-weight:600;}
+.rm-pop .it.hot{background:#eef0f3;}
+.rm-arrow{position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom) + 58px);width:14px;height:7px;display:none;z-index:10;}
+.rm-arrow.show{display:block;}
 .prog{display:flex;align-items:center;gap:10px;font-size:11px;color:#9298a0;margin-top:2px;}
 .prog .bar{flex:1;height:2px;background:#d8dce2;border-radius:2px;position:relative;cursor:pointer;}
 .prog .bar .f{position:absolute;left:0;top:0;height:100%;background:#8a9098;border-radius:2px;}
@@ -174,7 +173,9 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cb.main svg{width:52px;height:52px;}
 .lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;overflow-x:hidden;}
 .lyric-view.on{display:flex;}
-.ly-scroll{flex:1;overflow-y:auto;overflow-x:hidden;text-align:center;padding:3px 0 26vh;margin:0 -12px;scrollbar-width:none;}
+.ly-scroll{flex:1;overflow-y:auto;overflow-x:hidden;text-align:center;padding:0 0 26vh;margin:0 -12px;scrollbar-width:none;}
+/* 一起听时头像块搬进来了，上面已经有东西占着，歌词就别再往下压那么多 */
+.lyric-view.tg-in .ly-scroll{padding-top:3px;}
 .ly-scroll::-webkit-scrollbar{display:none;}
 /* 一起听时头像搬进歌词页，比播放页小一号，上下留一样的空 */
 .lyric-view .together{padding:6px 0 9px;}
@@ -464,15 +465,22 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     </div>
   </div>
   <div class="chat-view" id="chat-view">
-    <div class="cv-room"><button id="cv-room-btn">正在和 <b id="cv-room-nm">凛</b> 说话<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
     <div class="cv-msgs" id="cv-msgs"></div>
     <div class="reply-bar" id="reply-bar"><span class="t" id="reply-tx"></span><button class="x" id="reply-x">&#10005;</button></div>
     <div class="cv-input">
       <input id="cv-text" placeholder="就着这首歌，说点什么…" enterkeyhint="send">
       <button id="cv-send">发送</button>
     </div>
-    <div class="sel-bar"><button class="b" id="sel-del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg><span id="sel-cnt">删除</span></button></div>
+    <div class="sel-bar">
+      <button class="b" id="sel-cancel"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>取消</button>
+      <button class="b" id="sel-del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg><span id="sel-cnt">删除</span></button>
+    </div>
   </div>
+  <div class="rm-pop" id="rm-pop">
+    <div class="it" data-room="mcp">Chat</div>
+    <div class="it" data-room="app">Lin</div>
+  </div>
+  <svg class="rm-arrow" id="rm-arrow" viewBox="0 0 14 7"><path d="M0 0 L7 7 L14 0 Z" fill="#fff"/></svg>
   <div class="mc-switch">
     <button class="mc-btn on" id="mc-music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
     <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
@@ -488,14 +496,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   <button class="it" id="mp-multi"><svg viewBox="0 0 24 24"><path d="M3 6.5l2 2 3-3M3 13.5l2 2 3-3M3 20.5l2 2 3-3M12 6h9M12 13h9M12 20h9"/></svg>多选</button>
 </div>
 <svg class="msg-arrow" id="msg-arrow" viewBox="0 0 15 8"><path d="M0 0 L7.5 8 L15 0 Z" fill="#fff"/></svg>
-<div class="rm-mask" id="rm-mask">
-  <div class="rm-sheet">
-    <h4>跟哪个凛说话</h4>
-    <button id="rm-mcp">凛（claude.ai）<span>能推歌、能看你听什么、记得你们聊过的事</span></button>
-    <button id="rm-app">凛（app 里）<span>就在这台机器上，随时在，但没有那些本事</span></button>
-    <button class="rm-x" id="rm-x">取消</button>
-  </div>
-</div>
 <div class="queue-sheet" id="queue-sheet"></div>
 
 <!-- 邀请弹窗 -->
@@ -1823,9 +1823,19 @@ function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyVi
       const tp=document.querySelector('.top').getBoundingClientRect();
       const bh=document.querySelector('.b-head').getBoundingClientRect();
       const lv=$('lyric-view');
-      lv.style.top=Math.max(0,Math.round(tp.bottom-pg.top))+'px';
+      const lvTop=Math.max(0,Math.round(tp.bottom-pg.top));
+      lv.style.top=lvTop+'px';
       lv.style.bottom=Math.max(0,Math.round(pg.bottom-bh.top+4))+'px';
-      lv.style.paddingTop='6px';lv.style.paddingBottom='6px';
+      // 歌词滚上去被切掉的那条边，就在这儿。单人离歌名 20px；
+      // 一起听时上面还顶着头像块，那块自己带间距，这里就不用再让了。
+      lv.style.paddingTop=$('play-page').classList.contains('listening')?'6px':'20px';
+      lv.style.paddingBottom='6px';
+      // 它自己那份渐变只铺自己这块高度，底部早早就走到最深，
+      // 跟下面露出来的整页渐变接不上，看着就是一道阴影。
+      // 让它按整页的高度画、再按自己的位置偏移，接缝就没了。
+      lv.style.backgroundSize='100% '+Math.round(pg.height)+'px';
+      lv.style.backgroundPosition='0 -'+lvTop+'px';
+      lv.style.backgroundRepeat='no-repeat';
     }catch(e){}
     moveTogether(true);
     setLyTitle();
@@ -1840,8 +1850,10 @@ function moveTogether(into){
     if(!$('play-page').classList.contains('listening'))return;
     if(!tgHome)tgHome={parent:tg.parentNode,next:tg.nextSibling};
     $('lyric-view').insertBefore(tg,$('ly-scroll'));
+    $('lyric-view').classList.add('tg-in');
   }else if(tgHome){
     tgHome.parent.insertBefore(tg,tgHome.next);
+    $('lyric-view').classList.remove('tg-in');
   }
 }
 // 标题栏中间：看歌词时显示歌名歌手，回播放页显示"一起听"
@@ -2051,6 +2063,8 @@ loadProfile();
 let chatMode=false;
 function setMode(chat){
   chatMode=chat;
+  // 离开聊天页就别把多选状态带走，回来应该是干净的聊天页
+  try{setSelMode(false);replyTo=null;$('reply-bar').classList.remove('show');}catch(e){}
   if(chat&&lyView){lyView=false;$('lyric-view').classList.remove('on');lyHideSeek();}
   $('chat-view').classList.toggle('on',chat);
   $('mc-music').classList.toggle('on',!chat);
@@ -2070,43 +2084,62 @@ document.querySelector('.b-cmt').onclick=()=>{if(lyView)toggleLyric();setMode(tr
 // 各自一间，各发各的，谁也不会被对方顶掉。
 let chatRoom='mcp';
 try{chatRoom=localStorage.getItem('chat-room')||'mcp';}catch(e){}
-function roomName(r){return r==='app'?'凛（app）':'凛（claude.ai）';}
 function renderRoom(){
-  $('cv-room-nm').textContent=roomName(chatRoom);
-  $('rm-mcp').classList.toggle('on',chatRoom==='mcp');
-  $('rm-app').classList.toggle('on',chatRoom==='app');
+  document.querySelectorAll('#rm-pop .it').forEach(el=>
+    el.classList.toggle('on',el.dataset.room===chatRoom));
 }
 function switchRoom(r){
-  if(r===chatRoom){$('rm-mask').classList.remove('show');return;}
+  if(!r||r===chatRoom)return;
   chatRoom=r;
   try{localStorage.setItem('chat-room',r);}catch(e){}
   renderRoom();
-  $('rm-mask').classList.remove('show');
   setSelMode(false);replyTo=null;$('reply-bar').classList.remove('show');
   chatLastTs=0;$('cv-msgs')._loaded=false;$('cv-msgs').innerHTML='';
   loadChatHistory();
 }
-$('rm-mcp').onclick=()=>switchRoom('mcp');
-$('rm-app').onclick=()=>switchRoom('app');
-$('rm-x').onclick=()=>$('rm-mask').classList.remove('show');
-$('rm-mask').addEventListener('click',e=>{if(e.target===$('rm-mask'))$('rm-mask').classList.remove('show');});
-$('cv-room-btn').onclick=()=>{renderRoom();$('rm-mask').classList.add('show');};
-// 长按底下那个聊天按钮也能选
+// 按住底下那个聊天键 → 上方冒出 Chat / Lin，手指不松往上划着选，松手就切。
+// iOS 上"长按再点"很容易被系统的选字/拷贝抢走，划着选稳当得多。
 (function(){
-  const el=$('mc-chat');let t=null,longed=false;
-  const start=()=>{longed=false;clearTimeout(t);t=setTimeout(()=>{
-    longed=true;renderRoom();$('rm-mask').classList.add('show');},600);};
-  const stop=()=>clearTimeout(t);
-  el.addEventListener('touchstart',start,{passive:true});
-  ['touchend','touchmove','touchcancel'].forEach(e=>el.addEventListener(e,stop,{passive:true}));
-  el.addEventListener('mousedown',start);
-  ['mouseup','mouseleave'].forEach(e=>el.addEventListener(e,stop));
-  el.addEventListener('click',e=>{if(longed){e.preventDefault();e.stopPropagation();longed=false;}},true);
+  const btn=$('mc-chat'),pop=$('rm-pop'),arr=$('rm-arrow');
+  let timer=null,open=false,hot=null,longed=false;
+  const items=()=>[...pop.querySelectorAll('.it')];
+  function show(){open=true;longed=true;renderRoom();pop.classList.add('show');arr.classList.add('show');}
+  function hide(){open=false;pop.classList.remove('show');arr.classList.remove('show');clearHot();}
+  function clearHot(){hot=null;items().forEach(e=>e.classList.remove('hot'));}
+  function hitAt(x,y){
+    let f=null;
+    items().forEach(e=>{const r=e.getBoundingClientRect();
+      if(x>=r.left-12&&x<=r.right+12&&y>=r.top&&y<=r.bottom)f=e;});
+    return f;
+  }
+  function moveTo(x,y){
+    const it=hitAt(x,y);
+    if(it===hot)return;
+    clearHot();hot=it;if(it)it.classList.add('hot');
+  }
+  btn.addEventListener('touchstart',()=>{longed=false;clearTimeout(timer);timer=setTimeout(show,420);},{passive:true});
+  btn.addEventListener('touchmove',e=>{if(open&&e.touches[0])moveTo(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+  btn.addEventListener('touchend',e=>{
+    clearTimeout(timer);
+    if(!open)return;
+    if(hot)switchRoom(hot.dataset.room);
+    hide();e.preventDefault();          // 别让它再变成一次普通点击
+  });
+  btn.addEventListener('touchcancel',()=>{clearTimeout(timer);if(open)hide();});
+  // 鼠标/桌面也能用
+  btn.addEventListener('mousedown',()=>{longed=false;clearTimeout(timer);timer=setTimeout(show,420);});
+  ['mouseup','mouseleave'].forEach(ev=>btn.addEventListener(ev,()=>clearTimeout(timer)));
+  btn.addEventListener('click',e=>{if(longed){longed=false;e.preventDefault();e.stopPropagation();}},true);
+  // 弹出来之后直接点也行
+  items().forEach(el=>el.addEventListener('click',()=>{switchRoom(el.dataset.room);hide();}));
+  document.addEventListener('pointerdown',e=>{
+    if(!open)return;
+    if(e.target.closest('#rm-pop')||e.target.closest('#mc-chat'))return;
+    hide();
+  },true);
+  renderRoom();
 })();
-renderRoom();
 
-function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-// 一条消息 = 勾选圈 + 头像 + （气泡 [+ 引用框]）
 function addMsg(text,me,m){
   m=m||{};
   const item=document.createElement('div');
@@ -2208,6 +2241,7 @@ function updSelCnt(){
   $('sel-cnt').textContent=n?('删除 '+n+' 条'):'删除';
   $('sel-del').disabled=!n;
 }
+$('sel-cancel').onclick=()=>setSelMode(false);
 $('sel-del').onclick=async()=>{
   const ids=selIds();if(!ids.length)return;
   await delMsgs(ids);
