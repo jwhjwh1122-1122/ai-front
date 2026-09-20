@@ -559,18 +559,20 @@ function startStream(idx,autoplay){
 // 教训：以前用"currentTime 是不是 0"判断卡没卡，结果这条流卡住时
 // 照样报一个大于 0 的进度、图标也显示在播放，三道保险全都以为一切正常。
 // 该看的不是它等于几，是它有没有在往前走。
-let stallSec=0,lastT=-1,hlsFbCount=0;
+let stallSec=0,lastT=-1,hlsFbCount=0,everPlayed=false;
 function armHlsFallback(){stallSec=0;lastT=-1;}
 function disarmHlsFallback(){stallSec=0;}
 setInterval(()=>{
   if(!cur||userPaused||!audio.getAttribute('src')){stallSec=0;lastT=audio.currentTime;return;}
   const t=audio.currentTime;
-  if(t!==lastT&&t>0){stallSec=0;lastT=t;hlsFbCount=0;return;}   // 在走，一切正常
+  if(t!==lastT&&t>0){stallSec=0;lastT=t;hlsFbCount=0;everPlayed=true;return;}   // 在走，一切正常
   lastT=t;stallSec++;
   // 卡了 3 秒、7 秒：踹一脚（就是手动"暂停再播放"那下）
   if(stallSec===3||stallSec===7){try{audio.pause();audio.play().catch(()=>{});}catch(e){}}
   // 卡满 12 秒：这条流是真不行了，用单曲模式把这首放出来
-  if(stallSec>=12&&hlsMode){
+  // 这个页面还一次都没成功出过声时，连播的第一次加载基本就是起不来（踹也没用），
+  // 所以不让人干等 12 秒，4 秒就换单曲把歌放出来。之后连播是好的，门槛恢复 12 秒。
+  if(stallSec>=(everPlayed?12:4)&&hlsMode){
     stallSec=0;hlsFbCount++;
     const sg=cur;
     if(hlsFbCount>=2){
@@ -1532,7 +1534,8 @@ audio.addEventListener('ended',()=>{
   if(!queue.length)return;
   if(!hlsMode){playNext();return;}   // 音质模式：一首一首来
   if(loopMode===1){const g=curSeg();if(g){audio.currentTime=g.start;audio.play().catch(()=>{});}return;}
-  startStream(loopMode===2?Math.floor(Math.random()*queue.length):(segBase+segs.length)%queue.length,true);
+  startStream(loopMode===2?Math.floor(Math.random()*queue.length)
+    :(((segs.length?segBase+segs.length:qIndex+1)%queue.length)+queue.length)%queue.length,true);
 });
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
