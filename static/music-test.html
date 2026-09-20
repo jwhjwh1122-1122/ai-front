@@ -645,6 +645,9 @@ setInterval(()=>{
   const t=audio.currentTime;
   if(t!==lastT&&t>0){stallSec=0;lastT=t;everPlayed=true;return;}   // 在走，一切正常
   lastT=t;stallSec++;
+  // 它正在下载（缓冲被 iOS 扔掉后的重新加载就是这样）：只数秒不动手，
+  // 动手就是把刚下回来的又清掉。等满 18 秒还这样，才当它是真卡了。
+  if(loadingNow()&&stallSec<18)return;
   // 模拟你的手：按下暂停 → 真的停两秒 → 再按播放。
   // 以前是暂停完立刻就播，中间没有停顿，管道根本来不及重置，所以从来没救活过。
   if(stallSec===5){try{audio.pause();}catch(e){}}
@@ -689,6 +692,12 @@ function keepAliveOn(){
   },400);
 }
 function keepAliveOff(){clearTimeout(kaTimer);try{keepAlive.pause();}catch(e){}}
+// 暂停期间每 25 秒让后端把这首的直链刷一遍。网易云的直链是有时效的，
+// 停十分钟再按播放，后端还得现去要一次，那几秒就是你听到的"卡了一下"。
+setInterval(()=>{
+  if(!cur||!audio.paused||keepAlive.paused)return;
+  warm(cur.id);
+},25000);
 
 let resumeAt=0;      // 停住/重载之前停在哪一秒
 let resumeGrace=0;   // 刚按过继续的几秒里，看门狗先别插手
@@ -715,13 +724,28 @@ function doPause(){
 // 所以这里跳完/按完之后自己看一眼，没走就按你的手法救：
 //   停 0.9 秒再播 → 还不走才重载，而且重载一定跳回原位。
 let kicking=false;
+// 卡住 ≠ 在下载。停久了 iOS 会把整个 HLS 缓冲扔掉，回来得重新下一遍，
+// 这期间 networkState=2(LOADING) 而 readyState<3，进度当然不走——
+// 这种时候去 pause/play 掐它，只会把刚攒的缓冲又清掉，越救越慢。
+// 所以先认出"它在下载"，认出来就安静等着，只对真正不动的才动手。
+function loadingNow(){return audio.networkState===2&&audio.readyState<3;}
 function kickPlay(from){
   const at=(typeof from==='number')?from:audio.currentTime;
   resumeGrace=8;
+  warm(cur&&cur.id);                    // 顺手让后端把直链备好，少等一轮
   try{const p=audio.play();if(p&&p.catch)p.catch(playBlocked);}catch(e){}
-  setTimeout(()=>{
+  let waited=0;
+  const check=()=>{
     if(userPaused||audio.currentTime>at+0.1){kicking=false;return;}
-    kicking=true;                       // 这两秒里的 pause 是我自己按的，别去开保活
+    waited+=1400;
+    resumeGrace=8;                      // 还在等，就一直压着看门狗别插手
+    // 它在下载：耐心等，最多等 20 秒
+    if(loadingNow()&&waited<20000){
+      if(waited===1400)toast('正在续上…');
+      setTimeout(check,1400);return;
+    }
+    // 真的不动了，才按你的手法救：停 0.9 秒再播
+    kicking=true;
     try{audio.pause();}catch(e){}
     setTimeout(()=>{
       kicking=false;
@@ -731,9 +755,10 @@ function kickPlay(from){
       setTimeout(()=>{
         if(userPaused||audio.currentTime>at+0.1)return;
         resumeAt=at;resumeGrace=8;reloadAndSeek();
-      },1800);
+      },2500);
     },900);
-  },1400);
+  };
+  setTimeout(check,1400);
 }
 
 function doResume(){
