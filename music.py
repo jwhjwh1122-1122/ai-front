@@ -1964,6 +1964,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     def _mcp_invite(name='凛'):
         d = _listen_load()
+        # 邀请自己负责把旧状态清掉：还挂在"进行中"的话，弹窗根本不会出来，
+        # 以前得先调一次 listen_end 才能重新邀请，很蠢。
+        d['active'] = False
         d['invite'] = {'from': 'ai', 'name': name, 'ts': int(time.time())}
         d['partner'] = 'mcp'          # 陪听的是 claude.ai 这边的凛
         _listen_save(d)
