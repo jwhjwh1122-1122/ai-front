@@ -587,6 +587,24 @@ function armHlsFallback(){
   },12000);
 }
 function disarmHlsFallback(){clearTimeout(hlsFbTimer);clearTimeout(hlsNudgeTimer);hlsFbCount=0;}
+// iOS 上网页第一次出声之前，解码管道还没建起来，第一首歌就得一边搭管道一边缓冲，
+// 所以特别慢。这里在你第一次碰屏幕的那一刻，用一段 0.05 秒的静音把管道先点着，
+// 等你真点歌的时候它已经是热的了。只做一次。
+let audioPrimed=false;
+function primeAudio(){
+  if(audioPrimed)return;audioPrimed=true;
+  try{
+    const keep=audio.getAttribute('src');
+    if(keep)return;                       // 已经在放东西了，别去动它
+    audio.src='data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+    const p=audio.play();
+    if(p&&p.then)p.then(()=>{try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}})
+                  .catch(()=>{try{audio.removeAttribute('src');}catch(e){}});
+  }catch(e){}
+}
+['touchstart','pointerdown','click'].forEach(ev=>
+  document.addEventListener(ev,primeAudio,{once:true,capture:true,passive:true}));
+
 // iOS 规定：这个页面还没被手点过播放，网页就不许自己出声。
 // 这种时候别装作没事，告诉一声，点一下就好了。
 function playBlocked(e){
@@ -620,7 +638,7 @@ function onSegChanged(i,uiOnly){
 }
 // 打开一个列表时，先把第一首的地址在后端备好，点下去就能响
 function warmFirst(songs){
-  if(songs&&songs.length&&songs[0].id)fetch('/api/music/prefetch?id='+songs[0].id).catch(()=>{});
+  if(songs&&songs.length&&songs[0].id)fetch('/api/music/prefetch?id='+songs[0].id+'&mp3=1').catch(()=>{});
 }
 function addNext(song){
   if(!queue.length){queue=[song];qIndex=0;startStream(0,true);return;}
@@ -1653,12 +1671,16 @@ async function toggleTogether(){
 $('btn-together').onclick=toggleTogether;
 
 // 收到AI邀请 → 弹窗
-let inviteShown=false;
+// 按邀请的时间戳认，不用一次性开关——以前弹过一次就再也不弹了，
+// 对方重新邀请你根本收不到。
+let lastInviteTs=0;
 async function pollInvite(){
   try{
     const r=await fetch('/api/music/listen/state').then(r=>r.json());
-    if(r.invite&&r.invite.from==='ai'&&!inviteShown&&!$('play-page').classList.contains('listening')){
-      inviteShown=true;
+    if(!r.invite)lastInviteTs=0;          // 邀请被撤了，下一条重新算
+    if(r.invite&&r.invite.from==='ai'&&(r.invite.ts||0)!==lastInviteTs
+       &&!$('play-page').classList.contains('listening')){
+      lastInviteTs=r.invite.ts||0;
       $('invite-tx').textContent=r.invite.name||'凛';
       if(window._uav)$('inv-av-user').style.backgroundImage='url('+window._uav+')';
       if(window._aav)$('inv-av-ai').style.backgroundImage='url('+window._aav+')';
@@ -1666,9 +1688,9 @@ async function pollInvite(){
     }
   }catch(e){}
 }
-setInterval(pollInvite,20000);pollInvite();
+setInterval(pollInvite,5000);pollInvite();
 $('inv-yes').onclick=async()=>{
-  $('invite-mask').classList.remove('show');inviteShown=false;
+  $('invite-mask').classList.remove('show');
   enterTogether();
   await fetch('/api/music/listen/accept',{method:'POST'}).catch(()=>{});
   toast('开始一起听');
