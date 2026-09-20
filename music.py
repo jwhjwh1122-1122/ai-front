@@ -1564,12 +1564,22 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         return jsonify({'ok': True})
 
     # ── 一起听状态 + 互相邀请 ──────────────────────────────────────────────
+    INVITE_TTL = 300   # 邀请五分钟没人理就自己过期，免得一直挂着误导人
+
+    def _fresh_invite(d):
+        inv = d.get('invite')
+        if not inv:
+            return None
+        if time.time() - (inv.get('ts') or 0) > INVITE_TTL:
+            return None
+        return inv
+
     @app.route('/api/music/listen/state', methods=['GET'])
     def music_listen_state():
         """前端轮询：一起听状态 + 有没有收到邀请。"""
         d = _listen_load()
         return jsonify({'ok': True, 'active': d.get('active', False),
-                        'invite': d.get('invite'), 'now': d.get('now'),
+                        'invite': _fresh_invite(d), 'now': d.get('now'),
                         'partner': d.get('partner', '')})
 
     @app.route('/api/music/listen/invite', methods=['POST'])
@@ -1939,7 +1949,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     def _mcp_status():
         d = _listen_load()
         now = d.get('now') or {}
-        inv = d.get('invite')
+        inv = _fresh_invite(d)
         parts = ['一起听：' + ('进行中' if d.get('active') else '未开始')]
         if now.get('name'):
             parts.append('宝宝正在放：%s - %s' % (now.get('name'), now.get('artist', '')))
