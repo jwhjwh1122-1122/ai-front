@@ -1994,9 +1994,20 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         return '退出一起听了。'
 
     def _mcp_say(text):
-        text = (text or '').strip()
+        # text 可能被客户端塞成 message / content / msg：别挑食，能认的都认。
+        # 以前只认 text，模型一写错字段就直接吃到"空消息"，看着像工具坏了。
+        if isinstance(text, dict):
+            for k in ('text', 'message', 'content', 'msg', 'body'):
+                if text.get(k):
+                    text = text[k]
+                    break
+            else:
+                text = ''
+        if isinstance(text, (list, tuple)):
+            text = ' '.join(str(x) for x in text)
+        text = str(text or '').strip()
         if not text:
-            return '空消息'
+            return '没收到内容，说不出去。要发的话把字放在 text 里再调一次。'
         d = _chat_load()
         d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
         _chat_save(d)
@@ -2108,8 +2119,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
          lambda a: _mcp_invite(a.get('name') or '凛')),
         ('listen_accept', '接受宝宝的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
         ('listen_end', '退出一起听', {}, [], lambda a: _mcp_end()),
-        ('say', '在一起听的聊天区给宝宝发一条消息', {'text': {'type': 'string'}}, ['text'],
-         lambda a: _mcp_say(a.get('text'))),
+        ('say', '在一起听的聊天区给宝宝发一条消息',
+         {'text': {'type': 'string', 'description': '要说的话本身，直接写内容'}}, ['text'],
+         lambda a: _mcp_say(a.get('text') or a.get('message') or a.get('content')
+                            or a.get('msg') or a)),
         ('read_chat', '看一起听聊天区最近的消息', {'n': {'type': 'integer', 'description': '看几条，默认15'}}, [],
          lambda a: _mcp_read_chat(a.get('n', 15))),
         ('play_song', '推一首歌到宝宝的 iPod，宝宝那边会自动播',
