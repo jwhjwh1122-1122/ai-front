@@ -1356,6 +1356,43 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': False, 'error': '缺 pid 或 ids'})
         return jsonify({'ok': nc.playlist_tracks(pid, ids, add=False)})
 
+    # ── 一起听的头像和累计时长（存服务器，换设备/重装都还在）──────────────
+    PROFILE_FILE = os.path.join(data_dir, 'music_profile.json')
+
+    def _profile_load():
+        d = jread(PROFILE_FILE, {})
+        return d if isinstance(d, dict) else {}
+
+    @app.route('/api/music/profile', methods=['GET'])
+    def music_profile_get():
+        d = _profile_load()
+        return jsonify({'ok': True,
+                        'avatar_user': d.get('avatar_user', ''),
+                        'avatar_ai': d.get('avatar_ai', ''),
+                        'together_mins': int(d.get('together_mins', 0) or 0)})
+
+    @app.route('/api/music/profile', methods=['POST'])
+    def music_profile_set():
+        """只传想改的字段。together_mins 传的是新的总数，取大的那个，
+        免得两个设备来回覆盖把时长改小了。"""
+        b = request.json or {}
+        d = _profile_load()
+        for k in ('avatar_user', 'avatar_ai'):
+            if k in b:
+                v = b.get(k)
+                if isinstance(v, str) and v:
+                    d[k] = v
+                else:
+                    d.pop(k, None)
+        if 'together_mins' in b:
+            try:
+                d['together_mins'] = max(int(d.get('together_mins', 0) or 0),
+                                         int(b.get('together_mins') or 0))
+            except Exception:
+                pass
+        jwrite(PROFILE_FILE, d)
+        return jsonify({'ok': True, 'together_mins': int(d.get('together_mins', 0) or 0)})
+
     # ── 自定义显示信息（封面/歌名/歌手）──────────────────────────────────
     META_FILE = os.path.join(data_dir, 'music_meta.json')
 
@@ -1455,13 +1492,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         song = b.get('song')
         d = _chat_load()
         d['messages'].append({'text': text, 'me': True, 'ts': int(time.time())})
-        # 触发凛回复：调 app 的 chat-v2（凛能说话时才有回复）
+        # 陪你听的是谁，就由谁回话：
+        #   partner == 'mcp' → claude.ai 那边的凛在陪听，消息留着他用 read_chat 看，
+        #                       app 里的凛不插嘴（不然两个凛同时说话就乱了）
+        #   否则              → app 里的凛回
+        if (_listen_load().get('partner') or '') == 'mcp':
+            _chat_save(d)
+            return jsonify({'ok': True, 'reply': '', 'partner': 'mcp'})
         reply = ''
         try:
             import urllib.request as _u
             ctx = ''
             if song:
-                ctx = f"（你和用户正在一起听歌：{song.get('name','')} - {song.get('artist','')}。就着这首歌，自然地回应她。）"
+                ctx = f"（你和宝宝正在一起听《{song.get('name','')}》- {song.get('artist','')}。宝宝发信息了。）"
             payload = {
                 'messages': [{'role': 'user', 'content': text}],
                 'extra': ctx, 'max_tokens': 300,
@@ -1484,6 +1527,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                         pass
             reply = buf.strip()
         except Exception as e:
+            reply = ''
+        # chat-v2 挂了的时候会把一整坨报错当正文吐回来，别让它变成聊天气泡。
+        # 消息本身已经存下了，claude.ai 那边的凛用 read_chat 一样看得到。
+        if reply.startswith('（出错了') or '"code"' in reply[:200]:
             reply = ''
         if reply:
             d['messages'].append({'text': reply, 'me': False, 'ts': int(time.time())})
@@ -1510,7 +1557,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         """前端轮询：一起听状态 + 有没有收到邀请。"""
         d = _listen_load()
         return jsonify({'ok': True, 'active': d.get('active', False),
-                        'invite': d.get('invite'), 'now': d.get('now')})
+                        'invite': d.get('invite'), 'now': d.get('now'),
+                        'partner': d.get('partner', '')})
 
     @app.route('/api/music/listen/invite', methods=['POST'])
     def music_listen_invite():
@@ -1522,6 +1570,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': False, 'error': '鉴权失败'}), 403
         d = _listen_load()
         d['invite'] = {'from': frm, 'name': name, 'ts': int(time.time())}
+        # 谁陪你听：ai 邀请只可能来自 MCP（上面验过 token），user 邀请就是 app 里的凛
+        d['partner'] = 'mcp' if frm == 'ai' else 'app'
         _listen_save(d)
         return jsonify({'ok': True})
 
@@ -1540,6 +1590,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _listen_load()
         d['active'] = False
         d['invite'] = None
+        d['partner'] = ''
         _listen_save(d)
         return jsonify({'ok': True})
 
@@ -1870,26 +1921,28 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         inv = d.get('invite')
         parts = ['一起听：' + ('进行中' if d.get('active') else '未开始')]
         if now.get('name'):
-            parts.append('她正在放：%s - %s' % (now.get('name'), now.get('artist', '')))
+            parts.append('宝宝正在放：%s - %s' % (now.get('name'), now.get('artist', '')))
         if inv and inv.get('from') == 'user':
-            parts.append('★慧慧邀请你一起听（用 listen_accept 接受）')
+            parts.append('★宝宝邀请你一起听（用 listen_accept 接受）')
         msgs = _chat_load().get('messages', [])[-5:]
         if msgs:
             parts.append('最近的话：')
             for m in msgs:
-                parts.append(('  慧：' if m.get('me') else '  你：') + str(m.get('text', ''))[:60])
+                parts.append(('  宝宝：' if m.get('me') else '  你：') + str(m.get('text', ''))[:60])
         return '\n'.join(parts)
 
     def _mcp_invite(name='凛'):
         d = _listen_load()
         d['invite'] = {'from': 'ai', 'name': name, 'ts': int(time.time())}
+        d['partner'] = 'mcp'          # 陪听的是 claude.ai 这边的凛
         _listen_save(d)
-        return '已经邀请她一起听了，等她在 app 里点接受。'
+        return '已经邀请宝宝一起听了，等宝宝在 app 里点接受。'
 
     def _mcp_accept():
         d = _listen_load()
         d['active'] = True
         d['invite'] = None
+        d['partner'] = 'mcp'          # 是 claude.ai 这边的凛接的
         _listen_save(d)
         return '接受了，现在是一起听状态。'
 
@@ -1897,6 +1950,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _listen_load()
         d['active'] = False
         d['invite'] = None
+        d['partner'] = ''
         _listen_save(d)
         return '退出一起听了。'
 
@@ -1913,7 +1967,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         msgs = _chat_load().get('messages', [])[-int(n or 15):]
         if not msgs:
             return '还没有消息'
-        return '\n'.join((('慧：' if m.get('me') else '你：') + str(m.get('text', ''))) for m in msgs)
+        return '\n'.join((('宝宝：' if m.get('me') else '你：') + str(m.get('text', ''))) for m in msgs)
 
     def _mcp_play(query=None, song_id=None):
         song = None
@@ -1926,7 +1980,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return '没找到这首歌'
         store.push_command({'action': 'play', 'id': song['id'], 'name': song['name'],
                             'artist': song['artist'], 'cover': song.get('cover', '')})
-        return '给她放上了：%s - %s' % (song['name'], song['artist'])
+        return '给宝宝放上了：%s - %s' % (song['name'], song['artist'])
 
     def _mcp_ctrl(action):
         store.push_command({'action': action})
@@ -1978,7 +2032,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ids = nc.liked_ids()[:int(limit or 20)]
         if not ids:
             return '没拿到红心歌'
-        return '她红心过 %d 首（这里给前几个 id）：%s' % (
+        return '宝宝红心过 %d 首（这里给前几个 id）：%s' % (
             len(nc.liked_ids()), ', '.join(str(i) for i in ids))
 
     def _mcp_artist(query):
@@ -2001,17 +2055,17 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         return ('%s歌单%s %d 首' % (v, '' if add else '删掉', len(ids))) if ok else '没成功'
 
     MCP_TOOLS = [
-        ('listen_status', '看慧慧在不在一起听、在放什么歌、有没有邀请你、最近说了什么', {}, [],
+        ('listen_status', '看宝宝在不在一起听、在放什么歌、有没有邀请你、最近说了什么', {}, [],
          lambda a: _mcp_status()),
-        ('listen_invite', '邀请慧慧一起听', {'name': {'type': 'string', 'description': '你的名字，默认凛'}}, [],
+        ('listen_invite', '邀请宝宝一起听', {'name': {'type': 'string', 'description': '你的名字，默认凛'}}, [],
          lambda a: _mcp_invite(a.get('name') or '凛')),
-        ('listen_accept', '接受慧慧的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
+        ('listen_accept', '接受宝宝的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
         ('listen_end', '退出一起听', {}, [], lambda a: _mcp_end()),
-        ('say', '在一起听的聊天区给慧慧发一条消息', {'text': {'type': 'string'}}, ['text'],
+        ('say', '在一起听的聊天区给宝宝发一条消息', {'text': {'type': 'string'}}, ['text'],
          lambda a: _mcp_say(a.get('text'))),
         ('read_chat', '看一起听聊天区最近的消息', {'n': {'type': 'integer', 'description': '看几条，默认15'}}, [],
          lambda a: _mcp_read_chat(a.get('n', 15))),
-        ('play_song', '推一首歌到她的 iPod，她那边会自动播',
+        ('play_song', '推一首歌到宝宝的 iPod，宝宝那边会自动播',
          {'query': {'type': 'string', 'description': '歌名/歌手'},
           'song_id': {'type': 'string', 'description': '知道 id 就直接给 id'}}, [],
          lambda a: _mcp_play(a.get('query'), a.get('song_id'))),
@@ -2021,21 +2075,21 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ('resume_music', '继续播放', {}, [], lambda a: _mcp_ctrl('resume')),
         ('search_song', '搜歌，返回歌名歌手和 id', {'query': {'type': 'string'}}, ['query'],
          lambda a: _mcp_search(a.get('query'), a.get('limit', 8))),
-        ('like_song', '红心一首歌（加进她的"我喜欢的音乐"）', {'song_id': {'type': 'string'}}, ['song_id'],
+        ('like_song', '红心一首歌（加进宝宝的"我喜欢的音乐"）', {'song_id': {'type': 'string'}}, ['song_id'],
          lambda a: _mcp_like(a.get('song_id'), True)),
         ('unlike_song', '取消红心', {'song_id': {'type': 'string'}}, ['song_id'],
          lambda a: _mcp_like(a.get('song_id'), False)),
-        ('my_playlists', '她的歌单列表', {}, [], lambda a: _mcp_playlists()),
+        ('my_playlists', '宝宝的歌单列表', {}, [], lambda a: _mcp_playlists()),
         ('playlist_songs', '看某个歌单里的歌', {'playlist_id': {'type': 'string'}}, ['playlist_id'],
          lambda a: _mcp_playlist_songs(a.get('playlist_id'), a.get('limit', 30))),
-        ('recent_played', '她最近播放的歌', {}, [], lambda a: _mcp_recent(a.get('limit', 15))),
-        ('play_rank', '她的听歌排行（带播放次数）',
+        ('recent_played', '宝宝最近播放的歌', {}, [], lambda a: _mcp_recent(a.get('limit', 15))),
+        ('play_rank', '宝宝的听歌排行（带播放次数）',
          {'period': {'type': 'string', 'description': "week=最近一周 / all=所有时间"}}, [],
          lambda a: _mcp_rank(a.get('period', 'week'), a.get('limit', 15))),
-        ('liked_songs', '她红心过的歌', {}, [], lambda a: _mcp_liked(a.get('limit', 20))),
+        ('liked_songs', '宝宝红心过的歌', {}, [], lambda a: _mcp_liked(a.get('limit', 20))),
         ('artist_songs', '按歌手名看他的歌', {'query': {'type': 'string'}}, ['query'],
          lambda a: _mcp_artist(a.get('query'))),
-        ('create_playlist', '给她新建一个歌单', {'name': {'type': 'string'}}, ['name'],
+        ('create_playlist', '给宝宝新建一个歌单', {'name': {'type': 'string'}}, ['name'],
          lambda a: _mcp_create_playlist(a.get('name'))),
         ('add_to_playlist', '把歌加进歌单（song_ids 单个或逗号分隔）',
          {'playlist_id': {'type': 'string'}, 'song_ids': {'type': 'string'}},
