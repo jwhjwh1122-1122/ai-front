@@ -1774,8 +1774,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         sid = request.args.get('id', '')
         if not sid:
             return ('', 404)
+        # hi=1：单曲模式用，要最好的音质；不带就是连播那条流用的 mp3。
+        hi = request.args.get('hi') in ('1', 'true', 'yes')
         try:
-            url = nc.song_url(sid, mp3_only=True)   # 流里只用 mp3，见 song_url 里的说明
+            url = nc.song_url(sid, mp3_only=not hi)
         except Exception:
             url = ''
         if not url:
