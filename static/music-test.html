@@ -93,7 +93,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
 .chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:80px;display:none;flex-direction:column;padding:0 18px;}
 .chat-view.on{display:flex;}
-.cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:8px 0;display:flex;flex-direction:column;gap:12px;}
+.cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:30px 0 8px;display:flex;flex-direction:column;gap:12px;}
 .cv-msgs::-webkit-scrollbar{display:none;}
 .cv-row{display:flex;gap:8px;max-width:82%;}
 .cv-row.me{align-self:flex-end;flex-direction:row-reverse;}
@@ -274,15 +274,26 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .q-foot{padding:14px 18px;border-top:1px solid #e4e7ea;text-align:center;}
 .q-foot span{font-size:14px;color:#5a6068;}
 /* 邀请弹窗 */
-.invite-mask{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;padding:40px;}
+/* 邀请弹窗：照网易云的排版，配色跟着我们自己的白 */
+.invite-mask{position:fixed;inset:0;z-index:80;background:rgba(245,247,249,.55);
+  -webkit-backdrop-filter:blur(22px) saturate(1.3);backdrop-filter:blur(22px) saturate(1.3);
+  display:none;align-items:center;justify-content:center;padding:40px;}
 .invite-mask.show{display:flex;}
-.invite-card{background:#fff;border-radius:22px;padding:28px 24px 20px;width:100%;max-width:300px;text-align:center;box-shadow:0 20px 50px -12px rgba(0,0,0,.4);}
-.invite-ic{font-size:44px;margin-bottom:12px;}
-.invite-tx{font-size:16px;color:#20262c;font-weight:600;margin-bottom:22px;line-height:1.4;}
-.invite-btns{display:flex;gap:12px;}
-.invite-btns button{flex:1;padding:12px;border-radius:22px;border:none;font-size:15px;font-weight:600;}
-.inv-no{background:#eef0f2;color:#8a9098;}
-.inv-yes{background:#ec4141;color:#fff;}
+.invite-card{background:rgba(255,255,255,.92);border-radius:26px;padding:30px 26px 26px;width:100%;max-width:290px;
+  text-align:center;box-shadow:0 26px 60px -18px rgba(60,70,90,.32);}
+.inv-heads{position:relative;height:112px;margin-bottom:4px;}
+.inv-buds{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none;overflow:visible;z-index:0;}
+.inv-faces{position:relative;z-index:2;display:flex;justify-content:center;gap:22px;padding-top:6px;}
+.inv-face{width:62px;height:62px;border-radius:50%;background:#d8dce2 center/cover no-repeat;
+  box-shadow:0 3px 10px rgba(60,70,90,.18);}
+.inv-name{font-size:18px;font-weight:700;color:#20262c;letter-spacing:.3px;}
+.inv-sub{font-size:13px;color:#9aa1a9;margin-top:6px;margin-bottom:24px;}
+.invite-btns{display:flex;gap:44px;justify-content:center;}
+.invite-btns button{width:56px;height:56px;border-radius:50%;border:none;padding:0;
+  display:flex;align-items:center;justify-content:center;}
+.invite-btns svg{width:24px;height:24px;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.inv-no{background:#e7eaee;color:#8a9098;}
+.inv-yes{background:#ec4141;color:#fff;box-shadow:0 6px 16px -4px rgba(236,65,65,.55);}
 
 /* 单人/一起听 排版切换 */
 .together{display:none;}
@@ -411,11 +422,28 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 <!-- 邀请弹窗 -->
 <div class="invite-mask" id="invite-mask">
   <div class="invite-card">
-    <div class="invite-ic">🎧</div>
-    <div class="invite-tx" id="invite-tx">Claude 邀请你一起听</div>
+    <div class="inv-heads">
+      <svg class="inv-buds" viewBox="0 0 238 112" preserveAspectRatio="xMidYMin meet">
+        <defs><linearGradient id="budG2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#8f959d" stop-opacity="1"/>
+          <stop offset="55%" stop-color="#8f959d" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="#8f959d" stop-opacity="0"/>
+        </linearGradient></defs>
+        <path d="M47 35 Q34 56 40 76 Q44 88 50 100" fill="none" stroke="url(#budG2)" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M191 35 Q204 56 198 76 Q194 88 188 100" fill="none" stroke="url(#budG2)" stroke-width="1.4" stroke-linecap="round"/>
+        <ellipse cx="47" cy="32" rx="4" ry="5.5" fill="#8f959d" transform="rotate(-45 47 32)"/>
+        <ellipse cx="191" cy="32" rx="4" ry="5.5" fill="#8f959d" transform="rotate(45 191 32)"/>
+      </svg>
+      <div class="inv-faces">
+        <div class="inv-face" id="inv-av-user"></div>
+        <div class="inv-face" id="inv-av-ai"></div>
+      </div>
+    </div>
+    <div class="inv-name" id="invite-tx">凛</div>
+    <div class="inv-sub">邀请你一起听</div>
     <div class="invite-btns">
-      <button class="inv-no" id="inv-no">以后再说</button>
-      <button class="inv-yes" id="inv-yes">一起听</button>
+      <button class="inv-no" id="inv-no" aria-label="拒绝"><svg viewBox="0 0 24 24" stroke="currentColor"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="inv-yes" id="inv-yes" aria-label="一起听"><svg viewBox="0 0 24 24" stroke="currentColor"><path d="M4 12.5l5.5 5.5L20 7"/></svg></button>
     </div>
   </div>
 </div>
@@ -509,7 +537,12 @@ function startStream(idx,autoplay){
   audio.addEventListener('loadedmetadata',go);
   // 界面先跟上，别等网络
   onSegChanged(0,true);
-  if(autoplay!==false)audio.play().catch(()=>{});
+  if(autoplay!==false)audio.play().catch(playBlocked);
+}
+// iOS 规定：这个页面还没被手点过播放，网页就不许自己出声。
+// 这种时候别装作没事，告诉一声，点一下就好了。
+function playBlocked(e){
+  if(e&&e.name==='NotAllowedError')toast('推过来一首歌，点一下播放');
 }
 // 流走到了第 i 段（= 第 i 首歌）：把界面、歌词、红心、锁屏信息全换过去
 function onSegChanged(i,uiOnly){
@@ -596,7 +629,7 @@ function playPrev(){
 function toast(msg){
   let t=document.getElementById('_toast');
   if(!t){t=document.createElement('div');t.id='_toast';
-    t.style.cssText='position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(40,44,52,.92);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;z-index:99;transition:opacity .3s;';
+    t.style.cssText='position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(40,44,52,.92);color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;z-index:99;transition:opacity .3s;pointer-events:none;';
     document.body.appendChild(t);}
   t.textContent=msg;t.style.opacity='1';
   clearTimeout(t._h);t._h=setTimeout(()=>t.style.opacity='0',1600);
@@ -1172,10 +1205,10 @@ function setModeLabel(tmp){
   el.textContent=(q?q+' · ':'')+(hlsMode?'连播':'单曲');
 }
 function toggleMode(){
+  const keep=localTime();          // 先记住现在放到哪了，再切模式（顺序反了就会从头放）
   hlsMode=!hlsMode;
   localStorage.setItem('play-mode',hlsMode?'hls':'solo');
   toast(hlsMode?'连播模式 · 锁屏也会一首接一首':'音质模式 · 母带，后台放完这首会停');
-  const keep=hlsMode?0:localTime();
   const sg=cur;
   if(!sg){setModeLabel();return;}
   if(hlsMode){
@@ -1202,7 +1235,11 @@ function playSong(sg){
     return;
   }
   let idx=queue.findIndex(x=>String(x.id)===String(sg.id));
-  if(idx<0){queue=[sg];idx=0;}
+  if(idx<0){
+    // 队列里没有就插到当前这首后面，别把人家整条队列洗掉
+    if(queue.length){idx=Math.min(qIndex+1,queue.length);queue.splice(idx,0,sg);}
+    else{queue=[sg];idx=0;}
+  }
   startStream(idx,true);
 }
 // 红心状态同步
@@ -1461,6 +1498,25 @@ $('lyric-view').addEventListener('click',e=>{
 })();
 
 // ── 头像:跟随app头像(嵌入时从父窗口读,否则localStorage)──
+// 服务器上的那份才算数：换设备、清缓存、重装都还在
+async function loadProfile(){
+  try{
+    const r=await fetch('/api/music/profile').then(r=>r.json());
+    if(!r||!r.ok)return;
+    if(r.avatar_user){window._uav=r.avatar_user;$('tg-user').style.backgroundImage='url('+r.avatar_user+')';
+      try{localStorage.setItem('music-avatar-user',r.avatar_user);}catch(e){}}
+    if(r.avatar_ai){window._aav=r.avatar_ai;$('tg-ai').style.backgroundImage='url('+r.avatar_ai+')';
+      try{localStorage.setItem('music-avatar-ai',r.avatar_ai);}catch(e){}}
+    if(r.together_mins>tgMins()){localStorage.setItem('together-mins',r.together_mins);renderTip();}
+    // 服务器上还没有、但本地有的，补传上去（老数据不用你重设一遍）
+    const up={};
+    if(!r.avatar_user&&window._uav)up.avatar_user=window._uav;
+    if(!r.avatar_ai&&window._aav)up.avatar_ai=window._aav;
+    if(tgMins()>(r.together_mins||0))up.together_mins=tgMins();
+    if(Object.keys(up).length)fetch('/api/music/profile',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(up)}).catch(()=>{});
+  }catch(e){}
+}
 function loadAvatars(){
   let uav='',aav='';
   // 优先iPod自己存的自定义头像
@@ -1501,6 +1557,9 @@ avFileInput.addEventListener('change',e=>{
       localStorage.setItem('music-avatar-'+avatarTarget,data);
       $('tg-'+avatarTarget).style.backgroundImage='url('+data+')';
       window['_'+(avatarTarget==='user'?'uav':'aav')]=data;
+      // 同时存服务器，换设备也还在
+      fetch('/api/music/profile',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({['avatar_'+avatarTarget]:data})}).catch(()=>{});
       toast('头像换好了');
     };
     img.src=ev.target.result;
@@ -1527,7 +1586,7 @@ async function toggleTogether(){
     enterTogether();
     try{
       await fetch('/api/music/listen/accept',{method:'POST'}); // 标记一起听active
-      await fetch('/api/music/listen/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from:'user',name:'慧'})});
+      await fetch('/api/music/listen/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({from:'user',name:'宝宝'})});
       toast('已开始一起听');
     }catch(e){}
   }
@@ -1541,7 +1600,9 @@ async function pollInvite(){
     const r=await fetch('/api/music/listen/state').then(r=>r.json());
     if(r.invite&&r.invite.from==='ai'&&!inviteShown&&!$('play-page').classList.contains('listening')){
       inviteShown=true;
-      $('invite-tx').textContent=(r.invite.name||'Claude')+' 邀请你一起听';
+      $('invite-tx').textContent=r.invite.name||'凛';
+      if(window._uav)$('inv-av-user').style.backgroundImage='url('+window._uav+')';
+      if(window._aav)$('inv-av-ai').style.backgroundImage='url('+window._aav+')';
       $('invite-mask').classList.add('show');
     }
   }catch(e){}
@@ -1571,9 +1632,13 @@ renderTip();
 setInterval(()=>{
   // 只在一起听模式 + 正在放歌 才累计
   if($('play-page').classList.contains('listening')&&!audio.paused&&audio.currentTime>0){
-    localStorage.setItem('together-mins',tgMins()+1);renderTip();
+    const m=tgMins()+1;
+    localStorage.setItem('together-mins',m);renderTip();
+    fetch('/api/music/profile',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({together_mins:m})}).catch(()=>{});
   }
 },60000);
+loadProfile();
 
 // ── 音乐/评论切换 ──
 let chatMode=false;
@@ -1705,7 +1770,7 @@ setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.jso
     else if(c.action==='resume')audio.play().catch(()=>{});
     else if(c.action==='next')playNext();
     else if(c.action==='prev')playPrev();
-  }}catch(e){}},12000);
+  }}catch(e){}},5000);
 
 // 开屏唱片：首页数据到了就淡出；最多转 6 秒，免得网络卡住一直挡着
 function hideSplash(){
