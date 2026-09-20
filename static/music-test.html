@@ -278,9 +278,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .invite-mask{position:fixed;inset:0;z-index:80;background:rgba(40,46,56,.10);
   display:none;align-items:center;justify-content:center;padding:40px;}
 .invite-mask.show{display:flex;}
-.invite-card{background:rgba(255,255,255,.72);border-radius:26px;padding:30px 26px 26px;width:100%;max-width:290px;
-  text-align:center;box-shadow:0 26px 60px -18px rgba(60,70,90,.32);
-  -webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);}
+.invite-card{background:#fff;border-radius:26px;padding:30px 26px 26px;width:100%;max-width:290px;
+  text-align:center;box-shadow:0 26px 60px -18px rgba(60,70,90,.32);}
 .inv-heads{position:relative;height:112px;margin-bottom:4px;}
 .inv-buds{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none;overflow:visible;z-index:0;}
 .inv-faces{position:relative;z-index:2;display:flex;justify-content:center;gap:22px;padding-top:6px;}
@@ -502,6 +501,8 @@ function buildPlaylist(startIdx){
   segBase=startIdx;segIdx=-1;
   return '/api/music/hls?s='+encodeURIComponent(win.map(x=>x.id+':'+songDur(x)).join(','));
 }
+// 切歌之前先让服务器把那首的直链取好，等 iOS 来要片段就是现成的
+function warm(id){if(id)fetch('/api/music/prefetch?id='+id+'&mp3=1').catch(()=>{});}
 function segAt(t){
   for(let i=segs.length-1;i>=0;i--)if(t>=segs[i].start-0.05)return i;
   return 0;
@@ -523,6 +524,7 @@ function startStream(idx,autoplay){
   if(!queue.length)return;
   idx=((idx%queue.length)+queue.length)%queue.length;
   const url=buildPlaylist(idx);
+  warm(segs[0]&&segs[0].id);
   playToken++;
   flushScrobble();
   hlsReady=false;
@@ -541,7 +543,7 @@ function startStream(idx,autoplay){
 }
 // 保险：连播这条流有时候会卡在坏状态里，seek 不动也不报错，表现就是"点了没反应"。
 // 6 秒还没出声就用单曲模式把这首放出来，宁可这一首不连播，也别让人干等。
-let hlsFbTimer=null;
+let hlsFbTimer=null,hlsFbCount=0;
 function armHlsFallback(){
   clearTimeout(hlsFbTimer);
   const my=playToken,sg=cur;
@@ -550,11 +552,19 @@ function armHlsFallback(){
     if(!audio.paused&&audio.currentTime>0)return; // 已经在响了
     if(audio.paused)return;                       // 是你自己按的暂停，不插手
     if(!sg)return;
-    toast('连播这首卡住了，换单曲模式放');
+    hlsFbCount++;
+    if(hlsFbCount>=2){
+      // 连着两次都卡，说明这条流现在就是不行，别再反复试了
+      hlsMode=false;localStorage.setItem('play-mode','solo');
+      toast('连播老卡，先留在单曲模式');
+    }else{
+      toast('连播这首卡住了，换单曲模式放');
+    }
     soloPlay(sg);
-  },6000);
+    setModeLabel();
+  },12000);
 }
-function disarmHlsFallback(){clearTimeout(hlsFbTimer);}
+function disarmHlsFallback(){clearTimeout(hlsFbTimer);hlsFbCount=0;}
 // iOS 规定：这个页面还没被手点过播放，网页就不许自己出声。
 // 这种时候别装作没事，告诉一声，点一下就好了。
 function playBlocked(e){
@@ -618,14 +628,20 @@ function playNext(){
     else qIndex=(qIndex+1)%queue.length;
     soloPlay(queue[qIndex]);return;
   }
-  if(loopMode===1){const g=curSeg();if(g){audio.currentTime=g.start;audio.play().catch(()=>{});}return;}
+  if(loopMode===1){const g=curSeg();
+    if(g){audio.currentTime=g.start;audio.play().catch(()=>{});}
+    else startStream(qIndex,true);   // 分段表是空的（刚被降级清掉），直接重开这首
+    return;}
   if(loopMode===2){startStream(Math.floor(Math.random()*queue.length),true);return;}
   if(segIdx+1<segs.length){
+    warm(segs[segIdx+1].id);
     audio.currentTime=segs[segIdx+1].start;
     audio.play().catch(()=>{});
     onSegChanged(segIdx+1);
   }else{
-    startStream((segBase+segs.length)%queue.length,true);   // 这张列表到头了，续一张
+    // 分段表空了（被降级清掉过）就从当前这首往后数，否则接着这张列表往下续；
+    // 不判断的话算出来还是原地，按下一首会重放同一首。
+    startStream(((segs.length?segBase+segs.length:qIndex+1)%queue.length+queue.length)%queue.length,true);
   }
 }
 function playPrev(){
@@ -634,12 +650,13 @@ function playPrev(){
     qIndex=(qIndex-1+queue.length)%queue.length;
     soloPlay(queue[qIndex]);return;
   }
-  if(segIdx-1>=0){
+  if(segIdx-1>=0&&segs.length){
+    warm(segs[segIdx-1].id);
     audio.currentTime=segs[segIdx-1].start;
     audio.play().catch(()=>{});
     onSegChanged(segIdx-1);
   }else{
-    startStream((segBase-1+queue.length)%queue.length,true);
+    startStream((((segs.length?segBase:qIndex)-1)%queue.length+queue.length)%queue.length,true);
   }
 }
 function toast(msg){
@@ -1245,6 +1262,7 @@ function playSong(sg){
   if(!hlsMode){soloPlay(sg);return;}
   const inWin=segs.findIndex(g=>String(g.id)===String(sg.id));
   if(inWin>=0&&hlsReady){
+    warm(segs[inWin].id);
     audio.currentTime=segs[inWin].start;
     audio.play().catch(()=>{});
     onSegChanged(inWin);
