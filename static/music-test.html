@@ -81,6 +81,9 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-artist{cursor:pointer;}
 .b-artist:active{opacity:.6;}
 .b-social{display:flex;align-items:center;gap:18px;flex-shrink:0;}
+/* 看歌词时歌名已经在顶栏了，下面这份藏起来，别重复 */
+#play-page.lyon .b-head>div:first-child{display:none;}
+#play-page.lyon .b-social{margin-left:auto;}
 .b-heart{color:#9298a0;background:none;border:none;}
 .b-heart svg path{fill:none;stroke:currentColor;stroke-width:1.7;}
 .b-heart.liked{color:#ec4141;}
@@ -123,8 +126,13 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cb.main svg{width:52px;height:52px;}
 .lyric-view{position:absolute;inset:0;background:linear-gradient(180deg,#fbfcfd,#eef1f4);display:none;flex-direction:column;padding:calc(env(safe-area-inset-top) + 52px) 22px calc(env(safe-area-inset-bottom) + 18px);z-index:3;overflow-x:hidden;}
 .lyric-view.on{display:flex;}
-.ly-scroll{flex:1;overflow-y:auto;overflow-x:hidden;text-align:center;padding:16vh 0 26vh;margin:0 -12px;scrollbar-width:none;}
+.ly-scroll{flex:1;overflow-y:auto;overflow-x:hidden;text-align:center;padding:5vh 0 26vh;margin:0 -12px;scrollbar-width:none;}
 .ly-scroll::-webkit-scrollbar{display:none;}
+/* 一起听时头像搬进歌词页，比播放页小一号，上下留一样的空 */
+.lyric-view .together{padding:6px 0 0;}
+.lyric-view .together .tg-face{width:46px;height:46px;}
+.lyric-view .together .tg-buds{top:6px;width:165px;height:101px;}
+.lyric-view .together .tg-tip{margin-top:11px;font-size:11px;}
 .ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:8px 10px;margin:9px 0;transition:color .25s,font-size .25s,background .2s;}
 .ly-line.cur{font-size:18px;color:#20262c;}
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
@@ -328,7 +336,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   <img class="sp-disc" src="/static/sp-disc.png" alt="" decoding="async">
 </div></div>
 <audio id="audio" playsinline preload="auto"></audio>
-<div id="dbg" style="position:fixed;left:0;right:0;bottom:0;z-index:300;background:rgba(20,24,30,.82);color:#9fe8b0;
+<div id="dbg" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:300;background:rgba(20,24,30,.82);color:#9fe8b0;
   font:10px/1.35 ui-monospace,Menlo,monospace;padding:3px 6px;white-space:pre-wrap;word-break:break-all;"></div>
 <div class="page" id="list-page">
   <div class="lp-top">
@@ -418,7 +426,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <button class="mc-btn on" id="mc-music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
     <button class="mc-btn" id="mc-chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></button>
   </div>
-  <div class="lyric-view" id="lyric-view"><div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
+  <div class="lyric-view" id="lyric-view">
+    <div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
     <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></button></div>
   </div>
 </div>
@@ -613,28 +622,10 @@ setInterval(()=>{
     // 只救这一首：临时切单曲把它放出来，放完自动回连播。
     // 不写本地存储，也不让它变成一个要你记着调回去的状态。
     autoSolo=true;hlsMode=false;
-    toast('这首卡了，先用单曲放，下一首回连播');
+    toast('这首卡了，先用单曲放，点下一首歌回连播');
     soloPlay(sg,true);setModeLabel();
   }
 },1000);
-// iOS 上网页第一次出声之前，解码管道还没建起来，第一首歌就得一边搭管道一边缓冲，
-// 所以特别慢。这里在你第一次碰屏幕的那一刻，用一段 0.05 秒的静音把管道先点着，
-// 等你真点歌的时候它已经是热的了。只做一次。
-let audioPrimed=false;
-function primeAudio(){
-  if(audioPrimed)return;audioPrimed=true;
-  try{
-    const keep=audio.getAttribute('src');
-    if(keep)return;                       // 已经在放东西了，别去动它
-    audio.src='data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
-    const p=audio.play();
-    if(p&&p.then)p.then(()=>{try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}})
-                  .catch(()=>{try{audio.removeAttribute('src');}catch(e){}});
-  }catch(e){}
-}
-['touchstart','pointerdown','click'].forEach(ev=>
-  document.addEventListener(ev,primeAudio,{once:true,capture:true,passive:true}));
-
 // iOS 规定：这个页面还没被手点过播放，网页就不许自己出声。
 // 这种时候别装作没事，告诉一声，点一下就好了。
 function playBlocked(e){
@@ -652,6 +643,7 @@ function onSegChanged(i,uiOnly){
   cur=sg;
   $('scr-nm').textContent=sg.name;$('scr-ar').textContent=sg.artist;$('scr-al').textContent=sg.album||'';
   $('b-title').textContent=sg.name;$('b-artist').textContent=sg.artist;
+  if(lyView)setTimeout(setLyTitle,0);
   document.querySelector('.b-follow').style.display='none';
   if(sg.cover){$('scr-cover').src=sg.cover;$('mini-cover').src=sg.cover;}
   $('mini-nm').textContent=sg.name;$('mini-ar').textContent=sg.artist;
@@ -1182,7 +1174,11 @@ function fetchT(url,ms){
 function setMediaSession(s){
   if(!('mediaSession' in navigator))return;
   try{
-    const art=s.cover?[{src:s.cover,sizes:'512x512',type:'image/jpeg'}]:[];
+    // 网易云给的封面是 http 的，锁屏/灵动岛那边不收混合内容，必须换成 https。
+    // 顺便用 param 直接要对应尺寸的图，别让系统去下原图。
+    const cov=(u,px)=>u.replace(/^http:\/\//,'https://').split('?')[0]+'?param='+px+'y'+px;
+    const art=s.cover?[96,192,384,512].map(px=>(
+      {src:cov(s.cover,px),sizes:px+'x'+px,type:'image/jpeg'})):[];
     navigator.mediaSession.metadata=new MediaMetadata({
       title:s.name||'',artist:s.artist||'',album:s.album||'',artwork:art});
     navigator.mediaSession.setActionHandler('play',()=>audio.play().catch(()=>{}));
@@ -1266,6 +1262,11 @@ function resetPlayUI(){
 // ── 音质模式：单曲直连，要母带 ──
 async function soloPlay(sg,lite){
   if(!sg)return;
+  // ⚠️ 这一句必须在任何 await 之前：
+  // iOS 只认"你手指点下去那一下"直接触发的播放。下面要去服务器要地址，
+  // 一等待，授权就过期了，之后再 play() 会出现"状态全绿但不出声"。
+  // 先在这里 play 一下把授权拿到手（放的是上一首的残留，几毫秒后就被换掉，听不见）。
+  try{audio.play().catch(()=>{});}catch(e){}
   const my=++playToken;
   userPaused=false;
   segs=[];segIdx=-1;hlsReady=false;
@@ -1276,6 +1277,7 @@ async function soloPlay(sg,lite){
   if(i>=0)qIndex=i;
   $('scr-nm').textContent=sg.name;$('scr-ar').textContent=sg.artist;$('scr-al').textContent=sg.album||'';
   $('b-title').textContent=sg.name;$('b-artist').textContent=sg.artist;
+  if(lyView)setTimeout(setLyTitle,0);
   document.querySelector('.b-follow').style.display='none';
   if(sg.cover){$('scr-cover').src=sg.cover;$('mini-cover').src=sg.cover;}
   $('mini-nm').textContent=sg.name;$('mini-ar').textContent=sg.artist;
@@ -1546,7 +1548,20 @@ $('btn-heart').onclick=async()=>{
   if(nowLiked)likedSet.add(String(cur.id));else likedSet.delete(String(cur.id));
   try{await fetch('/api/music/like',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur.id,like:nowLiked})});}catch(e){}
 };
-$('prog-sub').onclick=toggleMode;
+// 点一下切模式；长按 0.7 秒调出/收起底部那行诊断
+(function(){
+  const el=$('prog-sub');let t=null,longed=false;
+  const start=()=>{longed=false;clearTimeout(t);t=setTimeout(()=>{
+    longed=true;const d=document.getElementById('dbg');
+    if(d)d.style.display=d.style.display==='none'?'block':'none';
+  },700);};
+  const stop=()=>clearTimeout(t);
+  el.addEventListener('touchstart',start,{passive:true});
+  ['touchend','touchmove','touchcancel'].forEach(e=>el.addEventListener(e,stop,{passive:true}));
+  el.addEventListener('mousedown',start);
+  ['mouseup','mouseleave'].forEach(e=>el.addEventListener(e,stop));
+  el.onclick=()=>{if(longed){longed=false;return;}toggleMode();};
+})();
 setModeLabel();
 $('c-list').onclick=()=>{showQueue();};
 // 上一首/下一首(iPod轮 + 底部控件)
@@ -1563,7 +1578,9 @@ $('c-mode').onclick=()=>{
 };
 // 放完自动下一首
 audio.addEventListener('ended',()=>{
-  restoreMode();   // 临时降级的那首放完了，回连播
+  // 这里故意不回连播：新建一条 HLS 流必须有你手指点的那一下才能启动，
+  // 在这儿自动切回去只会卡住→再降级→再切回→死循环。
+  // 改成你下次点歌时再回（playSong / setQueue 里做），那一下有手势。
   if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,localDur()||audio.duration||0);scrobbleDone=true;}
   if(!queue.length)return;
   if(!hlsMode){playNext();return;}   // 音质模式：一首一首来
@@ -1574,7 +1591,48 @@ audio.addEventListener('ended',()=>{
 $('w-center').onclick=()=>{collapse();showTab('search');};
 $('w-menu').onclick=()=>toggleLyric();
 function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyView);
-  if(lyView){lyHideSeek();lastLy=-1;updLyric(audio.currentTime);}else{lyHideSeek();}}
+  $('play-page').classList.toggle('lyon',lyView);
+  if(lyView){
+    // 下边界停在进度条上方，这样进度条和控制键照常露在外面能直接用，
+    // 不用再退出歌词页才能操作。位置是量出来的，不写死，各种机型都对。
+    // 只替换中间那台 iPod 的位置：上面的标题栏、下面的歌名/红心/进度/控制键
+    // 全都照常露着，跟随身听页面一模一样。位置量出来，不写死。
+    try{
+      const pg=$('play-page').getBoundingClientRect();
+      const tp=document.querySelector('.top').getBoundingClientRect();
+      const bh=document.querySelector('.b-head').getBoundingClientRect();
+      const lv=$('lyric-view');
+      lv.style.top=Math.max(0,Math.round(tp.bottom-pg.top))+'px';
+      lv.style.bottom=Math.max(0,Math.round(pg.bottom-bh.top+4))+'px';
+      lv.style.paddingTop='6px';lv.style.paddingBottom='6px';
+    }catch(e){}
+    moveTogether(true);
+    setLyTitle();
+    lyHideSeek();lastLy=-1;updLyric(audio.currentTime);
+  }else{moveTogether(false);lyHideSeek();setLyTitle();}}
+// 一起听的头像耳机那块：看歌词时搬到歌词上方占住那片空，回播放页再搬回去。
+// 单人听歌它本来就是隐藏的，所以单人时歌词页就是纯歌词。
+let tgHome=null;
+function moveTogether(into){
+  const tg=$('together-bar');if(!tg)return;
+  if(into){
+    if(!$('play-page').classList.contains('listening'))return;
+    if(!tgHome)tgHome={parent:tg.parentNode,next:tg.nextSibling};
+    $('lyric-view').insertBefore(tg,$('ly-scroll'));
+  }else if(tgHome){
+    tgHome.parent.insertBefore(tg,tgHome.next);
+  }
+}
+// 标题栏中间：看歌词时显示歌名歌手，回播放页显示"一起听"
+function setLyTitle(){
+  const el=$('top-title');if(!el)return;
+  if(lyView&&cur){
+    const cell='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw;';
+    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">'+
+      '<div style="font-size:15px;font-weight:650;color:#20262c;line-height:1.1;'+cell+'">'+(cur.name||'')+'</div>'+
+      '<div style="font-size:11.5px;color:#9aa1a9;line-height:1.1;'+cell+'">'+(cur.artist||'')+'</div></div>';
+  }else{el.textContent='一起听';}
+}
 $('ipod-tap').addEventListener('click',e=>{if(e.target.closest('.wheel'))return;if(e.target.closest('.screen'))toggleLyric();});
 $('lyric-view').addEventListener('click',e=>{
   if(e.target.closest('#ly-seek'))return;   // 点定位条(三角)不关页面
