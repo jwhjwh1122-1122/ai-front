@@ -1688,7 +1688,7 @@ async function pollInvite(){
     }
   }catch(e){}
 }
-setInterval(pollInvite,5000);pollInvite();
+setInterval(pollInvite,3000);pollInvite();
 $('inv-yes').onclick=async()=>{
   $('invite-mask').classList.remove('show');
   enterTogether();
@@ -1843,10 +1843,14 @@ $('ed-reset').onclick=async()=>{
   const cb=edDone;closeEditor();if(cb)cb();
 };
 
-let lastSeq=0,remoteTimer=null;
+let lastSeq=0,remoteTimer=null,remoteFirst=true;
 async function pollRemote(){
   try{
     const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
+    // 页面刚打开时服务器上往往还躺着一条旧指令（上次推的歌）。
+    // 第一次只记下号码，不执行——否则一进来就会自动重放那首歌，
+    // 而且因为不是手点的，iOS 不许出声，看上去就是"有歌但放不出来"。
+    if(remoteFirst){remoteFirst=false;if(c&&c.seq)lastSeq=c.seq;schedRemote();return;}
     if(c&&c.seq&&c.seq!==lastSeq){lastSeq=c.seq;
       if(c.action==='play'&&c.id){playSong({id:c.id,name:c.name,artist:c.artist,cover:c.cover});expand();}
       else if(c.action==='stop'||c.action==='pause')audio.pause();
@@ -1864,7 +1868,11 @@ function schedRemote(){
 }
 schedRemote();
 // 从后台回来：定时器被系统冻过，立刻补拉一次，攒下的指令不丢
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollRemote();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  pollRemote();
+  try{pollInvite();}catch(e){}   // 邀请是另一条轮询，以前漏了，切回来也得补一次
+});
 
 // 开屏唱片：首页数据到了就淡出；最多转 6 秒，免得网络卡住一直挡着
 function hideSplash(){
