@@ -328,6 +328,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   <img class="sp-disc" src="/static/sp-disc.png" alt="" decoding="async">
 </div></div>
 <audio id="audio" playsinline preload="auto"></audio>
+<div id="dbg" style="position:fixed;left:0;right:0;bottom:0;z-index:300;background:rgba(20,24,30,.82);color:#9fe8b0;
+  font:10px/1.35 ui-monospace,Menlo,monospace;padding:3px 6px;white-space:pre-wrap;word-break:break-all;"></div>
 <div class="page" id="list-page">
   <div class="lp-top">
     <span class="lp-tab on" id="tab-mine" data-tab="mine">我的</span>
@@ -496,7 +498,10 @@ function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0
 // 不能拿 audio.paused 判断——play() 在 iOS 上加载被打断时会失败，
 // 一失败 paused 就变 true，保险机制会误以为是你按的，然后什么都不做。
 let userPaused=false;
-let hlsMode=(localStorage.getItem('play-mode')||'hls')==='hls';
+// 永远从连播开始。单曲只在本次有效，不记本地——
+// 记了的话哪天手滑切一下，就能悄悄跟你好几天（已经踩过这个坑）。
+let hlsMode=true;
+try{localStorage.removeItem('play-mode');}catch(e){}
 const HLS_WIN=22;   // 一次拼多少首。太多了误差会攒，太少了会频繁重建              // 一张列表放多少首（够听两三个小时）
 let segs=[],segBase=0,segIdx=-1,hlsReady=false;
 function songDur(s){return Math.max(1,Math.round((s&&s.duration||240000)/1000));}
@@ -527,6 +532,7 @@ function localDur(){const g=curSeg();return g?g.dur:(audio.duration||0);}
 
 let curSourceId='';   // 当前队列来自哪个歌单，上报时带上，歌单播放量才会涨
 function setQueue(songs,startIndex){
+  restoreMode();
   queue=songs.slice();qIndex=startIndex;
   if(hlsMode)startStream(startIndex,true);
   else soloPlay(queue[startIndex]);
@@ -555,17 +561,46 @@ function startStream(idx,autoplay){
   onSegChanged(0,true);
   if(autoplay!==false){audio.play().catch(playBlocked);armHlsFallback();}
 }
+// ── 屏幕底部那行诊断：卡住时截图就能定位，不用再靠猜 ──
+const ERRTXT={1:'ABORT',2:'NETWORK',3:'DECODE',4:'SRC_NOT_SUPPORTED'};
+let dbgNote='';
+function dbgSet(t){dbgNote=t;}
+setInterval(()=>{
+  const el=document.getElementById('dbg');if(!el)return;
+  let buf='-';
+  try{if(audio.buffered.length)buf=audio.buffered.end(audio.buffered.length-1).toFixed(1);}catch(e){}
+  const src=(audio.getAttribute('src')||'').replace(/^.*\/api\/music\//,'').slice(0,46);
+  el.textContent=
+    (hlsMode?'连播':'单曲')+' rs'+audio.readyState+' ns'+audio.networkState+
+    ' t'+audio.currentTime.toFixed(1)+' buf'+buf+' 卡'+stallSec+'s'+
+    ' p'+(audio.paused?1:0)+' up'+(userPaused?1:0)+' ready'+(hlsReady?1:0)+
+    ' seg'+segIdx+'/'+segs.length+
+    (audio.error?(' 错误:'+(ERRTXT[audio.error.code]||audio.error.code)):'')+
+    (dbgNote?(' | '+dbgNote):'')+
+    '\n'+src;
+},500);
+audio.addEventListener('stalled',()=>dbgSet('stalled'));
+audio.addEventListener('waiting',()=>dbgSet('waiting'));
+audio.addEventListener('error',()=>dbgSet('error事件'));
+audio.addEventListener('playing',()=>dbgSet('playing'));
+audio.addEventListener('loadedmetadata',()=>dbgSet('metadata到了'));
+
 // ── 卡死看门狗 ─────────────────────────────────────────────────────
 // 教训：以前用"currentTime 是不是 0"判断卡没卡，结果这条流卡住时
 // 照样报一个大于 0 的进度、图标也显示在播放，三道保险全都以为一切正常。
 // 该看的不是它等于几，是它有没有在往前走。
-let stallSec=0,lastT=-1,hlsFbCount=0,everPlayed=false;
+let stallSec=0,lastT=-1,everPlayed=false,autoSolo=false;
 function armHlsFallback(){stallSec=0;lastT=-1;}
+// 程序临时切过单曲的话，到这里就还原成连播（你手动切的不算）
+function restoreMode(){
+  if(!autoSolo)return;
+  autoSolo=false;hlsMode=true;setModeLabel();
+}
 function disarmHlsFallback(){stallSec=0;}
 setInterval(()=>{
   if(!cur||userPaused||!audio.getAttribute('src')){stallSec=0;lastT=audio.currentTime;return;}
   const t=audio.currentTime;
-  if(t!==lastT&&t>0){stallSec=0;lastT=t;hlsFbCount=0;everPlayed=true;return;}   // 在走，一切正常
+  if(t!==lastT&&t>0){stallSec=0;lastT=t;everPlayed=true;return;}   // 在走，一切正常
   lastT=t;stallSec++;
   // 卡了 3 秒、7 秒：踹一脚（就是手动"暂停再播放"那下）
   if(stallSec===3||stallSec===7){try{audio.pause();audio.play().catch(()=>{});}catch(e){}}
@@ -573,15 +608,13 @@ setInterval(()=>{
   // 这个页面还一次都没成功出过声时，连播的第一次加载基本就是起不来（踹也没用），
   // 所以不让人干等 12 秒，4 秒就换单曲把歌放出来。之后连播是好的，门槛恢复 12 秒。
   if(stallSec>=(everPlayed?12:4)&&hlsMode){
-    stallSec=0;hlsFbCount++;
+    stallSec=0;
     const sg=cur;
-    if(hlsFbCount>=2){
-      hlsMode=false;localStorage.setItem('play-mode','solo');
-      toast('连播老卡，先留在单曲模式');
-    }else{
-      toast('连播这首卡住了，换单曲模式放');
-    }
-    soloPlay(sg);setModeLabel();
+    // 只救这一首：临时切单曲把它放出来，放完自动回连播。
+    // 不写本地存储，也不让它变成一个要你记着调回去的状态。
+    autoSolo=true;hlsMode=false;
+    toast('这首卡了，先用单曲放，下一首回连播');
+    soloPlay(sg,true);setModeLabel();
   }
 },1000);
 // iOS 上网页第一次出声之前，解码管道还没建起来，第一首歌就得一边搭管道一边缓冲，
@@ -1231,7 +1264,7 @@ function resetPlayUI(){
   $('ly-scroll').innerHTML='<div class="ly-empty">加载歌词…</div>';
 }
 // ── 音质模式：单曲直连，要母带 ──
-async function soloPlay(sg){
+async function soloPlay(sg,lite){
   if(!sg)return;
   const my=++playToken;
   userPaused=false;
@@ -1253,10 +1286,10 @@ async function soloPlay(sg){
   loadLyric(sg.id);
   try{
     let r=urlCache[sg.id]?{ok:true,url:urlCache[sg.id],quality:qualityCache[sg.id]}:null;
-    if(!r)r=await fetchT('/api/music/url?id='+sg.id,15000).catch(()=>null);
+    if(!r)r=await fetchT('/api/music/url?id='+sg.id+(lite?'&mp3=1':''),15000).catch(()=>null);
     if(my!==playToken)return;
     if(!r||!r.ok){setModeLabel('拿不到音源');toast('这首拿不到音源');return;}
-    urlCache[sg.id]=r.url;qualityCache[sg.id]=r.quality||'';
+    if(!lite){urlCache[sg.id]=r.url;qualityCache[sg.id]=r.quality||'';}
     audio.src=r.url;audio.preload='auto';
     audio.play().catch(()=>{});
     setModeLabel();
@@ -1279,7 +1312,6 @@ function setModeLabel(tmp){
 function toggleMode(){
   const keep=localTime();          // 先记住现在放到哪了，再切模式（顺序反了就会从头放）
   hlsMode=!hlsMode;
-  localStorage.setItem('play-mode',hlsMode?'hls':'solo');
   toast(hlsMode?'连播模式 · 锁屏也会一首接一首':'音质模式 · 母带，后台放完这首会停');
   const sg=cur;
   if(!sg){setModeLabel();return;}
@@ -1298,6 +1330,7 @@ function toggleMode(){
 // 点某一首歌：在当前这张列表里就直接跳过去，不在就换一张列表
 function playSong(sg){
   if(!sg)return;
+  restoreMode();
   if(!hlsMode){soloPlay(sg);return;}
   const inWin=segs.findIndex(g=>String(g.id)===String(sg.id));
   if(inWin>=0&&hlsReady){
@@ -1530,6 +1563,7 @@ $('c-mode').onclick=()=>{
 };
 // 放完自动下一首
 audio.addEventListener('ended',()=>{
+  restoreMode();   // 临时降级的那首放完了，回连播
   if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,localDur()||audio.duration||0);scrobbleDone=true;}
   if(!queue.length)return;
   if(!hlsMode){playNext();return;}   // 音质模式：一首一首来
