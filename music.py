@@ -1843,8 +1843,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         sid = request.args.get('id', '')
         if not sid:
             return jsonify({'ok': False})
+        mp3 = request.args.get('mp3') in ('1', 'true', 'yes')
         try:
-            threading.Thread(target=nc.song_url, args=(sid,), daemon=True).start()
+            # 连播那条流只用 mp3，缓存键跟普通取链是分开的，
+            # 预热错了等于白热，所以这里要跟调用方对齐。
+            threading.Thread(target=nc.song_url, args=(sid,),
+                             kwargs={'mp3_only': mp3}, daemon=True).start()
         except Exception:
             pass
         return jsonify({'ok': True})
@@ -1997,6 +2001,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return '没找到这首歌'
         store.push_command({'action': 'play', 'id': song['id'], 'name': song['name'],
                             'artist': song['artist'], 'cover': song.get('cover', '')})
+        # 顺手先把直链取好放缓存：页面两秒后来要片段时就是现成的，能省一秒多
+        try:
+            threading.Thread(target=nc.song_url, args=(song['id'],),
+                             kwargs={'mp3_only': True}, daemon=True).start()
+        except Exception:
+            pass
         return '给宝宝放上了：%s - %s' % (song['name'], song['artist'])
 
     def _mcp_ctrl(action):
@@ -2273,5 +2283,25 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'do': do, 'result': out})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:200]})
+
+    # ── 开机预热 ───────────────────────────────────────────────────────
+    # 每次部署完服务器都是冷的，第一个打开 app 的人要替所有缓存挨个等网易云，
+    # 经常等到前端超时报错。这里在后台自己先跑一遍，等人来的时候已经是热的。
+    def _warmup():
+        time.sleep(3)          # 让 gunicorn 先把端口起好，别跟启动抢
+        for fn in (lambda: nc.my_playlists(),
+                   lambda: nc.play_rank('week'),
+                   lambda: nc.liked_ids(),
+                   lambda: nc.recent_plays()):
+            try:
+                fn()
+            except Exception:
+                pass
+            time.sleep(0.5)    # 一个一个来，别一股脑砸网易云
+
+    try:
+        threading.Thread(target=_warmup, daemon=True).start()
+    except Exception:
+        pass
 
     return store, nc
