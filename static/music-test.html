@@ -506,6 +506,7 @@ function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0
 // userPaused：是不是你自己按的暂停。
 // 不能拿 audio.paused 判断——play() 在 iOS 上加载被打断时会失败，
 // 一失败 paused 就变 true，保险机制会误以为是你按的，然后什么都不做。
+const SILENT='data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 let userPaused=false;
 // 永远从连播开始。单曲只在本次有效，不记本地——
 // 记了的话哪天手滑切一下，就能悄悄跟你好几天（已经踩过这个坑）。
@@ -1265,16 +1266,15 @@ function resetPlayUI(){
 // ── 音质模式：单曲直连，要母带 ──
 async function soloPlay(sg,lite){
   if(!sg)return;
-  // ⚠️ 这一句必须在任何 await 之前：
-  // iOS 只认"你手指点下去那一下"直接触发的播放。下面要去服务器要地址，
-  // 一等待，授权就过期了，之后再 play() 会出现"状态全绿但不出声"。
-  // 先在这里 play 一下把授权拿到手（放的是上一首的残留，几毫秒后就被换掉，听不见）。
-  try{audio.play().catch(()=>{});}catch(e){}
+  // ⚠️ 整个函数在设好 src、调完 play() 之前，一个 await 都不许有。
+  // 装到桌面的 PWA 里 iOS 是严格的：你点下去那一下之后中间只要隔了等待，
+  // 授权就作废，之后 play() 会出现"状态全绿、时钟不走"。Safari 网页里宽限，PWA 里不宽限。
+  // 所以直接把 src 指向我们自己的服务器，由它去网易云取链接再 302 跳过去——
+  // 播放器自己走完全程，JS 不参与，也就没有等待这回事。
   const my=++playToken;
   userPaused=false;
   segs=[];segIdx=-1;hlsReady=false;
   flushScrobble();
-  try{audio.pause();audio.removeAttribute('src');audio.load();}catch(e){}
   cur=sg;
   const i=queue.findIndex(x=>String(x.id)===String(sg.id));
   if(i>=0)qIndex=i;
@@ -1286,19 +1286,18 @@ async function soloPlay(sg,lite){
   $('mini-nm').textContent=sg.name;$('mini-ar').textContent=sg.artist;
   $('p-fill').style.width='0%';$('p-dot').style.left='0%';$('scr-fill').style.width='0%';
   $('p-cur').textContent='0:00';$('p-dur').textContent='0:00';
-  setModeLabel('加载中…');
   lyrics=[];lastLy=-1;lyHideSeek();
   loadLyric(sg.id);
-  try{
-    let r=urlCache[sg.id]?{ok:true,url:urlCache[sg.id],quality:qualityCache[sg.id]}:null;
-    if(!r)r=await fetchT('/api/music/url?id='+sg.id+(lite?'&mp3=1':''),15000).catch(()=>null);
-    if(my!==playToken)return;
-    if(!r||!r.ok){setModeLabel('拿不到音源');toast('这首拿不到音源');return;}
+  // 同步设 src + 播放，中间没有任何等待
+  audio.src='/api/music/seg?id='+sg.id+(lite?'':'&hi=1');
+  audio.preload='auto';
+  audio.play().catch(playBlocked);
+  // 音质标签是附带信息，晚一点问，绝不挡播放
+  fetch('/api/music/url?id='+sg.id+(lite?'&mp3=1':'')).then(r=>r.json()).then(r=>{
+    if(my!==playToken||!r||!r.ok)return;
     if(!lite){urlCache[sg.id]=r.url;qualityCache[sg.id]=r.quality||'';}
-    audio.src=r.url;audio.preload='auto';
-    audio.play().catch(()=>{});
     setModeLabel();
-  }catch(e){if(my===playToken)setModeLabel('加载失败');}
+  }).catch(()=>{});
   if(my!==playToken)return;
   refreshMini();syncHeart(sg.id);setMediaSession(sg);postNP();
   scrobbleSong=sg;scrobbleDone=false;
@@ -1535,6 +1534,14 @@ onBoth('play',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.pla
 onBoth('pause',()=>{if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='paused';}catch(e){}$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
 
 function togglePlay(){if(!cur){collapse();showTab('search');return;}
+  // 卡住的时候元素会谎报"我在播"，这时候按下去本来会走暂停分支，白按一次。
+  // 认出这种状态就直接暂停+播放一步到位，不用你按两下。
+  if(!audio.paused&&audio.currentTime===0&&stallSec>0){
+    userPaused=false;
+    try{audio.pause();}catch(e){}
+    setTimeout(()=>{try{audio.play().catch(playBlocked);}catch(e){}},120);
+    return;
+  }
   if(audio.paused){userPaused=false;audio.play().catch(playBlocked);}
   else{userPaused=true;audio.pause();}}
 $('c-main').onclick=togglePlay;$('w-play').onclick=togglePlay;$('mini-play').onclick=togglePlay;
