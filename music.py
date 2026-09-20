@@ -1744,7 +1744,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not sid:
             return jsonify({'ok': False, 'error': '缺 id'})
         try:
-            url = nc.song_url(sid, int(request.args.get('br', 320000)))
+            # mp3=1：救急用的轻量档（320k）。母带是无损 FLAC，一首四十多兆，
+            # 手机上要下好几分钟，拿来当降级方案是帮倒忙。
+            mp3 = request.args.get('mp3') in ('1', 'true', 'yes')
+            url = nc.song_url(sid, int(request.args.get('br', 320000)), mp3_only=mp3)
             if not url:
                 return jsonify({'ok': False, 'error': '拿不到音频，可能要会员或版权受限'})
             # 直接给网易云直链，让浏览器自己放（http 的话换 https）
