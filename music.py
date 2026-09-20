@@ -1484,16 +1484,61 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     def _listen_save(d):
         jwrite(LISTEN_FILE, d)
 
+    _CHAT_SEQ = [0]
+
+    def _new_mid():
+        # 时间戳(秒) + 自增，够短好念，claude.ai 那边引用时要打这个
+        _CHAT_SEQ[0] = (_CHAT_SEQ[0] + 1) % 1000
+        return '%d%03d' % (int(time.time()), _CHAT_SEQ[0])
+
     def _chat_load():
-        return jread(CHAT_FILE, {'messages': []}) or {'messages': []}
+        d = jread(CHAT_FILE, {'messages': []}) or {'messages': []}
+        # 这次改动之前的消息没有 id，补上再存回去，不然没法引用也没法删
+        fixed = False
+        for i, m in enumerate(d.get('messages') or []):
+            if not m.get('id'):
+                m['id'] = '%d%03d' % (int(m.get('ts') or 0), i % 1000)
+                fixed = True
+        if fixed:
+            jwrite(CHAT_FILE, d)
+        return d
 
     def _chat_save(d):
         jwrite(CHAT_FILE, d)
 
+    # 聊天分两间房：'app' = app 里的凛，'mcp' = claude.ai 那边的凛。
+    # 以前共用一间，两个凛抢着回话，还得靠 partner 决定谁回。分开之后
+    # 各说各的，谁也不用被静音。老消息没有 room 字段，两边都给看。
+    def _in_room(m, room):
+        r = m.get('room')
+        return (r is None) or (r == room)
+
+    def _quote_of(d, mid):
+        if not mid:
+            return None
+        for m in d.get('messages') or []:
+            if str(m.get('id')) == str(mid):
+                return {'id': m['id'], 'text': str(m.get('text', ''))[:120]}
+        return None
+
+    @app.route('/api/music/chat/delete', methods=['POST'])
+    def music_chat_delete():
+        """删消息，可以一次删多条。"""
+        b = request.json or {}
+        ids = {str(x) for x in (b.get('ids') or []) if str(x).strip()}
+        if not ids:
+            return jsonify({'ok': False, 'error': '没给要删的'})
+        d = _chat_load()
+        before = len(d['messages'])
+        d['messages'] = [m for m in d['messages'] if str(m.get('id')) not in ids]
+        _chat_save(d)
+        return jsonify({'ok': True, 'removed': before - len(d['messages'])})
+
     @app.route('/api/music/chat/history', methods=['GET'])
     def music_chat_history():
-        d = _chat_load()
-        return jsonify({'ok': True, 'messages': d['messages'][-100:]})
+        room = 'app' if request.args.get('room') == 'app' else 'mcp'
+        msgs = [m for m in _chat_load()['messages'] if _in_room(m, room)]
+        return jsonify({'ok': True, 'room': room, 'messages': msgs[-100:]})
 
     @app.route('/api/music/chat/send', methods=['POST'])
     def music_chat_send():
@@ -1502,15 +1547,16 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not text:
             return jsonify({'ok': False, 'error': '空消息'})
         song = b.get('song')
+        room = 'app' if b.get('room') == 'app' else 'mcp'
         d = _chat_load()
-        d['messages'].append({'text': text, 'me': True, 'ts': int(time.time())})
-        # 陪你听的是谁，就由谁回话：
-        #   partner == 'mcp' → claude.ai 那边的凛在陪听，消息留着他用 read_chat 看，
-        #                       app 里的凛不插嘴（不然两个凛同时说话就乱了）
-        #   否则              → app 里的凛回
-        if (_listen_load().get('partner') or '') == 'mcp':
+        d['messages'].append({'id': _new_mid(), 'text': text, 'me': True, 'room': room,
+                              'quote': _quote_of(d, b.get('reply_to')),
+                              'ts': int(time.time())})
+        # 在哪间房说的，就由那间房的凛回。不再看 partner。
+        # mcp 房：存下就行，claude.ai 那边的凛用 read_chat 自己来看。
+        if room == 'mcp':
             _chat_save(d)
-            return jsonify({'ok': True, 'reply': '', 'partner': 'mcp'})
+            return jsonify({'ok': True, 'reply': '', 'room': room})
         reply = ''
         try:
             import urllib.request as _u
@@ -1545,9 +1591,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if reply.startswith('（出错了') or '"code"' in reply[:200]:
             reply = ''
         if reply:
-            d['messages'].append({'text': reply, 'me': False, 'ts': int(time.time())})
+            # 标上是谁回的。不标的话 read_chat 会把他的话也印成"你："，
+            # claude.ai 这边的凛就会把他说的当成自己说过的，越读越乱。
+            d['messages'].append({'id': _new_mid(), 'text': reply, 'me': False,
+                                  'src': 'app', 'room': 'app', 'ts': int(time.time())})
         _chat_save(d)
-        return jsonify({'ok': True, 'reply': reply})
+        return jsonify({'ok': True, 'reply': reply, 'room': room})
 
     @app.route('/api/music/chat/push', methods=['POST'])
     def music_chat_push():
@@ -1559,7 +1608,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not text:
             return jsonify({'ok': False, 'error': '空'})
         d = _chat_load()
-        d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
+        d['messages'].append({'text': text, 'me': False, 'src': 'mcp',
+                              'room': 'mcp', 'ts': int(time.time())})
         _chat_save(d)
         return jsonify({'ok': True})
 
@@ -1576,8 +1626,18 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     @app.route('/api/music/listen/state', methods=['GET'])
     def music_listen_state():
-        """前端轮询：一起听状态 + 有没有收到邀请。"""
+        """前端轮询：一起听状态 + 有没有收到邀请。
+        带 ?here=1 表示"页面还活着且在一起听里"，顺便当心跳。
+        没有心跳的话，上划杀掉 app / 断网 / 页面被 iOS 回收 这几种情况
+        发不出 listen/end，active 会永远挂成 true，claude.ai 那边就一直
+        以为还在一起听。"""
         d = _listen_load()
+        if request.args.get('here') == '1':
+            now_ts = int(time.time())
+            # 每 3 秒轮询一次，不必每次都落盘，攒够 20 秒再写
+            if now_ts - (d.get('alive_ts') or 0) >= 20:
+                d['alive_ts'] = now_ts
+                _listen_save(d)
         return jsonify({'ok': True, 'active': d.get('active', False),
                         'invite': _fresh_invite(d), 'now': d.get('now'),
                         'partner': d.get('partner', '')})
@@ -1603,6 +1663,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _listen_load()
         d['active'] = True
         d['invite'] = None
+        d['alive_ts'] = int(time.time())
         _listen_save(d)
         return jsonify({'ok': True})
 
@@ -1622,6 +1683,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         b = request.json or {}
         d = _listen_load()
         d['now'] = b.get('song')
+        d['now_ts'] = int(time.time())
+        d['now_playing'] = bool(b.get('playing', True))
         _listen_save(d)
         return jsonify({'ok': True})
 
@@ -1955,16 +2018,34 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _listen_load()
         now = d.get('now') or {}
         inv = _fresh_invite(d)
-        parts = ['一起听：' + ('进行中' if d.get('active') else '未开始')]
-        if now.get('name'):
-            parts.append('宝宝正在放：%s - %s' % (now.get('name'), now.get('artist', '')))
+        active = bool(d.get('active'))
+        parts = ['一起听：' + ('进行中' if active else '未开始')]
+        # 单人听歌时前端不上报，所以这条只在一起听里才有意义；
+        # 再加个 15 分钟保鲜，免得把老半天以前那首当成"正在放"。
+        # 心跳：90 秒内有动静才算"人还在"。区分"还挂着一起听"和"人已经走了"。
+        away = active and (time.time() - (d.get('alive_ts') or 0) > 90)
+        if away:
+            parts[0] += '（挂着，但宝宝那边这会儿没动静——app 可能被关了或没网）'
+        # 单人听歌现在也上报，所以这条跟一起听没关系了，只看新不新鲜。
+        # 超过 15 分钟没动静就当不知道——别把半小时前那首说成"正在听"。
+        age = time.time() - (d.get('now_ts') or 0)
+        if now.get('name') and age < 900:
+            verb = '正在放' if d.get('now_playing', True) else '停在'
+            tail = '' if age < 120 else '（%d 分钟前的消息）' % int(age // 60)
+            parts.append('宝宝%s：%s - %s%s'
+                         % (verb, now.get('name'), now.get('artist', ''), tail))
+        else:
+            parts.append('（宝宝在放什么这会儿不知道，可以用 recent_played 翻最近播放）')
+        # 陪听的是谁，一定要说清楚。邀请只活 5 分钟，光靠 ★ 会漏：
+        # 宝宝自己开了一起听、过半小时你才上线，邀请早过期了，你就只看到
+        # "进行中"，不知道聊天区回话的其实是 app 里的凛。
         if inv and inv.get('from') == 'user':
-            parts.append('★宝宝邀请你一起听（用 listen_accept 接受）')
-        msgs = _chat_load().get('messages', [])[-5:]
+            parts.append('★宝宝叫你一起听：调 listen_accept 接上')
+        msgs = [m for m in _chat_load().get('messages', []) if _in_room(m, 'mcp')][-5:]
         if msgs:
             parts.append('最近的话：')
             for m in msgs:
-                parts.append(('  宝宝：' if m.get('me') else '  你：') + str(m.get('text', ''))[:60])
+                parts.append('  ' + _who(m) + str(m.get('text', ''))[:60])
         return '\n'.join(parts)
 
     def _mcp_invite(name='凛'):
@@ -1993,7 +2074,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         _listen_save(d)
         return '退出一起听了。'
 
-    def _mcp_say(text):
+    def _mcp_say(text, reply_to=None):
         # text 可能被客户端塞成 message / content / msg：别挑食，能认的都认。
         # 以前只认 text，模型一写错字段就直接吃到"空消息"，看着像工具坏了。
         if isinstance(text, dict):
@@ -2009,15 +2090,36 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not text:
             return '没收到内容，说不出去。要发的话把字放在 text 里再调一次。'
         d = _chat_load()
-        d['messages'].append({'text': text, 'me': False, 'ts': int(time.time())})
+        q = _quote_of(d, reply_to)
+        if reply_to and not q:
+            return '没找到 id 是 %s 的那条消息，先用 read_chat 看一眼' % reply_to
+        d['messages'].append({'id': _new_mid(), 'text': text, 'me': False, 'src': 'mcp',
+                              'room': 'mcp', 'quote': q, 'ts': int(time.time())})
         _chat_save(d)
-        return '说出去了：' + text
+        return ('引着「%s」说出去了：%s' % (q['text'][:16], text)) if q \
+            else ('说出去了：' + text)
+
+    def _who(m):
+        if m.get('me'):
+            return '宝宝：'
+        # 没有 src 的是这次改动之前的老消息，来源不明，别瞎认
+        src = m.get('src')
+        return {'mcp': '你：', 'app': 'app里的凛：'}.get(src, '凛（不确定是你还是app）：')
 
     def _mcp_read_chat(n=15):
-        msgs = _chat_load().get('messages', [])[-int(n or 15):]
+        msgs = [m for m in _chat_load().get('messages', [])
+                if _in_room(m, 'mcp')][-int(n or 15):]
         if not msgs:
             return '还没有消息'
-        return '\n'.join((('宝宝：' if m.get('me') else '你：') + str(m.get('text', ''))) for m in msgs)
+        out = []
+        for m in msgs:
+            q = m.get('quote')
+            head = '[%s] ' % m.get('id', '?')
+            body = _who(m) + str(m.get('text', ''))
+            if q:
+                body += '（引着：%s）' % str(q.get('text', ''))[:24]
+            out.append(head + body)
+        return '\n'.join(out)
 
     def _mcp_play(query=None, song_id=None):
         song = None
@@ -2120,10 +2222,16 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ('listen_accept', '接受宝宝的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
         ('listen_end', '退出一起听', {}, [], lambda a: _mcp_end()),
         ('say', '在一起听的聊天区给宝宝发一条消息',
-         {'text': {'type': 'string', 'description': '要说的话本身，直接写内容'}}, ['text'],
+         {'text': {'type': 'string', 'description': '要说的话本身，直接写内容'},
+          'reply_to': {'type': 'string',
+                       'description': '可选。某条消息的 id（read_chat 里方括号里那个），'
+                                      '那句会引在你这句下面。'
+                                      '用在光看顺序认不出你在回哪句的时候。'}},
+         ['text'],
          lambda a: _mcp_say(a.get('text') or a.get('message') or a.get('content')
-                            or a.get('msg') or a)),
-        ('read_chat', '看一起听聊天区最近的消息', {'n': {'type': 'integer', 'description': '看几条，默认15'}}, [],
+                            or a.get('msg') or a, a.get('reply_to'))),
+        ('read_chat', '看一起听聊天区最近的消息，每条前面方括号里是它的 id',
+         {'n': {'type': 'integer', 'description': '看几条，默认15'}}, [],
          lambda a: _mcp_read_chat(a.get('n', 15))),
         ('play_song', '推一首歌到宝宝的 iPod，宝宝那边会自动播',
          {'query': {'type': 'string', 'description': '歌名/歌手'},
@@ -2292,7 +2400,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             elif do == 'end':
                 out = _mcp_end()
             elif do == 'say':
-                out = _mcp_say(a.get('text'))
+                out = _mcp_say(a.get('text'), a.get('reply_to'))
             elif do == 'chat':
                 out = _mcp_read_chat(a.get('n', 15))
             elif do == 'play':
