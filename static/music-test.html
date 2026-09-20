@@ -310,9 +310,9 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 </head>
 <body>
 <div id="splash"><div class="sp-wrap">
-  <img class="sp-case" src="/static/sp-case.png" alt="">
-  <img class="sp-disc" src="/static/sp-disc.png" alt="">
-</div></div></div>
+  <img class="sp-case" src="/static/sp-case.png" alt="" decoding="async">
+  <img class="sp-disc" src="/static/sp-disc.png" alt="" decoding="async">
+</div></div>
 <audio id="audio" playsinline preload="auto"></audio>
 <div class="page" id="list-page">
   <div class="lp-top">
@@ -1714,7 +1714,7 @@ function hideSplash(){
   el.classList.add('gone');
   setTimeout(()=>{try{el.remove();}catch(e){}},600);
 }
-setTimeout(hideSplash,6000);
+setTimeout(hideSplash,2200);   // 兜底：最多挡 2.2 秒，网络再慢也不许它赖着
 
 showTab('mine');
 
