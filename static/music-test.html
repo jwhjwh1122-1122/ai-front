@@ -275,11 +275,15 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .q-foot span{font-size:14px;color:#5a6068;}
 /* 邀请弹窗 */
 /* 邀请弹窗：照网易云的排版，配色跟着我们自己的白 */
-.invite-mask{position:fixed;inset:0;z-index:80;background:rgba(40,46,56,.10);
+.invite-mask{position:fixed;inset:0;z-index:80;background:rgba(40,46,56,.20);
   display:none;align-items:center;justify-content:center;padding:40px;}
 .invite-mask.show{display:flex;}
-.invite-card{background:#fff;border-radius:26px;padding:30px 26px 26px;width:100%;max-width:290px;
-  text-align:center;box-shadow:0 26px 60px -18px rgba(60,70,90,.32);}
+/* 毛玻璃要看得出来，关键不是糊得多，是透得够：
+   糊太狠底下全糊成一片均匀的白，就跟纯白没区别了。 */
+.invite-card{background:rgba(255,255,255,.50);border-radius:26px;padding:30px 26px 26px;width:100%;max-width:290px;
+  text-align:center;box-shadow:0 26px 60px -18px rgba(60,70,90,.34);
+  border:1px solid rgba(255,255,255,.65);
+  -webkit-backdrop-filter:blur(13px) saturate(2);backdrop-filter:blur(13px) saturate(2);}
 .inv-heads{position:relative;height:112px;margin-bottom:4px;}
 .inv-buds{position:absolute;top:0;left:0;width:100%;height:112px;pointer-events:none;overflow:visible;z-index:0;}
 .inv-faces{position:relative;z-index:2;display:flex;justify-content:center;gap:22px;padding-top:6px;}
@@ -503,6 +507,11 @@ function buildPlaylist(startIdx){
 }
 // 切歌之前先让服务器把那首的直链取好，等 iOS 来要片段就是现成的
 function warm(id){if(id)fetch('/api/music/prefetch?id='+id+'&mp3=1').catch(()=>{});}
+// 提前把下一首的封面下到浏览器缓存里，切歌时图就是现成的，不会晚一两秒才出来
+function warmCover(i){
+  const g=segs[i];
+  if(g&&g.song&&g.song.cover){const im=new Image();im.src=g.song.cover;}
+}
 function segAt(t){
   for(let i=segs.length-1;i>=0;i--)if(t>=segs[i].start-0.05)return i;
   return 0;
@@ -543,10 +552,23 @@ function startStream(idx,autoplay){
 }
 // 保险：连播这条流有时候会卡在坏状态里，seek 不动也不报错，表现就是"点了没反应"。
 // 6 秒还没出声就用单曲模式把这首放出来，宁可这一首不连播，也别让人干等。
-let hlsFbTimer=null,hlsFbCount=0;
+let hlsFbTimer=null,hlsFbCount=0,hlsNudgeTimer=null;
 function armHlsFallback(){
-  clearTimeout(hlsFbTimer);
+  clearTimeout(hlsFbTimer);clearTimeout(hlsNudgeTimer);
   const my=playToken,sg=cur;
+  // 第一步：踹一脚。iOS 上 HLS 第一次加载经常卡死在缓冲里，不报错也不前进，
+  // 手动"暂停再播放"就能救活，这里替你按。
+  hlsNudgeTimer=setTimeout(()=>{
+    if(my!==playToken||!hlsMode)return;
+    if(audio.currentTime>0)return;
+    if(audio.paused)return;
+    try{audio.pause();audio.play().catch(()=>{});}catch(e){}
+    // 再补一脚：有的时候第一下踹不醒
+    setTimeout(()=>{
+      if(my!==playToken||!hlsMode||audio.currentTime>0||audio.paused)return;
+      try{audio.pause();audio.play().catch(()=>{});}catch(e){}
+    },3500);
+  },2500);
   hlsFbTimer=setTimeout(()=>{
     if(my!==playToken||!hlsMode)return;          // 中途换歌了，不管
     if(!audio.paused&&audio.currentTime>0)return; // 已经在响了
@@ -564,7 +586,7 @@ function armHlsFallback(){
     setModeLabel();
   },12000);
 }
-function disarmHlsFallback(){clearTimeout(hlsFbTimer);hlsFbCount=0;}
+function disarmHlsFallback(){clearTimeout(hlsFbTimer);clearTimeout(hlsNudgeTimer);hlsFbCount=0;}
 // iOS 规定：这个页面还没被手点过播放，网页就不许自己出声。
 // 这种时候别装作没事，告诉一声，点一下就好了。
 function playBlocked(e){
@@ -577,6 +599,7 @@ function onSegChanged(i,uiOnly){
   segIdx=i;
   const g=segs[i],sg=g.song;
   qIndex=(segBase+i)%queue.length;
+  warmCover(i+1);warmCover(i+2);
   if(prevIdx!==i&&prevIdx>=0)flushScrobble();
   cur=sg;
   $('scr-nm').textContent=sg.name;$('scr-ar').textContent=sg.artist;$('scr-al').textContent=sg.album||'';
