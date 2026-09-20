@@ -164,6 +164,15 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res .go{color:#ec4141;font-size:22px;}
 .hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
+/* 骨架屏：加载时先摆好形状，比一片空白舒服 */
+.sk-item{display:flex;align-items:center;gap:13px;padding:11px 2px;}
+.sk-box{width:46px;height:46px;border-radius:10px;flex-shrink:0;}
+.sk-line{height:12px;border-radius:6px;}
+.sk-tx{flex:1;min-width:0;}
+.sk-shine{background:linear-gradient(100deg,#e9ecef 30%,#f4f6f8 45%,#e9ecef 60%);
+  background-size:300% 100%;animation:skshine 1.3s ease-in-out infinite;}
+@keyframes skshine{0%{background-position:100% 0}100%{background-position:0 0}}
+.sk-head{font-size:12px;color:#c8cdd3;padding:16px 2px 6px;}
 .more-tip{text-align:center;color:#c0c4ca;font-size:12px;padding:14px 0 26px;}
 /* 歌手主页 */
 .ar-top{display:flex;flex-direction:column;align-items:center;padding:6px 0 18px;}
@@ -283,9 +292,27 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 #play-page.listening .mc-switch{display:flex;}
 /* 单人=原始排版(大iPod,原始间距),一起听才缩小加头像 */
 
+/* ── 开屏：就是那张图。盒子不动，里面的碟在转 ──
+   做法：整张图当底（盒子），再把图里那张碟抠成圆形贴在原位上转，
+   底下那份被完全盖住，所以看起来只有碟在动。 */
+#splash{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#fbfcfd,#eef1f4);transition:opacity .55s ease;}
+#splash.gone{opacity:0;pointer-events:none;}
+.sp-wrap{position:relative;width:186px;height:186px;opacity:0;animation:spFade 1s ease forwards;
+  filter:drop-shadow(0 12px 22px rgba(60,70,90,.30));}
+.sp-wrap img{position:absolute;display:block;}
+.sp-case{left:0;top:0;width:186px;height:186px;}
+.sp-disc{left:15.8px;top:15.2px;width:154.4px;height:154.4px;
+  animation:spSpin 6s linear infinite;transform-origin:50% 50%;}
+@keyframes spFade{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+@keyframes spSpin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
+<div id="splash"><div class="sp-wrap">
+  <img class="sp-case" src="/static/sp-case.png" alt="">
+  <img class="sp-disc" src="/static/sp-disc.png" alt="">
+</div></div></div>
 <audio id="audio" playsinline preload="auto"></audio>
 <div class="page" id="list-page">
   <div class="lp-top">
@@ -589,33 +616,73 @@ function showTab(t,keep){
 }
 document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.tab));
 
+function skeletonMine(n){
+  let h='';
+  for(let i=0;i<2;i++)h+='<div class="sk-item"><div class="sk-box sk-shine"></div>'+
+    '<div class="sk-tx"><div class="sk-line sk-shine" style="width:38%"></div></div></div>';
+  h+='<div class="sk-head">我的歌单</div>';
+  for(let i=0;i<(n||6);i++)h+='<div class="sk-item"><div class="sk-box sk-shine"></div>'+
+    '<div class="sk-tx"><div class="sk-line sk-shine" style="width:'+(42+i%3*14)+'%"></div>'+
+    '<div class="sk-line sk-shine" style="width:22%;height:10px;margin-top:8px;opacity:.7"></div></div></div>';
+  return h;
+}
+// 上次看到的歌单存本地，下次打开瞬间画出来，同时后台悄悄刷新
+function mineSnap(v){
+  try{
+    if(v===undefined)return JSON.parse(localStorage.getItem('mine-snap')||'null');
+    localStorage.setItem('mine-snap',JSON.stringify(v));
+  }catch(e){}
+  return null;
+}
 async function renderMine(){
   $('lp-body').onscroll=null;$('lp-body').scrollTop=0;
-  $('lp-body').innerHTML='<div class="hint">加载中…</div>';
+  const snap=mineSnap();
+  if(snap&&snap.playlists&&snap.playlists.length){
+    paintMine(snap.playlists,snap.rank);      // 先用上次的，立刻有东西看
+  }else{
+    $('lp-body').innerHTML=skeletonMine(6);   // 第一次：骨架屏
+  }
+  const fixed=[
+    {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
+    {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
+  ];
+  try{
+    const r=await fetch('/api/music/my/playlists').then(r=>r.json());
+    if(r.ok&&r.playlists.length){
+      mineSnap({playlists:r.playlists,rank:(mineSnap()||{}).rank||null});
+      paintMine(r.playlists,(mineSnap()||{}).rank);
+    }else if(!snap){
+      $('lp-body').innerHTML='<div class="hint">'+(r.error||'没拿到歌单')+'</div>';
+    }
+  }catch(e){ if(!snap)$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>'; }
+  primeRankEntry();
+}
+function paintMine(playlists,rankSnap){
   const fixed=[
     {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
     {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
   ];
   let h='';
-  // 拉歌单
-  try{
-    const r=await fetch('/api/music/my/playlists').then(r=>r.json());
-    if(r.ok&&r.playlists.length){
+  {
+    {
       // 固定入口(最近/网盘)
       h+=fixed.map(it=>`<div class="mine-item" data-act="${it.act}"><div class="mine-ic"><svg viewBox="0 0 24 24">${it.ic}</svg></div><div class="mine-tx"><div class="nm">${it.nm}</div></div></div>`).join('');
       h+='<div style="font-size:12px;color:#9298a0;padding:16px 2px 6px;">我的歌单</div>';
-      h+=r.playlists.map((p,pi)=>{
+      h+=playlists.map((p,pi)=>{
         const cover=p.cover?`<img src="${p.cover}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0;">`:`<div class="mine-ic">♪</div>`;
         let row=`<div class="mine-item" data-pl="${p.id}" data-name="${p.name.replace(/"/g,'')}">${cover}<div class="mine-tx"><div class="nm">${p.name}</div><div class="sub">${p.count} 首</div></div></div>`;
         // 听歌排行紧跟在"我喜欢的音乐"(第一个歌单)下面
         if(pi===0){
-          row+=`<div class="mine-item" data-act="rank"><div class="rank-ic" id="rank-ic"><svg viewBox="0 0 24 24"><path d="M5 20V13M10 20V8M15 20V4M20 20v-9"/></svg></div><div class="mine-tx"><div class="nm">听歌排行</div><div class="sub" id="rank-sub">看看这段时间在循环什么</div></div></div>`;
+          const rc=(rankSnap&&rankSnap.cover)?(' style="background-image:url('+rankSnap.cover+')"'):'';
+          const rs=(rankSnap&&rankSnap.total)?('累计听歌 '+rankSnap.total+' 首'):'看看这段时间在循环什么';
+          row+=`<div class="mine-item" data-act="rank"><div class="rank-ic" id="rank-ic"${rc}><svg viewBox="0 0 24 24"><path d="M5 20V13M10 20V8M15 20V4M20 20v-9"/></svg></div><div class="mine-tx"><div class="nm">听歌排行</div><div class="sub" id="rank-sub">${rs}</div></div></div>`;
         }
         return row;
       }).join('');
-    }else{h+='<div class="hint">'+(r.error||'没拿到歌单')+'</div>';}
-  }catch(e){h+='<div class="hint">出错：'+e+'</div>';}
+    }
+  }
   $('lp-body').innerHTML=h;
+  hideSplash();
   document.querySelectorAll('.mine-item[data-pl]').forEach(el=>el.onclick=()=>openPlaylist(el.dataset.pl,el.dataset.name));
   document.querySelectorAll('.mine-item[data-act]').forEach(el=>el.onclick=()=>{
     const a=el.dataset.act;
@@ -623,7 +690,6 @@ async function renderMine(){
     else if(a==='cloud')openList('/api/music/my/cloud','音乐网盘',true);
     else if(a==='rank')openRank(rankPeriod);
   });
-  primeRankEntry();
 }
 // 打开歌单 → 显示里面的歌
 let plLoadToken=0;
@@ -891,6 +957,9 @@ async function primeRankEntry(){
       if(ic&&r.songs[0].cover)ic.style.backgroundImage='url('+r.songs[0].cover+')';
       const sub=$('rank-sub');
       if(sub&&r.listen_total)sub.textContent='累计听歌 '+r.listen_total+' 首';
+      const snap=mineSnap()||{};
+      snap.rank={cover:r.songs[0].cover||'',total:r.listen_total||0};
+      mineSnap(snap);
     }
   }catch(e){}
 }
@@ -1637,6 +1706,15 @@ setInterval(async()=>{try{const r=await fetch('/api/music/remote').then(r=>r.jso
     else if(c.action==='next')playNext();
     else if(c.action==='prev')playPrev();
   }}catch(e){}},12000);
+
+// 开屏唱片：首页数据到了就淡出；最多转 6 秒，免得网络卡住一直挡着
+function hideSplash(){
+  const el=document.getElementById('splash');
+  if(!el||el.classList.contains('gone'))return;
+  el.classList.add('gone');
+  setTimeout(()=>{try{el.remove();}catch(e){}},600);
+}
+setTimeout(hideSplash,6000);
 
 showTab('mine');
 
