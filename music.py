@@ -208,7 +208,11 @@ class NeteaseClient:
             return {'code': r.status_code, 'raw': r.text[:200]}
 
     def weapi(self, path: str, payload: dict, timeout=12):
-        """path 形如 /weapi/xxx。发私信走这个。"""
+        """path 形如 /weapi/xxx。发私信走这个。
+        给成 /api/xxx 也认——weapi 加密的 body 必须发到 /weapi/ 才有人接，
+        以前建歌单、加歌就是发错到 /api/ 上，一直静默失败。"""
+        if path.startswith('/api/'):
+            path = '/weapi/' + path[len('/api/'):]
         payload = dict(payload)
         payload['csrf_token'] = self._csrf()
         body = weapi_encrypt(payload)
@@ -926,10 +930,14 @@ class NeteaseClient:
     def create_playlist(self, name, private=False):
         """新建歌单，返回歌单id。"""
         try:
-            j = self.weapi('/api/playlist/create',
-                           {'name': name, 'privacy': '10' if private else '0'})
+            j = self.weapi('/weapi/playlist/create',
+                           {'name': name, 'privacy': '10' if private else '0',
+                            'type': 'NORMAL'})
             pl = j.get('playlist') or {}
-            return {'ok': j.get('code') == 200, 'id': pl.get('id'), 'name': pl.get('name')}
+            if j.get('code') != 200:
+                return {'ok': False,
+                        'error': 'code=%s %s' % (j.get('code'), j.get('msg') or j.get('message') or '')}
+            return {'ok': True, 'id': pl.get('id'), 'name': pl.get('name')}
         except Exception as e:
             return {'ok': False, 'error': str(e)[:120]}
 
@@ -939,14 +947,18 @@ class NeteaseClient:
             if not isinstance(track_ids, list):
                 track_ids = [track_ids]
             ids_json = json.dumps([str(t) for t in track_ids])
-            j = self.weapi('/api/playlist/manipulate/tracks', {
+            j = self.weapi('/weapi/playlist/manipulate/tracks', {
                 'op': 'add' if add else 'del',
                 'pid': str(playlist_id),
                 'trackIds': ids_json,
                 'imme': 'true',
             })
-            return j.get('code') == 200
-        except Exception:
+            if j.get('code') == 200:
+                return True
+            self._last_pl_err = 'code=%s %s' % (j.get('code'), j.get('msg') or j.get('message') or '')
+            return False
+        except Exception as e:
+            self._last_pl_err = str(e)[:120]
             return False
 
 
@@ -1811,7 +1823,12 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         maxd = int(max(d for _, d in items)) + 1
         lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-PLAYLIST-TYPE:VOD',
                  '#EXT-X-TARGETDURATION:%d' % maxd, '#EXT-X-MEDIA-SEQUENCE:0']
-        for sid, dur in items:
+        for i, (sid, dur) in enumerate(items):
+            # 每首歌是一条单独编码的 mp3，时间戳基准各不相同。
+            # 不写这行，播放器会拿上一首的时间戳去接下一首 →
+            # 换歌时出鬼畜噪音，进度也会越跑越偏，界面跟着错位。
+            if i:
+                lines.append('#EXT-X-DISCONTINUITY')
             lines.append('#EXTINF:%.3f,' % dur)
             lines.append('/api/music/seg?id=%s' % sid)
         lines.append('#EXT-X-ENDLIST')
@@ -2052,7 +2069,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ids = [x.strip() for x in str(song_ids).split(',') if x.strip()]
         ok = nc.playlist_tracks(playlist_id, ids, add=add)
         v = '加进' if add else '从'
-        return ('%s歌单%s %d 首' % (v, '' if add else '删掉', len(ids))) if ok else '没成功'
+        if ok:
+            return '%s歌单%s %d 首' % (v, '' if add else '删掉', len(ids))
+        return '没成功：' + str(getattr(nc, '_last_pl_err', '') or '网易云没说原因')
 
     MCP_TOOLS = [
         ('listen_status', '看宝宝在不在一起听、在放什么歌、有没有邀请你、最近说了什么', {}, [],
