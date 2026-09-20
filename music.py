@@ -163,6 +163,9 @@ class NeteaseClient:
         self._url_quality = {}    # {song_id: {level, br, type}} 真实音质
         self._lyric_cache = {}    # {song_id: 歌词} —— 歌词不会变，存着就行
         self._artist_cache = {}   # {key: (到期时间, 数据)}
+        self._pls_cache = None    # (时间, 歌单列表)
+        self._rank_cache = {}     # {period: (时间, 数据)}
+        self._listen_total = None # (时间, 累计听歌数)
         self._last_recent_err = ''
         self._last_cloud_err = ''
         self._last_rank_err = ''
@@ -307,18 +310,31 @@ class NeteaseClient:
             })
         return out
 
-    def song_url(self, song_id, br=320000):
+    def song_url(self, song_id, br=320000, mp3_only=False):
         """取音频直链。用你账号，会员歌也能拿。
 
         云盘里自己上传的歌，老接口(player/url)经常返回空，得走 v1 接口按音质档取。
         这里依次试几条路，哪条出链接用哪条，所以云盘歌不用你一首首手动试。
         """
-        key = str(song_id)
+        key = str(song_id) + ('#mp3' if mp3_only else '')
         c = self._url_cache.get(key)
         now = time.time()
         if c and c[0] > now:
             return c[1]
-        tries = [
+        if mp3_only:
+            # HLS 那条流专用：只要 mp3。
+            # 母带/无损是 FLAC，一首几十 MB，顺着流预读根本跟不上，会一卡一卡；
+            # 而且 FLAC 不在 HLS 允许的片段格式里，Safari 解码也会出问题。
+            tries = [
+                ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': 320000}),
+                ('/api/song/enhance/player/url/v1',
+                 {'ids': f'[{song_id}]', 'level': 'exhigh', 'encodeType': 'mp3'}),
+                ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': 192000}),
+                ('/api/song/enhance/player/url', {'ids': f'[{song_id}]', 'br': 128000}),
+                ('/api/song/enhance/download/url', {'id': song_id, 'br': 320000}),
+            ]
+        else:
+         tries = [
             # 你是 SVIP，先要母带/无损，拿不到再一级级降
             ('/api/song/enhance/player/url/v1',
              {'ids': f'[{song_id}]', 'level': 'jymaster', 'encodeType': 'flac'}),
@@ -333,7 +349,7 @@ class NeteaseClient:
             # 下面两条是云盘/下架歌的救命路：直接要自己账号里那份文件，绕开曲库
             ('/api/song/enhance/download/url', {'id': song_id, 'br': br}),
             ('/api/song/enhance/download/url/v1', {'id': song_id, 'level': 'exhigh'}),
-        ]
+         ]
         for path, payload in tries:
             try:
                 j = self.eapi(path, payload)
@@ -446,8 +462,11 @@ class NeteaseClient:
             pass
         return None
 
-    def my_playlists(self):
-        """我的歌单列表（自建 + 收藏）。第一个通常是'我喜欢的音乐'。"""
+    def my_playlists(self, use_cache=True):
+        """我的歌单列表（自建 + 收藏）。第一个通常是'我喜欢的音乐'。
+        加了 3 分钟缓存：每次打开"我的"都现查一遍网易云，就是那个空白等待。"""
+        if use_cache and self._pls_cache and (time.time() - self._pls_cache[0]) < 180:
+            return self._pls_cache[1]
         uid = self.uid()
         if not uid:
             return []
@@ -461,6 +480,8 @@ class NeteaseClient:
                 'is_mine': str(p.get('userId', '')) == str(uid),
                 'special': p.get('specialType', 0),  # 5 = 我喜欢的音乐
             })
+        if out:
+            self._pls_cache = (time.time(), out)
         return out
 
     def playlist_head(self, pid, first=200):
@@ -627,7 +648,10 @@ class NeteaseClient:
         return []
 
     def play_rank(self, period='week', limit=100):
-        """听歌排行。period='week' 最近一周 / 'all' 所有时间。带播放次数。"""
+        """听歌排行。period='week' 最近一周 / 'all' 所有时间。带播放次数。缓存 5 分钟。"""
+        c = self._rank_cache.get(period)
+        if c and (time.time() - c[0]) < 300:
+            return c[1]
         uid = self.uid()
         if not uid:
             self._last_rank_err = '拿不到 uid'
@@ -661,10 +685,14 @@ class NeteaseClient:
             })
         if not out:
             self._last_rank_err = f'play/record type={t} code={j.get("code")} 无数据'
+        else:
+            self._rank_cache[period] = (time.time(), out)
         return out
 
     def listen_songs_total(self):
-        """累计听歌总数（个人页那个"累计听歌 XXXXX 首"）。"""
+        """累计听歌总数（个人页那个"累计听歌 XXXXX 首"）。缓存 10 分钟。"""
+        if self._listen_total and (time.time() - self._listen_total[0]) < 600:
+            return self._listen_total[1]
         uid = self.uid()
         if not uid:
             return 0
@@ -672,11 +700,11 @@ class NeteaseClient:
             try:
                 j = self.eapi(path, {'uid': uid})
                 n = j.get('listenSongs')
+                if not n:
+                    n = (j.get('profile') or {}).get('listenSongs')
                 if n:
+                    self._listen_total = (time.time(), n)
                     return n
-                prof = j.get('profile') or {}
-                if prof.get('listenSongs'):
-                    return prof['listenSongs']
             except Exception:
                 continue
         return 0
@@ -950,9 +978,15 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         try:
             path = request.path or ''
             if path.endswith(('.html', '.js', '.css', '.webmanifest')) or path == '/':
-                resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-                resp.headers['Pragma'] = 'no-cache'
-                resp.headers['Expires'] = '0'
+                # no-cache ≠ no-store：浏览器可以存，但每次要回来问一句"变了没"。
+                # 没变就回 304（几十字节），本地直接用 —— 又新又快。
+                # 之前用 no-store，等于每次开 app 都重下 35 万字节，白屏就长了。
+                resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+                resp.headers.pop('Pragma', None)
+                resp.headers.pop('Expires', None)
+            elif path.startswith('/static/'):
+                # 图片图标这类基本不改，存一天，省得每次进来都要问
+                resp.headers.setdefault('Cache-Control', 'public, max-age=86400')
         except Exception:
             pass
         return resp
@@ -1657,46 +1691,78 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)[:150]})
 
+    @app.route('/api/music/seg', methods=['GET'])
+    def music_seg():
+        """HLS 片段入口：每个片段就是一首歌。请求到了才去换一条新鲜的网易云直链，
+        然后 302 跳过去。所以播放列表永不过期，音频也不经过这台服务器（只是一次跳转）。"""
+        sid = request.args.get('id', '')
+        if not sid:
+            return ('', 404)
+        try:
+            url = nc.song_url(sid, mp3_only=True)   # 流里只用 mp3，见 song_url 里的说明
+        except Exception:
+            url = ''
+        if not url:
+            return ('', 404)
+        if url.startswith('http://'):
+            url = 'https://' + url[len('http://'):]
+        from flask import redirect
+        r = redirect(url, code=302)
+        # 播放器会分段来要同一首歌，让它把这次跳转记 5 分钟，少绕一圈
+        r.headers['Cache-Control'] = 'public, max-age=300'
+        r.headers['Access-Control-Allow-Origin'] = '*'
+        return r
+
     @app.route('/api/music/hls', methods=['GET'])
     def music_hls():
-        """把一串歌做成一张 HLS 播放列表（m3u8）。
+        """把一串歌做成一张 HLS 播放列表。
 
-        实验目的：iOS 原生支持 HLS，连播是系统自己完成的，JS 完全不参与，
-        所以理论上后台锁屏也能一首接一首。音频仍然直接从网易云 CDN 到手机，
-        不经过这台服务器。就看 Safari 肯不肯把 mp3 直接当片段吃。
+        iOS 原生支持 HLS，一首接一首是系统自己完成的，JS 完全不参与，
+        所以锁屏、切到别的 app 都能继续往下播。
+
+        参数 s=歌曲id:秒数,歌曲id:秒数,...（秒数由前端给，省掉一轮网络请求，瞬间生成）
+        老参数 ids=1,2,3 也还支持（那种要现查时长，慢）。
         """
-        ids = [x.strip() for x in (request.args.get('ids') or '').split(',') if x.strip()]
-        if not ids:
-            return Response('#EXTM3U\n#EXT-X-ENDLIST\n', mimetype='application/vnd.apple.mpegurl')
+        spec = (request.args.get('s') or '').strip()
+        items = []
+        if spec:
+            for part in spec.split(','):
+                part = part.strip()
+                if not part:
+                    continue
+                if ':' in part:
+                    sid, _, d = part.partition(':')
+                    try:
+                        dur = float(d)
+                    except Exception:
+                        dur = 240.0
+                else:
+                    sid, dur = part, 240.0
+                if sid.strip():
+                    items.append((sid.strip(), max(1.0, dur)))
+        else:
+            ids = [x.strip() for x in (request.args.get('ids') or '').split(',') if x.strip()]
+
+            def one(sid):
+                try:
+                    d = nc.song_detail(sid) or {}
+                    return (sid, max(1.0, (d.get('duration') or 240000) / 1000.0))
+                except Exception:
+                    return (sid, 240.0)
+            if ids:
+                with ThreadPoolExecutor(max_workers=min(6, len(ids))) as ex:
+                    items = list(ex.map(one, ids))
+
+        if not items:
+            body = '#EXTM3U\n#EXT-X-ENDLIST\n'
+            return Response(body, mimetype='application/vnd.apple.mpegurl')
+
+        maxd = int(max(d for _, d in items)) + 1
         lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-PLAYLIST-TYPE:VOD',
-                 '#EXT-X-TARGETDURATION:600', '#EXT-X-MEDIA-SEQUENCE:0']
-
-        def one(sid):
-            try:
-                url = nc.song_url(sid)
-                if not url:
-                    return None
-                if url.startswith('http://'):
-                    url = 'https://' + url[len('http://'):]
-                d = nc.song_detail(sid) or {}
-                dur = (d.get('duration') or 0) / 1000.0 or 240.0
-                return (dur, url, d.get('name', ''))
-            except Exception:
-                return None
-
-        with ThreadPoolExecutor(max_workers=min(6, len(ids))) as ex:
-            got = list(ex.map(one, ids))
-        n = 0
-        for item in got:
-            if not item:
-                continue
-            dur, url, name = item
-            lines.append('#EXTINF:%.3f,%s' % (dur, name.replace(',', ' ')))
-            lines.append(url)
-            n += 1
-        if not n:
-            return Response('#EXTM3U\n#EXT-X-ENDLIST\n',
-                            mimetype='application/vnd.apple.mpegurl')
+                 '#EXT-X-TARGETDURATION:%d' % maxd, '#EXT-X-MEDIA-SEQUENCE:0']
+        for sid, dur in items:
+            lines.append('#EXTINF:%.3f,' % dur)
+            lines.append('/api/music/seg?id=%s' % sid)
         lines.append('#EXT-X-ENDLIST')
         return Response('\n'.join(lines) + '\n',
                         mimetype='application/vnd.apple.mpegurl',
@@ -1792,8 +1858,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     # ════════════════════════════════════════════════════════════════════
     # MCP（一起听）—— 直接挂在主程序里，不用另起服务
-    #   claude.ai 里加 Connector，地址填： https://你的域名/api/mcp/<token>
-    #   token 就是环境变量 MUSIC_PUSH_TOKEN；没设的话用 /api/mcp
+    #   claude.ai 里加 Connector，地址填： https://你的域名/api/music/mcp/<token>
+    #   token 就是环境变量 MUSIC_PUSH_TOKEN；没设的话用 /api/music/mcp
+    #   注意：不能用 /api/mcp —— 那个被 app.py 里的 Ombre Brain 先占了
     # 另外每个动作都给了 GET 入口(/api/music/act?do=xxx)，方便只能发 GET 的一方调用
     # ════════════════════════════════════════════════════════════════════
 
@@ -2067,7 +2134,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                                                'X-Accel-Buffering': 'no'}))
         return _mcp_cors(jsonify(body))
 
-    @app.route('/api/mcp', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
+    @app.route('/api/music/mcp', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
     def music_mcp_root():
         if request.method == 'OPTIONS':
             return ('', 204, {'Access-Control-Allow-Origin': '*',
@@ -2078,7 +2145,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return ('', 204)
         return _mcp_entry(auth_token or None)
 
-    @app.route('/api/mcp/<token>', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
+    @app.route('/api/music/mcp/<token>', methods=['GET', 'POST', 'OPTIONS', 'DELETE'])
     def music_mcp_token(token):
         if request.method == 'OPTIONS':
             return ('', 204, {'Access-Control-Allow-Origin': '*',
