@@ -96,7 +96,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
 .chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:80px;display:none;flex-direction:column;padding:0 18px;}
 .chat-view.on{display:flex;}
-.cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:30px 0 8px;display:flex;flex-direction:column;gap:12px;}
+.cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:30px 0 14px;display:flex;flex-direction:column;gap:12px;}
 .cv-msgs::-webkit-scrollbar{display:none;}
 .cv-row{display:flex;gap:8px;max-width:82%;}
 .cv-row.me{margin-left:auto;flex-direction:row-reverse;}
@@ -106,7 +106,12 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-col{display:flex;flex-direction:column;gap:5px;min-width:0;}
 .cv-col.me{align-items:flex-end;}
 /* 被回复的那句：灰白小框，跟在气泡下面，只有内容不带昵称 */
-.cv-quote{background:#e8ebef;border-radius:10px;padding:6px 10px;font-size:12.5px;line-height:1.35;color:#868d96;}
+.cv-tomb{align-self:center;background:#e3e6ea;color:#8a9098;font-size:12px;
+  border-radius:6px;padding:4px 10px;display:flex;align-items:center;gap:6px;}
+.cv-tomb button{font:inherit;font-size:12px;color:#5b7fb0;background:none;border:none;padding:0;}
+.cv-quote{align-self:flex-start;background:#e6e9ee;border-radius:15px;padding:9px 13px;
+  font-size:15px;line-height:1.4;color:#8d949d;box-shadow:0 1px 3px rgba(60,70,90,.06);}
+.cv-col.me .cv-quote{align-self:flex-end;}
 .cv-item{display:flex;align-items:center;gap:10px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 .ck{width:22px;height:22px;border-radius:50%;border:1.6px solid #c4cad2;flex-shrink:0;display:none;place-items:center;background:#fff;}
 .selmode .ck{display:grid;}
@@ -123,8 +128,9 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .msg-arrow{position:fixed;width:15px;height:8px;z-index:70;display:none;}
 .msg-arrow.show{display:block;}
 /* 回复时输入框上面挂着那条 */
-.reply-bar{display:none;align-items:center;gap:8px;background:#e8ebef;border-radius:10px;
-  padding:7px 10px;margin-bottom:8px;font-size:12.5px;color:#868d96;}
+.reply-bar{display:none;align-items:center;gap:6px;background:#e8ebef;border-radius:10px;
+  padding:7px 12px;margin-top:8px;font-size:12.5px;color:#868d96;}
+.reply-bar b{font-weight:600;color:#6e757e;flex-shrink:0;}
 .reply-bar.show{display:flex;}
 .reply-bar .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .reply-bar .x{color:#a8aeb6;font-size:15px;padding:0 2px;background:none;border:none;}
@@ -360,6 +366,10 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .mc-switch{display:none;}
 #play-page.listening .together{display:flex;}
 #play-page.listening .ipod{width:min(47vw,196px);}
+/* 看歌词时 iPod 被盖住，但它那几层很重的投影会从歌词区下边缘漏出来，
+   看着就像歌词底下有道阴影。用 visibility 藏掉——不用 display，
+   免得布局变了、歌词页量出来的上下边界跟着跑。 */
+#play-page.lyon .ipod-box{visibility:hidden;}
 #play-page.listening .mc-switch{display:flex;}
 /* 单人=原始排版(大iPod,原始间距),一起听才缩小加头像 */
 
@@ -466,11 +476,11 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   </div>
   <div class="chat-view" id="chat-view">
     <div class="cv-msgs" id="cv-msgs"></div>
-    <div class="reply-bar" id="reply-bar"><span class="t" id="reply-tx"></span><button class="x" id="reply-x">&#10005;</button></div>
     <div class="cv-input">
       <input id="cv-text" placeholder="就着这首歌，说点什么…" enterkeyhint="send">
       <button id="cv-send">发送</button>
     </div>
+    <div class="reply-bar" id="reply-bar"><b id="reply-who"></b><span class="t" id="reply-tx"></span><button class="x" id="reply-x">&#10005;</button></div>
     <div class="sel-bar">
       <button class="b" id="sel-cancel"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>取消</button>
       <button class="b" id="sel-del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg><span id="sel-cnt">删除</span></button>
@@ -492,6 +502,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 </div>
 <div class="msg-pop" id="msg-pop">
   <button class="it" id="mp-reply"><svg viewBox="0 0 24 24"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>回复</button>
+  <button class="it" id="mp-recall"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>撤回</button>
   <button class="it" id="mp-del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>删除</button>
   <button class="it" id="mp-multi"><svg viewBox="0 0 24 24"><path d="M3 6.5l2 2 3-3M3 13.5l2 2 3-3M3 20.5l2 2 3-3M12 6h9M12 13h9M12 20h9"/></svg>多选</button>
 </div>
@@ -1625,7 +1636,25 @@ function renderLyric(){if(!lyrics.length){$('ly-scroll').innerHTML='<div class="
 function updLyric(t){if(!lyrics.length)return;let i=0;for(let j=0;j<lyrics.length;j++){if(lyrics[j].t<=t)i=j;else break;}
   if(i===lastLy)return;lastLy=i;document.querySelectorAll('.ly-line').forEach((el,j)=>el.classList.toggle('cur',j===i));
   // 用户正在扒歌词的时候别抢滚动
-  if(lyView&&!lySeeking&&!lyResting){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});}}
+  if(lyView&&!lySeeking&&!lyResting){const el=document.querySelector('.ly-line[data-i="'+i+'"]');if(el)lyScrollTo(el);}}
+
+// 以前用 scrollIntoView(center)，上边界落在哪全看容器高度凑不凑巧：
+// 一起听那边碰巧卡在两句中间的空白里，单人这边就把上一句切掉半截露在外面。
+// 改成自己算：先算居中该滚到哪，再把上边界挪到最近的那条行间空白正中，
+// 这样不管容器多高，滚上去永远是干净的。
+function lyScrollTo(el){
+  const sc=$('ly-scroll');
+  const want=el.offsetTop+el.offsetHeight/2-sc.clientHeight/2;
+  const lines=sc.querySelectorAll('.ly-line');
+  let best=want,bd=1e9;
+  for(let k=0;k<lines.length;k++){
+    const t=lines[k].offsetTop-4.5;      // 行间空白 9px 的正中
+    const d=Math.abs(t-want);
+    if(d<bd){bd=d;best=t;}
+  }
+  const top=Math.max(0,Math.min(Math.round(best),sc.scrollHeight-sc.clientHeight));
+  try{sc.scrollTo({top:top,behavior:'smooth'});}catch(e){sc.scrollTop=top;}
+}
 
 // ── 歌词滑动定位：拖的时候出现"时间 ——— ▶"，松手线消失、留时间和三角 ──
 let lySeeking=false,lyResting=false,lyPick=-1,lyIdleT=null,lyRestT=null,lyMoved=false;
@@ -2063,6 +2092,15 @@ loadProfile();
 let chatMode=false;
 function setMode(chat){
   chatMode=chat;
+  // 聊天区的上边界原来写死 152px，比头像块矮一点点，
+  // 于是第一条气泡就压在"TA就在你身边"那行字上。改成量出来的。
+  try{
+    const cv=$('chat-view'),tg=$('together-bar');
+    if(chat&&tg&&$('play-page').classList.contains('listening')){
+      const pg=$('play-page').getBoundingClientRect();
+      cv.style.top=Math.round(tg.getBoundingClientRect().bottom-pg.top+14)+'px';
+    }else{cv.style.top='';}
+  }catch(e){}
   // 离开聊天页就别把多选状态带走，回来应该是干净的聊天页
   try{setSelMode(false);replyTo=null;$('reply-bar').classList.remove('show');}catch(e){}
   if(chat&&lyView){lyView=false;$('lyric-view').classList.remove('on');lyHideSeek();}
@@ -2140,11 +2178,26 @@ function switchRoom(r){
   renderRoom();
 })();
 
+const RECALL_TTL=300;                 // 五分钟内可撤回
+const recallDraft={};                 // 撤回的原文只留在这台机器上，服务器不留底
+function tombHTML(me,id){
+  const back=(me&&recallDraft[id])?'<button data-back="'+id+'">重新编辑</button>':'';
+  return '<div class="cv-tomb">'+(me?'你':'宝宝')+'撤回了一条消息'+back+'</div>';
+}
 function addMsg(text,me,m){
   m=m||{};
   const item=document.createElement('div');
   item.className='cv-item';
   item.dataset.id=m.id||'';
+  item.dataset.me=me?'1':'';
+  item.dataset.ts=m.ts||Math.floor(Date.now()/1000);
+  if(m.recalled){
+    item.classList.add('tomb');
+    item.innerHTML=tombHTML(me,m.id||'');
+    $('cv-msgs').appendChild(item);
+    const bx=$('cv-msgs');bx.scrollTop=bx.scrollHeight;
+    return item;
+  }
   const av=me?(window._uav||''):(window._aav||'');
   const q=m.quote?('<div class="cv-quote">'+esc(m.quote.text)+'</div>'):'';
   item.innerHTML=
@@ -2158,7 +2211,14 @@ function addMsg(text,me,m){
   armMsg(item);
   $('cv-msgs').appendChild(item);
   const box=$('cv-msgs');box.scrollTop=box.scrollHeight;
+  return item;
 }
+// 「重新编辑」把原文塞回输入框
+$('cv-msgs').addEventListener('click',e=>{
+  const b=e.target.closest('[data-back]');if(!b)return;
+  const t=recallDraft[b.dataset.back];if(!t)return;
+  $('cv-text').value=t;$('cv-text').focus();
+});
 
 // ── 长按一条消息 ──────────────────────────────────────────────
 let popFor=null,selMode=false,replyTo=null;
@@ -2177,7 +2237,11 @@ function armMsg(item){
 }
 function openMsgPop(item){
   if(selMode)return;
+  if(item.classList.contains('tomb'))return;   // 已经撤回的没什么可操作
   popFor=item;
+  const mine=item.dataset.me==='1';
+  const fresh=(Date.now()/1000-(+item.dataset.ts||0))<RECALL_TTL;
+  $('mp-recall').style.display=(mine&&fresh&&item.dataset.id)?'flex':'none';
   const pop=$('msg-pop'),arr=$('msg-arrow');
   pop.classList.add('show');arr.classList.add('show');
   const b=item.querySelector('.cv-bubble').getBoundingClientRect();
@@ -2203,11 +2267,31 @@ document.addEventListener('pointerdown',e=>{
 $('mp-reply').onclick=()=>{
   if(!popFor)return;
   replyTo={id:popFor.dataset.id,text:popFor.querySelector('.cv-bubble').textContent};
+  // 引自己说的话就不写名字了——原话就在旁边，自己说过什么自己认得
+  $('reply-who').textContent=(popFor.dataset.me==='1')?'':'回复 凛：';
   $('reply-tx').textContent=replyTo.text;
   $('reply-bar').classList.add('show');
-  closeMsgPop();$('cv-text').focus();
+  closeMsgPop();
+  // 引的可能是老早以前那句，点完得把视线带回底下，不然你看不到输入框
+  const box=$('cv-msgs');
+  requestAnimationFrame(()=>{try{box.scrollTo({top:box.scrollHeight,behavior:'smooth'});}
+    catch(e){box.scrollTop=box.scrollHeight;}});
+  $('cv-text').focus();
 };
 $('reply-x').onclick=()=>{replyTo=null;$('reply-bar').classList.remove('show');};
+$('mp-recall').onclick=async()=>{
+  if(!popFor)return;
+  const item=popFor,id=item.dataset.id;
+  const txt=(item.querySelector('.cv-bubble')||{}).textContent||'';
+  closeMsgPop();
+  let r={};
+  try{r=await fetch('/api/music/chat/recall',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:id})}).then(x=>x.json());}catch(e){}
+  if(!r.ok){toast(r.error||'撤不回来');return;}
+  recallDraft[id]=txt;                       // 原文只留在本机，给"重新编辑"用
+  item.classList.add('tomb');
+  item.innerHTML=tombHTML(true,id);
+};
 $('mp-del').onclick=()=>{
   if(!popFor)return;
   const id=popFor.dataset.id,el=popFor;
@@ -2265,13 +2349,14 @@ async function sendChat(){
   const t=$('cv-text').value.trim();if(!t)return;
   $('cv-text').value='';
   const rt=replyTo;
-  addMsg(t,true,rt?{quote:{text:rt.text}}:null);
+  const mine=addMsg(t,true,rt?{quote:{text:rt.text}}:null);
   replyTo=null;$('reply-bar').classList.remove('show');
   // 存 + 触发凛回复(走app聊天后端)
   const ctx=cur?('（正在一起听：'+cur.name+' - '+cur.artist+'）'):'';
   try{
     const r=await fetch('/api/music/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text:t,room:chatRoom,reply_to:rt?rt.id:null,song:cur?{name:cur.name,artist:cur.artist}:null})}).then(r=>r.json());
+    if(r.ok&&r.id&&mine)mine.dataset.id=r.id;
     if(r.ok&&r.reply)addMsg(r.reply,false,{});
   }catch(e){}
 }
@@ -2285,6 +2370,13 @@ async function pollChat(){
   try{
     const r=await fetch('/api/music/chat/history?room='+chatRoom).then(r=>r.json());
     if(r.ok&&r.messages){
+      r.messages.forEach(m=>{
+        if(!m.recalled||!m.id)return;
+        const el=$('cv-msgs').querySelector('.cv-item[data-id="'+m.id+'"]');
+        if(el&&!el.classList.contains('tomb')){
+          el.classList.add('tomb');el.innerHTML=tombHTML(!!m.me,m.id);
+        }
+      });
       const newMsgs=r.messages.filter(m=>!m.me&&m.ts>chatLastTs);
       if(chatLastTs>0&&newMsgs.length&&$('cv-msgs')._loaded){
         newMsgs.forEach(m=>addMsg(m.text,false,m));
