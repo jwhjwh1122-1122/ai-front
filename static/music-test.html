@@ -98,7 +98,10 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 #play-page.listening .heart-single{display:none;}
 #play-page.listening .heart-double{display:block;width:30px;height:28px;}
 .b-cmt{width:26px;height:26px;color:#5a6068;background:none;border:none;}
-.chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:80px;display:none;flex-direction:column;padding:0 18px;}
+/* 下边界要跟着安全区走。底部那个音乐/聊天切换是 safe-area+14 定位的，
+   这里要是写死 80px，装到主屏当 app 用时安全区变成 34，切换整个抬上来，
+   就跟输入框贴一块了；Safari 里安全区是 0，反而正好。 */
+.chat-view{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 152px);bottom:calc(env(safe-area-inset-bottom) + 80px);display:none;flex-direction:column;padding:0 18px;}
 .chat-view.on{display:flex;}
 .cv-msgs{flex:1;overflow-y:auto;scrollbar-width:none;padding:30px 0 14px;display:flex;flex-direction:column;gap:12px;}
 .cv-msgs::-webkit-scrollbar{display:none;}
