@@ -106,6 +106,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .cv-col{display:flex;flex-direction:column;gap:5px;min-width:0;}
 .cv-col.me{align-items:flex-end;}
 /* 被回复的那句：灰白小框，跟在气泡下面，只有内容不带昵称 */
+.cv-item.tomb{justify-content:center;}
 .cv-tomb{align-self:center;background:#e3e6ea;color:#8a9098;font-size:12px;
   border-radius:6px;padding:4px 10px;display:flex;align-items:center;gap:6px;}
 .cv-tomb button{font:inherit;font-size:12px;color:#5b7fb0;background:none;border:none;padding:0;}
@@ -664,6 +665,8 @@ setInterval(()=>{
     ' p'+(audio.paused?1:0)+' up'+(userPaused?1:0)+' ready'+(hlsReady?1:0)+
     ' seg'+segIdx+'/'+segs.length+
     (audio.error?(' 错误:'+(ERRTXT[audio.error.code]||audio.error.code)):'')+
+    ' ka'+(kaWant?(keepAlive.paused?'死':'活'):'-')+
+    ' 轮询'+Math.round((Date.now()-lastPollOk)/1000)+'s前'+
     (dbgNote?(' | '+dbgNote):'')+
     '\n'+src;
 },500);
@@ -733,6 +736,17 @@ setInterval(()=>{
   // 上面三招都救不回来才降级——降级会换掉音频源，是最后手段。
   if(stallSec>=20&&hlsMode){
     stallSec=0;
+    // 刚按过继续就卡住，八成是暂停太久、HLS 管道被 iOS 拆了。
+    // 这种时候该做的是拿同一个位置重建这条流，不是降级到单曲——
+    // 降级会换音源，还可能把你甩到别的歌上去（踩过）。
+    if(Date.now()-lastResumeAt<120000&&queue.length){
+      const keep=localTime();
+      startStream(qIndex,true);
+      const back=()=>{audio.removeEventListener('loadedmetadata',back);
+        try{if(keep>0.5)audio.currentTime=(curSeg()?curSeg().start:0)+keep;}catch(e){}};
+      audio.addEventListener('loadedmetadata',back);
+      return;
+    }
     const sg=cur;
     // 只救这一首。不写本地存储，点下一首歌就回连播。
     autoSolo=true;hlsMode=false;
@@ -755,19 +769,36 @@ function playBlocked(e){
 //   ③ 看门狗第 13 秒调 audio.load()，而 load() 会把 currentTime 清零 → 从头重放。
 // 对应三招：暂停期间放一段无声循环把页面吊住；继续时自己验证有没有真的走；
 // 任何重载都必须记着位置跳回去。
+function silentWavUrl(sec){
+  const rate=8000,n=rate*sec,buf=new ArrayBuffer(44+n),v=new DataView(buf);
+  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVEfmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,rate,true);v.setUint32(28,rate,true);v.setUint16(32,1,true);v.setUint16(34,8,true);
+  w(36,'data');v.setUint32(40,n,true);
+  for(let i=0;i<n;i++)v.setUint8(44+i,128);      // 8 位静音是 0x80，不是 0
+  return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+}
 const keepAlive=document.createElement('audio');
 keepAlive.setAttribute('playsinline','');keepAlive.loop=true;keepAlive.preload='auto';
-keepAlive.src=SILENT;document.body.appendChild(keepAlive);
+keepAlive.src=silentWavUrl(10);document.body.appendChild(keepAlive);
+let kaWant=false;                                 // 这会儿该不该吊着
 let kaTimer=null;
 function keepAliveOn(){
   clearTimeout(kaTimer);
   // 切歌那种一闪而过的暂停不用管，只有真停住了才吊着
   kaTimer=setTimeout(()=>{
     if(!audio.paused||kicking)return;
+    kaWant=true;
     try{if(keepAlive.paused)keepAlive.play().catch(()=>{});}catch(e){}
   },400);
 }
-function keepAliveOff(){clearTimeout(kaTimer);try{keepAlive.pause();}catch(e){}}
+function keepAliveOff(){kaWant=false;clearTimeout(kaTimer);try{keepAlive.pause();}catch(e){}}
+// 2) 自愈：保活自己被系统掐掉的话，只要定时器还活着就把它接回来
+setInterval(()=>{
+  if(!kaWant||!audio.paused)return;
+  if(keepAlive.paused){try{keepAlive.play().catch(()=>{});}catch(e){}}
+},3000);
 // 暂停期间每 25 秒让后端把这首的直链刷一遍。网易云的直链是有时效的，
 // 停十分钟再按播放，后端还得现去要一次，那几秒就是你听到的"卡了一下"。
 setInterval(()=>{
@@ -837,8 +868,10 @@ function kickPlay(from){
   setTimeout(check,1400);
 }
 
+let lastResumeAt=0;
 function doResume(){
   userPaused=false;
+  lastResumeAt=Date.now();
   keepAliveOff();
   kickPlay(audio.currentTime);
 }
@@ -1859,7 +1892,7 @@ function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyVi
       // 一起听时上面还顶着头像块，那块自己带间距，这里就不用再让了。
       // 一起听那边从歌名到歌词其实有 96px，只是中间 87px 被头像和耳机字填着。
       // 单人这边照抄 96 就是一片空的，看着像排版坏了，取个折中。
-      lv.style.paddingTop=$('play-page').classList.contains('listening')?'6px':'55px';
+      lv.style.paddingTop=$('play-page').classList.contains('listening')?'6px':'45px';
       lv.style.paddingBottom='6px';
       // 它自己那份渐变只铺自己这块高度，底部早早就走到最深，
       // 跟下面露出来的整页渐变接不上，看着就是一道阴影。
@@ -2449,10 +2482,11 @@ $('ed-reset').onclick=async()=>{
   const cb=edDone;closeEditor();if(cb)cb();
 };
 
-let lastSeq=0,remoteTimer=null,remoteFirst=true;
+let lastSeq=0,remoteTimer=null,remoteFirst=true,lastPollOk=Date.now();
 async function pollRemote(){
   try{
     const r=await fetch('/api/music/remote').then(r=>r.json());const c=r.command;
+    lastPollOk=Date.now();
     // 页面刚打开时服务器上往往还躺着一条旧指令（上次推的歌）。
     // 第一次只记下号码，不执行——否则一进来就会自动重放那首歌，
     // 而且因为不是手点的，iOS 不许出声，看上去就是"有歌但放不出来"。
