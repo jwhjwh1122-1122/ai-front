@@ -86,7 +86,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .b-artist:active{opacity:.6;}
 .b-social{display:flex;align-items:center;gap:18px;flex-shrink:0;}
 /* 看歌词时歌名已经在顶栏了，下面这份藏起来，别重复 */
-#play-page.lyon .b-head>div:first-child{display:none;}
+#play-page.lyon .b-head>div:nth-child(2){display:none;}
 #play-page.lyon .b-social{margin-left:auto;}
 .b-heart{color:#9298a0;background:none;border:none;}
 .b-heart svg path{fill:none;stroke:currentColor;stroke-width:1.7;}
@@ -199,11 +199,11 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .ly-line{font-size:16px;color:#b6bcc4;line-height:1.5;padding:8px 10px;margin:9px 0;transition:color .25s,font-size .25s,background .2s;}
 .ly-line.cur{font-size:18px;color:#20262c;}
 .ly-line .tr{font-size:12px;color:#9298a0;font-weight:400;margin-top:4px;}
-/* 外语歌才出现：点一下换一种，译 → 音 → 都不显示 */
-.ly-tr{position:absolute;left:16px;bottom:8px;z-index:7;display:none;align-items:center;
-  gap:2px;border:1px solid #cfd4da;border-radius:14px;padding:4px 11px;font-size:11.5px;
-  color:#b0b6be;background:rgba(251,252,253,.9);letter-spacing:.3px;}
-.ly-tr.on{display:flex;}
+/* 外语歌才出现，跟红心/评论同一排放在左边。点一下换一种：译 → 音 → 都不显示 */
+.ly-tr{display:none;align-items:center;gap:2px;flex-shrink:0;align-self:center;
+  border:1px solid #cfd4da;border-radius:14px;padding:4px 11px;font-size:11.5px;
+  color:#b0b6be;letter-spacing:.3px;background:none;}
+#play-page.lyon .ly-tr.on{display:flex;}
 .ly-tr b{font-weight:500;color:#b0b6be;}
 /* 选中不是变黑，是播放中(#20262c)和未播放(#b6bcc4)的中间色；字重不变 */
 .ly-tr b.sel{color:#6b7178;}
@@ -471,6 +471,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   </div>
   <div class="below">
     <div class="b-head">
+      <div class="ly-tr" id="ly-tr"><b id="ly-tr-t">译</b><span>/</span><b id="ly-tr-r">音</b></div>
       <div style="min-width:0;flex:1;">
         <div class="b-title" id="b-title">还没有歌</div>
         <div class="b-artist"><span id="b-artist">向下收起，去搜一首</span><span class="b-follow" style="display:none">关注</span></div>
@@ -513,7 +514,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   </div>
   <div class="lyric-view" id="lyric-view">
     <div class="ly-scroll" id="ly-scroll"><div class="ly-empty">点一下回到播放</div></div>
-    <div class="ly-tr" id="ly-tr"><b id="ly-tr-t">译</b><span>/</span><b id="ly-tr-r">音</b></div>
     <div class="ly-seek" id="ly-seek"><span class="tm" id="ly-seek-tm">0:00</span><div class="ln"></div><button class="pl" id="ly-seek-go"><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></button></div>
   </div>
 </div>
@@ -1683,8 +1683,6 @@ function syncTrBtn(){
   el.classList.toggle('on',hasTr||hasRo);         // 中文歌就不出现
   $('ly-tr-t').classList.toggle('sel',lyExtra==='tr');
   $('ly-tr-r').classList.toggle('sel',lyExtra==='ro');
-  $('ly-tr-t').style.opacity=hasTr?'1':'.35';
-  $('ly-tr-r').style.opacity=hasRo?'1':'.35';
 }
 function renderLyric(){if(!lyrics.length){$('ly-scroll').innerHTML='<div class="ly-empty">这首歌没有歌词</div>';return;}
   $('ly-scroll').innerHTML=lyrics.map((l,i)=>{
