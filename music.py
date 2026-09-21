@@ -395,11 +395,13 @@ class NeteaseClient:
         if c is not None:
             return c
         r = requests.post('https://music.163.com/weapi/song/lyric',
-                          data=weapi_encrypt({'id': song_id, 'lv': -1, 'tv': -1}),
+                          data=weapi_encrypt({'id': song_id, 'lv': -1, 'tv': -1, 'rv': -1}),
                           headers=self._headers(pc=True), timeout=12)
         j = r.json()
+        # rv=-1 顺手把罗马音也要回来（外语歌才有），给"译/音"那个切换用
         out = {'lyric': (j.get('lrc') or {}).get('lyric', ''),
-               'tlyric': (j.get('tlyric') or {}).get('lyric', '')}
+               'tlyric': (j.get('tlyric') or {}).get('lyric', ''),
+               'romalrc': (j.get('romalrc') or {}).get('lyric', '')}
         if out['lyric']:
             if len(self._lyric_cache) > 300:
                 self._lyric_cache.clear()
@@ -650,6 +652,36 @@ class NeteaseClient:
                 last_err = f'{path}: {str(e)[:80]}'
         self._last_recent_err = last_err
         return []
+
+    def user_stat(self):
+        """拿账号级的统计：累计听歌首数、听歌时长这些。
+        网易云的「累计听歌」「听歌时长」「听歌排行」都是同一条 weblog 喂出来的，
+        所以验证上报通不通，这几个要一起看。"""
+        uid = self.uid()
+        if not uid:
+            return {}
+        out = {}
+        try:
+            j = self.eapi('/api/v1/user/detail/%s' % uid, {})
+            out['listenSongs'] = j.get('listenSongs')          # 累计听歌首数
+            prof = j.get('profile') or {}
+            out['nickname'] = prof.get('nickname')
+            for k in ('playlistCount', 'playlistBeSubscribedCount'):
+                if j.get(k) is not None:
+                    out[k] = j[k]
+        except Exception as e:
+            out['err'] = str(e)[:120]
+        # 听歌时长在"音乐分析"那条接口上，有就带上，没有也不报错
+        try:
+            j2 = self.eapi('/api/content/activity/listen/time', {'uid': uid})
+            if isinstance(j2, dict):
+                for k in ('listenTime', 'totalTime', 'time'):
+                    if j2.get(k) is not None:
+                        out['listenTime'] = j2[k]
+                        break
+        except Exception:
+            pass
+        return out
 
     def play_rank(self, period='week', limit=100):
         """听歌排行。period='week' 最近一周 / 'all' 所有时间。带播放次数。缓存 5 分钟。"""
@@ -904,8 +936,13 @@ class NeteaseClient:
                          'type': 'song', 'wifi': 0, 'source': 'list'},
             }], separators=(',', ':'))
             j = self.eapi('/api/feedback/weblog', {'logs': logs})
+            # 留一份回应，/api/music/scrobble 会带出来，不然报没报成功全靠猜
+            self._last_scrobble = {'id': song_id, 'seconds': int(seconds or 0),
+                                   'resp': str(j)[:200], 'at': int(time.time())}
             return j.get('code') == 200
-        except Exception:
+        except Exception as e:
+            self._last_scrobble = {'id': song_id, 'err': str(e)[:200],
+                                   'at': int(time.time())}
             return False
 
     def set_like(self, song_id, like=True):
@@ -1319,9 +1356,65 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         except Exception:
             sec = 0
         ok = nc.scrobble(sid, sec, src)
-        # 上报之后"最近播放/排行"的缓存就旧了，清掉
-        nc._liked_cache = nc._liked_cache
-        return jsonify({'ok': ok})
+        return jsonify({'ok': ok, 'detail': getattr(nc, '_last_scrobble', None)})
+
+    @app.route('/api/music/scrobble/test', methods=['GET'])
+    def music_scrobble_test():
+        """上报探针：报之前先读一次这首歌的播放次数，报完再读一次，直接看涨没涨。
+        别再靠"感觉网易云没变化"来判断了。
+        用法：/api/music/scrobble/test?id=歌曲id&seconds=200
+             加 &mode=weapi 试另一条通道
+        """
+        sid = request.args.get('id')
+        if not sid:
+            return jsonify({'ok': False, 'error': '缺 id'})
+        try:
+            sec = int(float(request.args.get('seconds') or 200))
+        except Exception:
+            sec = 200
+
+        def count_of(period):
+            nc._rank_cache.pop(period, None)      # 排行缓存 5 分钟，量之前先清掉
+            for x in (nc.play_rank(period) or []):
+                if str(x.get('id')) == str(sid):
+                    return x.get('play_count')
+            return None
+
+        before = {'这首·周': count_of('week'), '这首·总': count_of('all'),
+                  '账号': nc.user_stat()}
+        if request.args.get('mode') == 'weapi':
+            # 另一条通道：weapi 版的 weblog，eapi 那条要是不灵就试这个
+            try:
+                logs = json.dumps([{'action': 'play', 'json': {
+                    'download': 0, 'end': 'playend', 'id': int(sid),
+                    'sourceId': '', 'time': sec, 'type': 'song', 'wifi': 0}}],
+                    separators=(',', ':'))
+                r = requests.post('https://music.163.com/weapi/feedback/weblog',
+                                  data=weapi_encrypt({'logs': logs}),
+                                  headers=nc._headers(pc=True), timeout=12)
+                nc._last_scrobble = {'id': sid, 'seconds': sec, 'via': 'weapi',
+                                     'resp': r.text[:200], 'at': int(time.time())}
+                ok = '"code":200' in r.text
+            except Exception as e:
+                nc._last_scrobble = {'err': str(e)[:200]}
+                ok = False
+        else:
+            ok = nc.scrobble(sid, sec, '')
+
+        time.sleep(3)                              # 给网易云一点时间落库
+        after = {'这首·周': count_of('week'), '这首·总': count_of('all'),
+                 '账号': nc.user_stat()}
+        moved = (before != after)
+        return jsonify({'ok': ok, 'moved': moved,
+                        'before': before, 'after': after,
+                        'detail': getattr(nc, '_last_scrobble', None),
+                        '说明': '涨了就是通的；moved=false 且 ok=true，'
+                                '说明网易云收了但没记，那就是上报内容的问题'})
+
+    @app.route('/api/music/stat', methods=['GET'])
+    def music_stat():
+        """随时看账号级统计：累计听歌首数、听歌时长。"""
+        return jsonify({'ok': True, 'stat': nc.user_stat()})
 
     @app.route('/api/music/liked', methods=['GET'])
     def music_liked():
