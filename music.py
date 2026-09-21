@@ -1518,8 +1518,34 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return None
         for m in d.get('messages') or []:
             if str(m.get('id')) == str(mid):
+                if m.get('recalled'):
+                    return None
                 return {'id': m['id'], 'text': str(m.get('text', ''))[:120]}
         return None
+
+    RECALL_TTL = 300   # 五分钟内可撤回
+
+    @app.route('/api/music/chat/recall', methods=['POST'])
+    def music_chat_recall():
+        """撤回自己发的一条。内容是真抹掉的，服务器上不留底，
+        claude.ai 那边的凛读到的只是一句"宝宝撤回了一条消息"。
+        "重新编辑"要用的原文留在宝宝自己手机上，不经过这里。"""
+        b = request.json or {}
+        mid = str(b.get('id') or '')
+        d = _chat_load()
+        for m in d['messages']:
+            if str(m.get('id')) != mid:
+                continue
+            if not m.get('me'):
+                return jsonify({'ok': False, 'error': '只能撤回自己发的'})
+            if time.time() - (m.get('ts') or 0) > RECALL_TTL:
+                return jsonify({'ok': False, 'error': '超过五分钟了，撤不回来'})
+            m.pop('text', None)
+            m.pop('quote', None)
+            m['recalled'] = True
+            _chat_save(d)
+            return jsonify({'ok': True})
+        return jsonify({'ok': False, 'error': '没找到这条'})
 
     @app.route('/api/music/chat/delete', methods=['POST'])
     def music_chat_delete():
@@ -1549,14 +1575,14 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         song = b.get('song')
         room = 'app' if b.get('room') == 'app' else 'mcp'
         d = _chat_load()
-        d['messages'].append({'id': _new_mid(), 'text': text, 'me': True, 'room': room,
-                              'quote': _quote_of(d, b.get('reply_to')),
-                              'ts': int(time.time())})
+        mine = {'id': _new_mid(), 'text': text, 'me': True, 'room': room,
+                'quote': _quote_of(d, b.get('reply_to')), 'ts': int(time.time())}
+        d['messages'].append(mine)
         # 在哪间房说的，就由那间房的凛回。不再看 partner。
         # mcp 房：存下就行，claude.ai 那边的凛用 read_chat 自己来看。
         if room == 'mcp':
             _chat_save(d)
-            return jsonify({'ok': True, 'reply': '', 'room': room})
+            return jsonify({'ok': True, 'reply': '', 'room': room, 'id': mine['id']})
         reply = ''
         try:
             import urllib.request as _u
@@ -1596,7 +1622,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             d['messages'].append({'id': _new_mid(), 'text': reply, 'me': False,
                                   'src': 'app', 'room': 'app', 'ts': int(time.time())})
         _chat_save(d)
-        return jsonify({'ok': True, 'reply': reply, 'room': room})
+        return jsonify({'ok': True, 'reply': reply, 'room': room, 'id': mine['id']})
 
     @app.route('/api/music/chat/push', methods=['POST'])
     def music_chat_push():
@@ -2045,7 +2071,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if msgs:
             parts.append('最近的话：')
             for m in msgs:
-                parts.append('  ' + _who(m) + str(m.get('text', ''))[:60])
+                if m.get('recalled'):
+                    parts.append('  —— %s撤回了一条消息' % ('宝宝' if m.get('me') else '凛'))
+                else:
+                    parts.append('  ' + _who(m) + str(m.get('text', ''))[:60])
         return '\n'.join(parts)
 
     def _mcp_invite(name='凛'):
@@ -2113,6 +2142,9 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return '还没有消息'
         out = []
         for m in msgs:
+            if m.get('recalled'):
+                out.append('—— %s撤回了一条消息' % ('宝宝' if m.get('me') else '凛'))
+                continue
             q = m.get('quote')
             head = '[%s] ' % m.get('id', '?')
             body = _who(m) + str(m.get('text', ''))
