@@ -888,7 +888,7 @@ function onSegChanged(i,uiOnly){
   $('p-dur').textContent=fmt(g.dur);
   if(uiOnly)return;
   loadLyric(sg.id);refreshMini();syncHeart(sg.id);setMediaSession(sg);postNP();
-  scrobbleSong=sg;scrobbleDone=false;
+  markScrobble(sg,g.dur);
   fetch('/api/music/url?id='+sg.id).then(r=>r.json()).then(r=>{
     if(r&&r.ok&&r.quality){qualityCache[sg.id]=r.quality;setModeLabel();}}).catch(()=>{});
   postNow(true);
@@ -1475,7 +1475,22 @@ window.addEventListener('message',e=>{
 setInterval(postNP,2000);
 // 上报给网易云：听歌排行、累计听歌首数、累计听歌时长都靠它。
 // 每首歌只报一次，报的是你真实听了多少秒（听完就是整首时长）。
-let scrobbleSong=null,scrobbleDone=false;
+// 连播模式下 audio.currentTime 是整条流（最多22首拼一起）的位置，
+// 不是这首歌听了多久。所以开始放一首时先记下当时的流位置，
+// 结算时用差值 —— 这样连播和单曲都算得对。
+let scrobbleSong=null,scrobbleDone=false,scrobbleFrom=0,scrobbleDur=0;
+function markScrobble(sg,dur){
+  scrobbleSong=sg;scrobbleDone=false;
+  scrobbleFrom=audio.currentTime||0;
+  scrobbleDur=dur||0;
+}
+function scrobblePlayed(){
+  let p=(audio.currentTime||0)-scrobbleFrom;
+  if(!(p>0))p=0;
+  const d=scrobbleDur||audio.duration||0;
+  if(d&&p>d)p=d;                       // 卡顿回跳之类的，别报出个离谱数
+  return p;
+}
 function doScrobble(song,sec){
   if(!song||!song.id)return;
   sec=Math.round(sec||0);
@@ -1486,10 +1501,10 @@ function doScrobble(song,sec){
 // 换歌/离开时，把上一首实际听了多久结算掉
 function flushScrobble(){
   if(scrobbleSong&&!scrobbleDone){
-    const played=audio.currentTime||0,dur=audio.duration||0;
+    const played=scrobblePlayed(),dur=scrobbleDur||audio.duration||0;
     if(played>=30&&(played>=dur*0.5||played>=60))doScrobble(scrobbleSong,played);
   }
-  scrobbleSong=null;scrobbleDone=false;
+  scrobbleSong=null;scrobbleDone=false;scrobbleFrom=0;scrobbleDur=0;
 }
 // 页面被关掉/切走时也结算一次，别漏
 window.addEventListener('pagehide',flushScrobble);
@@ -1543,7 +1558,7 @@ async function soloPlay(sg,lite){
   }).catch(()=>{});
   if(my!==playToken)return;
   refreshMini();syncHeart(sg.id);setMediaSession(sg);postNP();
-  scrobbleSong=sg;scrobbleDone=false;
+  markScrobble(sg,songDur(sg));
   postNow(true);
 }
 // 底下那行字：既显示音质，也是模式开关
@@ -1874,7 +1889,7 @@ audio.addEventListener('ended',()=>{
   // 这里故意不回连播：新建一条 HLS 流必须有你手指点的那一下才能启动，
   // 在这儿自动切回去只会卡住→再降级→再切回→死循环。
   // 改成你下次点歌时再回（playSong / setQueue 里做），那一下有手势。
-  if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,localDur()||audio.duration||0);scrobbleDone=true;}
+  if(scrobbleSong&&!scrobbleDone){doScrobble(scrobbleSong,scrobbleDur||localDur()||audio.duration||0);scrobbleDone=true;}
   if(!queue.length)return;
   if(!hlsMode){playNext();return;}   // 音质模式：一首一首来
   if(loopMode===1){const g=curSeg();if(g){seekAndPlay(g.start);}return;}
