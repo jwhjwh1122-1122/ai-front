@@ -1358,12 +1358,30 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         ok = nc.scrobble(sid, sec, src)
         return jsonify({'ok': ok, 'detail': getattr(nc, '_last_scrobble', None)})
 
+    SCROBBLE_PROBE = os.path.join(data_dir, 'scrobble_probe.json')
+
+    def _snap(sid):
+        """量一次：这首歌的播放次数 + 账号累计。排行缓存先清掉，不然读的是旧的。"""
+        out = {'accounted': None, 'week': None, 'all': None}
+        for period in ('week', 'all'):
+            nc._rank_cache.pop(period, None)
+            for x in (nc.play_rank(period, limit=1000) or []):
+                if str(x.get('id')) == str(sid):
+                    out[period] = x.get('play_count')
+                    break
+        st = nc.user_stat()
+        out['accounted'] = st.get('listenSongs')
+        out['listenTime'] = st.get('listenTime')
+        return out
+
     @app.route('/api/music/scrobble/test', methods=['GET'])
     def music_scrobble_test():
-        """上报探针：报之前先读一次这首歌的播放次数，报完再读一次，直接看涨没涨。
-        别再靠"感觉网易云没变化"来判断了。
+        """第一步：记下现在的数，然后上报一次。
+        网易云不是实时落库的（宝宝说最晚十分钟），所以别在这儿等结果——
+        过十分钟开 /api/music/scrobble/check 看涨没涨。
         用法：/api/music/scrobble/test?id=歌曲id&seconds=200
-             加 &mode=weapi 试另一条通道
+             加 &mode=weapi 换一条通道试
+             加 &src=歌单id 带上来源（网易云可能要求来源是真歌单才计数）
         """
         sid = request.args.get('id')
         if not sid:
@@ -1372,44 +1390,61 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             sec = int(float(request.args.get('seconds') or 200))
         except Exception:
             sec = 200
+        src = request.args.get('src') or ''
+        mode = request.args.get('mode') or 'eapi'
 
-        def count_of(period):
-            nc._rank_cache.pop(period, None)      # 排行缓存 5 分钟，量之前先清掉
-            for x in (nc.play_rank(period) or []):
-                if str(x.get('id')) == str(sid):
-                    return x.get('play_count')
-            return None
-
-        before = {'这首·周': count_of('week'), '这首·总': count_of('all'),
-                  '账号': nc.user_stat()}
-        if request.args.get('mode') == 'weapi':
-            # 另一条通道：weapi 版的 weblog，eapi 那条要是不灵就试这个
+        before = _snap(sid)
+        if mode == 'weapi':
             try:
                 logs = json.dumps([{'action': 'play', 'json': {
                     'download': 0, 'end': 'playend', 'id': int(sid),
-                    'sourceId': '', 'time': sec, 'type': 'song', 'wifi': 0}}],
+                    'sourceId': str(src), 'time': sec, 'type': 'song', 'wifi': 0}}],
                     separators=(',', ':'))
                 r = requests.post('https://music.163.com/weapi/feedback/weblog',
                                   data=weapi_encrypt({'logs': logs}),
                                   headers=nc._headers(pc=True), timeout=12)
-                nc._last_scrobble = {'id': sid, 'seconds': sec, 'via': 'weapi',
-                                     'resp': r.text[:200], 'at': int(time.time())}
+                nc._last_scrobble = {'via': 'weapi', 'resp': r.text[:200]}
                 ok = '"code":200' in r.text
             except Exception as e:
-                nc._last_scrobble = {'err': str(e)[:200]}
+                nc._last_scrobble = {'via': 'weapi', 'err': str(e)[:200]}
                 ok = False
         else:
-            ok = nc.scrobble(sid, sec, '')
+            ok = nc.scrobble(sid, sec, src)
 
-        time.sleep(3)                              # 给网易云一点时间落库
-        after = {'这首·周': count_of('week'), '这首·总': count_of('all'),
-                 '账号': nc.user_stat()}
-        moved = (before != after)
-        return jsonify({'ok': ok, 'moved': moved,
-                        'before': before, 'after': after,
-                        'detail': getattr(nc, '_last_scrobble', None),
-                        '说明': '涨了就是通的；moved=false 且 ok=true，'
-                                '说明网易云收了但没记，那就是上报内容的问题'})
+        jwrite(SCROBBLE_PROBE, {'id': sid, 'seconds': sec, 'mode': mode, 'src': src,
+                                'before': before, 'at': int(time.time()),
+                                'resp': getattr(nc, '_last_scrobble', None)})
+        return jsonify({
+            'ok': ok, 'id': sid, 'before': before,
+            'resp': getattr(nc, '_last_scrobble', None),
+            '下一步': '等十分钟，再开 /api/music/scrobble/check',
+        })
+
+    @app.route('/api/music/scrobble/check', methods=['GET'])
+    def music_scrobble_check():
+        """第二步：跟上一次 test 记下的数对比，看涨了没有。"""
+        d = jread(SCROBBLE_PROBE, {}) or {}
+        if not d.get('id'):
+            return jsonify({'ok': False, 'error': '还没跑过 test'})
+        after = _snap(d['id'])
+        before = d.get('before') or {}
+        diff = {}
+        for k in ('week', 'all', 'accounted', 'listenTime'):
+            b, a = before.get(k), after.get(k)
+            if b is None and a is None:
+                continue
+            diff[k] = {'前': b, '后': a, '涨了': (b != a)}
+        mins = int((time.time() - (d.get('at') or 0)) / 60)
+        moved = any(v.get('涨了') for v in diff.values())
+        return jsonify({
+            'ok': True, 'moved': moved, '距离上报': '%d 分钟' % mins,
+            '对比': diff, '上报时': {'id': d['id'], 'mode': d.get('mode'),
+                                   'seconds': d.get('seconds'), 'src': d.get('src'),
+                                   'resp': d.get('resp')},
+            '说明': ('涨了 = 通的' if moved else
+                     ('还没到十分钟，再等等' if mins < 10 else
+                      '过了十分钟还没涨 —— 网易云收了但不算数，换 &mode=weapi 或 &src=真歌单id 再试')),
+        })
 
     @app.route('/api/music/stat', methods=['GET'])
     def music_stat():
