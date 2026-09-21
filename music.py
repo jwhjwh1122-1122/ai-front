@@ -1420,10 +1420,112 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             '下一步': '等十分钟，再开 /api/music/scrobble/check',
         })
 
+    def _scrobble_variant(way, sid, sec, src):
+        """四种不同的上报姿势，用来找出网易云到底认哪一种。
+        现在的情况：eapi + 空 sourceId 会回 code:200 success，但计数不涨。"""
+        try:
+            if way == 'A':      # eapi + 真歌单来源
+                body = {'download': 0, 'end': 'playend', 'id': int(sid),
+                        'sourceId': str(src), 'time': sec, 'type': 'song',
+                        'wifi': 0, 'source': 'list'}
+                j = nc.eapi('/api/feedback/weblog',
+                            {'logs': json.dumps([{'action': 'play', 'json': body}],
+                                                separators=(',', ':'))})
+                return str(j)[:200]
+            if way == 'B':      # weapi 通道
+                body = {'download': 0, 'end': 'playend', 'id': int(sid),
+                        'sourceId': str(src), 'time': sec, 'type': 'song', 'wifi': 0}
+                r = requests.post('https://music.163.com/weapi/feedback/weblog',
+                                  data=weapi_encrypt({'logs': json.dumps(
+                                      [{'action': 'play', 'json': body}],
+                                      separators=(',', ':'))}),
+                                  headers=nc._headers(pc=True), timeout=12)
+                return r.text[:200]
+            if way == 'C':      # 先真的去取一次播放地址，再上报（模拟真实播放）
+                try:
+                    nc.song_url(sid, mp3_only=True)
+                except Exception:
+                    pass
+                body = {'download': 0, 'end': 'playend', 'id': int(sid),
+                        'sourceId': str(src), 'time': sec, 'type': 'song',
+                        'wifi': 0, 'source': 'list'}
+                j = nc.eapi('/api/feedback/weblog',
+                            {'logs': json.dumps([{'action': 'play', 'json': body}],
+                                                separators=(',', ':'))})
+                return str(j)[:200]
+            if way == 'D':      # eapi + 手机客户端那套 header（不是 PC）
+                body = {'download': 0, 'end': 'playend', 'id': int(sid),
+                        'sourceId': str(src), 'time': sec, 'type': 'song',
+                        'wifi': 0, 'source': 'list', 'mainsite': 1}
+                j = nc.eapi('/api/feedback/weblog',
+                            {'logs': json.dumps([{'action': 'play', 'json': body}],
+                                                separators=(',', ':'))})
+                return str(j)[:200]
+        except Exception as e:
+            return 'ERR ' + str(e)[:150]
+        return '未知姿势'
+
+    @app.route('/api/music/scrobble/ab', methods=['GET'])
+    def music_scrobble_ab():
+        """一次试四种姿势，每种用一首不同的歌，十分钟后一起看哪种涨了。
+        用法：/api/music/scrobble/ab
+             自己指定歌：?ids=id1,id2,id3,id4
+             指定来源歌单：&src=歌单id（默认用第一个歌单）
+        """
+        ids = [x.strip() for x in (request.args.get('ids') or '').split(',') if x.strip()]
+        if len(ids) < 4:
+            # 自己从最近播放里挑，跳过最前面几首（那几首宝宝可能还会再听）
+            recent = nc.recent_plays() or []
+            ids = [str(x['id']) for x in recent[4:12]][:4]
+        if len(ids) < 4:
+            return jsonify({'ok': False, 'error': '凑不齐四首歌，用 ?ids= 自己指定'})
+        src = request.args.get('src')
+        if not src:
+            pls = nc.my_playlists() or []
+            src = str(pls[0]['id']) if pls else ''
+        try:
+            sec = int(float(request.args.get('seconds') or 200))
+        except Exception:
+            sec = 200
+
+        trials = []
+        for way, sid in zip(('A', 'B', 'C', 'D'), ids):
+            before = _snap(sid)
+            resp = _scrobble_variant(way, sid, sec, src)
+            trials.append({'way': way, 'id': sid, 'before': before, 'resp': resp})
+        jwrite(SCROBBLE_PROBE, {'ab': True, 'src': src, 'seconds': sec,
+                                'trials': trials, 'at': int(time.time())})
+        return jsonify({
+            'ok': True, '来源歌单': src, '姿势': {
+                'A': 'eapi + 真歌单来源', 'B': 'weapi 通道',
+                'C': '先取播放地址再上报', 'D': 'eapi + mainsite'},
+            '这次用的歌': {t['way']: t['id'] for t in trials},
+            '各自回应': {t['way']: t['resp'] for t in trials},
+            '下一步': '等十分钟，开 /api/music/scrobble/check',
+        })
+
     @app.route('/api/music/scrobble/check', methods=['GET'])
     def music_scrobble_check():
         """第二步：跟上一次 test 记下的数对比，看涨了没有。"""
         d = jread(SCROBBLE_PROBE, {}) or {}
+        mins0 = int((time.time() - (d.get('at') or 0)) / 60)
+        if d.get('ab'):
+            out, winner = {}, []
+            for t in d.get('trials') or []:
+                after = _snap(t['id'])
+                b0 = t.get('before') or {}
+                moved = any(b0.get(k) != after.get(k)
+                            for k in ('week', 'all') if b0.get(k) is not None or after.get(k) is not None)
+                out[t['way']] = {'id': t['id'], '前': b0.get('week'), '后': after.get('week'),
+                                 '涨了': moved, '回应': t.get('resp')}
+                if moved:
+                    winner.append(t['way'])
+            return jsonify({'ok': True, '距离上报': '%d 分钟' % mins0,
+                            '结果': out, '通了的': winner or None,
+                            '说明': ('通了：' + '、'.join(winner)) if winner else
+                                    ('还没到十分钟，再等等' if mins0 < 10 else
+                                     '四种都不涨 —— 网易云可能只认它自己的客户端，'
+                                     '这条路大概率走不通')})
         if not d.get('id'):
             return jsonify({'ok': False, 'error': '还没跑过 test'})
         after = _snap(d['id'])
