@@ -17,6 +17,10 @@
 <link rel="icon" href="/static/tt-icon-192.png">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+/* 长按播放页/歌词会弹出 iOS 的"拷贝 查找 翻译"，把长按手势抢走。
+   输入框和聊天气泡另外放开——那两处是要能选的。 */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+input,textarea{-webkit-user-select:text;user-select:text;}
 html,body{height:100%;}
 body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   background:linear-gradient(180deg,#fbfcfd,#eef1f4);color:#2b2f36;overflow:hidden;position:fixed;inset:0;display:flex;flex-direction:column;}
@@ -1892,7 +1896,7 @@ function toggleLyric(){lyView=!lyView;$('lyric-view').classList.toggle('on',lyVi
       // 一起听时上面还顶着头像块，那块自己带间距，这里就不用再让了。
       // 一起听那边从歌名到歌词其实有 96px，只是中间 87px 被头像和耳机字填着。
       // 单人这边照抄 96 就是一片空的，看着像排版坏了，取个折中。
-      lv.style.paddingTop=$('play-page').classList.contains('listening')?'6px':'45px';
+      lv.style.paddingTop=$('play-page').classList.contains('listening')?'6px':'35px';
       lv.style.paddingBottom='6px';
       // 它自己那份渐变只铺自己这块高度，底部早早就走到最深，
       // 跟下面露出来的整页渐变接不上，看着就是一道阴影。
