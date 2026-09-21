@@ -587,7 +587,6 @@ function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0
 // userPaused：是不是你自己按的暂停。
 // 不能拿 audio.paused 判断——play() 在 iOS 上加载被打断时会失败，
 // 一失败 paused 就变 true，保险机制会误以为是你按的，然后什么都不做。
-const SILENT='data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 let userPaused=false;
 // 永远从连播开始。单曲只在本次有效，不记本地——
 // 记了的话哪天手滑切一下，就能悄悄跟你好几天（已经踩过这个坑）。
@@ -669,7 +668,6 @@ setInterval(()=>{
     ' p'+(audio.paused?1:0)+' up'+(userPaused?1:0)+' ready'+(hlsReady?1:0)+
     ' seg'+segIdx+'/'+segs.length+
     (audio.error?(' 错误:'+(ERRTXT[audio.error.code]||audio.error.code)):'')+
-    ' ka'+(kaWant?(keepAlive.paused?'死':'活'):'-')+
     ' 轮询'+Math.round((Date.now()-lastPollOk)/1000)+'s前'+
     (dbgNote?(' | '+dbgNote):'')+
     '\n'+src;
@@ -771,42 +769,15 @@ function playBlocked(e){
 //      pollRemote 那条 setTimeout 链直接断掉——"继续"的指令压根没人去取。
 //   ② 长时间暂停后 iOS 会把 HLS 管道拆了，回来 play() 状态全绿但时钟不走。
 //   ③ 看门狗第 13 秒调 audio.load()，而 load() 会把 currentTime 清零 → 从头重放。
-// 对应三招：暂停期间放一段无声循环把页面吊住；继续时自己验证有没有真的走；
-// 任何重载都必须记着位置跳回去。
-function silentWavUrl(sec){
-  const rate=8000,n=rate*sec,buf=new ArrayBuffer(44+n),v=new DataView(buf);
-  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
-  w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVEfmt ');
-  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
-  v.setUint32(24,rate,true);v.setUint32(28,rate,true);v.setUint16(32,1,true);v.setUint16(34,8,true);
-  w(36,'data');v.setUint32(40,n,true);
-  for(let i=0;i<n;i++)v.setUint8(44+i,128);      // 8 位静音是 0x80，不是 0
-  return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
-}
-const keepAlive=document.createElement('audio');
-keepAlive.setAttribute('playsinline','');keepAlive.loop=true;keepAlive.preload='auto';
-keepAlive.src=silentWavUrl(10);document.body.appendChild(keepAlive);
-let kaWant=false;                                 // 这会儿该不该吊着
-let kaTimer=null;
-function keepAliveOn(){
-  clearTimeout(kaTimer);
-  // 切歌那种一闪而过的暂停不用管，只有真停住了才吊着
-  kaTimer=setTimeout(()=>{
-    if(!audio.paused||kicking)return;
-    kaWant=true;
-    try{if(keepAlive.paused)keepAlive.play().catch(()=>{});}catch(e){}
-  },400);
-}
-function keepAliveOff(){kaWant=false;clearTimeout(kaTimer);try{keepAlive.pause();}catch(e){}}
-// 2) 自愈：保活自己被系统掐掉的话，只要定时器还活着就把它接回来
-setInterval(()=>{
-  if(!kaWant||!audio.paused)return;
-  if(keepAlive.paused){try{keepAlive.play().catch(()=>{});}catch(e){}}
-},3000);
+// 试过在暂停期间放一段无声音频把页面"吊住"，不管用：诊断条实测
+// 保活还在播（ka活）而轮询已经 512 秒没跑过，页面照样被冻。这是 iOS 的
+// 硬限制，已经把那段删了。剩下能做的是后两件：继续时自己验证有没有真的
+// 走起来；任何重载都必须记着位置跳回去。
 // 暂停期间每 25 秒让后端把这首的直链刷一遍。网易云的直链是有时效的，
 // 停十分钟再按播放，后端还得现去要一次，那几秒就是你听到的"卡了一下"。
+// （只在页面还活着的时候有用；被 iOS 冻住的话这个定时器也不跑。）
 setInterval(()=>{
-  if(!cur||!audio.paused||keepAlive.paused)return;
+  if(!cur||!audio.paused)return;
   warm(cur.id);
 },25000);
 
@@ -826,7 +797,6 @@ function doPause(){
   userPaused=true;
   if(audio.currentTime>0)resumeAt=audio.currentTime;
   try{audio.pause();}catch(e){}
-  keepAliveOn();
 }
 
 // ── 播下去，并且盯着它真的走 ────────────────────────────────────────
@@ -876,7 +846,6 @@ let lastResumeAt=0;
 function doResume(){
   userPaused=false;
   lastResumeAt=Date.now();
-  keepAliveOff();
   kickPlay(audio.currentTime);
 }
 
@@ -886,7 +855,6 @@ function seekAndPlay(t,keepPaused){
   resumeAt=t;
   if(keepPaused&&userPaused)return;   // 拖进度条时你本来就是暂停的，就别擅自开声
   userPaused=false;
-  keepAliveOff();
   kickPlay(t);
 }
 // 流走到了第 i 段（= 第 i 首歌）：把界面、歌词、红心、锁屏信息全换过去
@@ -1807,8 +1775,8 @@ onBoth('timeupdate',()=>{
     $('p-fill').style.width=p+'%';$('p-dot').style.left=p+'%';$('p-cur').textContent=fmt(t);
   }
   updLyric(t);});
-onBoth('play',()=>{keepAliveOff();postNow(true);if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='playing';}catch(e){}$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
-onBoth('pause',()=>{if(audio.currentTime>0)resumeAt=audio.currentTime;keepAliveOn();postNow(true);if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='paused';}catch(e){}$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
+onBoth('play',()=>{postNow(true);if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='playing';}catch(e){}$('c-main-ic').innerHTML='<path d="M7 4h3v16H7zM14 4h3v16h-3z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';$('scr-pz').innerHTML='&#10074;&#10074;';$('mini').classList.add('playing');});
+onBoth('pause',()=>{if(audio.currentTime>0)resumeAt=audio.currentTime;postNow(true);if('mediaSession' in navigator)try{navigator.mediaSession.playbackState='paused';}catch(e){}$('c-main-ic').innerHTML='<path d="M8 5v14l11-7z"/>';$('mini-play').innerHTML='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';$('scr-pz').textContent='▶';$('mini').classList.remove('playing');});
 
 function togglePlay(){if(!cur){collapse();showTab('search');return;}
   // 卡住的时候元素会谎报"我在播"，这时候按下去本来会走暂停分支，白按一次。
@@ -2221,7 +2189,9 @@ const RECALL_TTL=300;                 // 五分钟内可撤回
 const recallDraft={};                 // 撤回的原文只留在这台机器上，服务器不留底
 function tombHTML(me,id){
   const back=(me&&recallDraft[id])?'<button data-back="'+id+'">重新编辑</button>':'';
-  return '<div class="cv-tomb">'+(me?'你':'宝宝')+'撤回了一条消息'+back+'</div>';
+  // 勾选圈也得留着，不然多选框不中它，就永远删不掉了
+  return '<div class="ck"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>'+
+         '<div class="cv-tomb">'+(me?'你':'宝宝')+'撤回了一条消息'+back+'</div>';
 }
 function addMsg(text,me,m){
   m=m||{};
@@ -2233,6 +2203,7 @@ function addMsg(text,me,m){
   if(m.recalled){
     item.classList.add('tomb');
     item.innerHTML=tombHTML(me,m.id||'');
+    armMsg(item);
     $('cv-msgs').appendChild(item);
     const bx=$('cv-msgs');bx.scrollTop=bx.scrollHeight;
     return item;
@@ -2262,6 +2233,8 @@ $('cv-msgs').addEventListener('click',e=>{
 // ── 长按一条消息 ──────────────────────────────────────────────
 let popFor=null,selMode=false,replyTo=null;
 function armMsg(item){
+  if(item._armed)return;      // 换成撤回提示时会再调一次，别把监听挂两遍
+  item._armed=1;
   let t=null,longed=false;
   const start=e=>{longed=false;clearTimeout(t);t=setTimeout(()=>{longed=true;openMsgPop(item);},550);};
   const stop=()=>clearTimeout(t);
@@ -2276,11 +2249,13 @@ function armMsg(item){
 }
 function openMsgPop(item){
   if(selMode)return;
-  if(item.classList.contains('tomb'))return;   // 已经撤回的没什么可操作
   popFor=item;
+  const tomb=item.classList.contains('tomb');
   const mine=item.dataset.me==='1';
   const fresh=(Date.now()/1000-(+item.dataset.ts||0))<RECALL_TTL;
-  $('mp-recall').style.display=(mine&&fresh&&item.dataset.id)?'flex':'none';
+  // 撤回提示只能删或多选，回复和再撤回都没意义
+  $('mp-reply').style.display=tomb?'none':'flex';
+  $('mp-recall').style.display=(!tomb&&mine&&fresh&&item.dataset.id)?'flex':'none';
   const pop=$('msg-pop'),arr=$('msg-arrow');
   pop.classList.add('show');arr.classList.add('show');
   const b=item.querySelector('.cv-bubble').getBoundingClientRect();
@@ -2330,6 +2305,7 @@ $('mp-recall').onclick=async()=>{
   recallDraft[id]=txt;                       // 原文只留在本机，给"重新编辑"用
   item.classList.add('tomb');
   item.innerHTML=tombHTML(true,id);
+  armMsg(item);
 };
 $('mp-del').onclick=()=>{
   if(!popFor)return;
@@ -2417,7 +2393,7 @@ async function pollChat(){
         if(!m.recalled||!m.id)return;
         const el=$('cv-msgs').querySelector('.cv-item[data-id="'+m.id+'"]');
         if(el&&!el.classList.contains('tomb')){
-          el.classList.add('tomb');el.innerHTML=tombHTML(!!m.me,m.id);
+          el.classList.add('tomb');el.innerHTML=tombHTML(!!m.me,m.id);armMsg(el);
         }
       });
       const newMsgs=r.messages.filter(m=>!m.me&&m.ts>chatLastTs);
