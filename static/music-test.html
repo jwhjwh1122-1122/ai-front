@@ -1453,7 +1453,10 @@ function postNow(force){
   npLastKey=key;npLast=t;
   fetch('/api/music/listen/now',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({song:{name:cur.name,artist:cur.artist,id:cur.id},
-                         playing:!audio.paused})}).catch(()=>{});
+                         playing:!audio.paused,
+                         // 这首歌里播到第几秒 + 倍速：给凛那边算"唱到哪句了"
+                         pos:Math.round(localTime()*10)/10,
+                         rate:audio.playbackRate||1})}).catch(()=>{});
 }
 function postNP(){
   try{
@@ -1806,7 +1809,7 @@ function onBoth(ev,fn){audio.addEventListener(ev,fn);}
 onBoth('canplay',()=>{setModeLabel();});
 onBoth('play',()=>{postNP();updPositionState();});onBoth('pause',()=>{postNP();updPositionState();});
 onBoth('loadedmetadata',()=>{$('p-dur').textContent=fmt(localDur()||audio.duration||0);updPositionState();});
-onBoth('seeked',()=>{updPositionState();
+onBoth('seeked',()=>{updPositionState();postNow(true);
   // 拖到后段就立刻催一次：免得"刚开播就拖到结尾"时地址还没拿回来
   if(audio.duration&&audio.currentTime>audio.duration*0.7)prefetchNext();});
 setInterval(()=>{if(!audio.paused)updPositionState();},5000);

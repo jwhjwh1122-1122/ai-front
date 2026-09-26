@@ -9,7 +9,7 @@
   · 推歌队列：凛(前端) 或 claude.ai(MCP) 往队列塞指令 → 前端每几秒轮询 → iPod 自动播
   · eapi/weapi 两套加密都用纯 Python 实现（Docker 镜像的加密过时，直接自己算更稳）
 """
-import os, json, time, hashlib, base64, secrets, threading, urllib.parse
+import os, re, json, time, hashlib, base64, secrets, threading, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 import requests
 
@@ -1939,8 +1939,17 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         b = request.json or {}
         d = _listen_load()
         d['now'] = b.get('song')
-        d['now_ts'] = int(time.time())
+        d['now_ts'] = time.time()
         d['now_playing'] = bool(b.get('playing', True))
+        # 这首歌里播到第几秒、倍速——凛那边用来算唱到哪句了
+        try:
+            d['now_pos'] = float(b.get('pos'))
+        except (TypeError, ValueError):
+            d['now_pos'] = None
+        try:
+            d['now_rate'] = float(b.get('rate') or 1) or 1.0
+        except (TypeError, ValueError):
+            d['now_rate'] = 1.0
         _listen_save(d)
         return jsonify({'ok': True})
 
@@ -2307,6 +2316,65 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                     parts.append('  ' + _who(m) + str(m.get('text', ''))[:60])
         return '\n'.join(parts)
 
+    _LRC_TAG = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\]')
+
+    def _parse_lrc(text):
+        """LRC → [(秒, 这句)]，按时间排好。一行多个时间标签的也拆开。"""
+        out = []
+        for raw in (text or '').splitlines():
+            tags = _LRC_TAG.findall(raw)
+            if not tags:
+                continue
+            line = _LRC_TAG.sub('', raw).strip()
+            for m, s in tags:
+                out.append((int(m) * 60 + float(s), line))
+        out.sort(key=lambda x: x[0])
+        return out
+
+    def _mcp_lyric(before=2, after=4):
+        d = _listen_load()
+        now = d.get('now') or {}
+        sid = now.get('id')
+        age = time.time() - (d.get('now_ts') or 0)
+        if not sid or age > 900:
+            return '宝宝这会儿没在放歌（或者很久没上报了），看不到歌词。'
+        pos = d.get('now_pos')
+        if pos is None:
+            return ('宝宝在放：%s - %s。但她那边的 app 还是旧版，没报进度，'
+                    '看不出唱到哪了——让她从主屏退出去重开一下。'
+                    % (now.get('name'), now.get('artist', '')))
+        playing = d.get('now_playing', True)
+        if playing:
+            pos += age * (d.get('now_rate') or 1.0)
+        try:
+            ly = nc.lyric(sid)
+        except Exception as e:
+            return '歌词没拿到：' + str(e)[:80]
+        lines = [(t, s) for t, s in _parse_lrc(ly.get('lyric')) if s]
+        if not lines:
+            return '%s - %s：这首没有歌词（可能是纯音乐）。' % (now.get('name'), now.get('artist', ''))
+        trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
+        idx = 0
+        for i, (t, _s) in enumerate(lines):
+            if t <= pos:
+                idx = i
+            else:
+                break
+        head = '%s - %s ｜ %s %d:%02d' % (now.get('name'), now.get('artist', ''),
+                                        '正在放' if playing else '停在',
+                                        int(pos // 60), int(pos % 60))
+        if pos < lines[0][0]:
+            head += '（前奏，还没开唱）'
+        out = [head]
+        for i in range(max(0, idx - before), min(len(lines), idx + after + 1)):
+            t, s = lines[i]
+            mark = '▶ ' if i == idx and pos >= lines[0][0] else '   '
+            tr = trans.get(round(t, 1))
+            out.append(mark + s + ('　（' + tr + '）' if tr else ''))
+        if playing and age > 20:
+            out.append('（进度是按 %d 秒前的上报推算的，可能差几秒）' % int(age))
+        return '\n'.join(out)
+
     def _mcp_invite(name='凛'):
         d = _listen_load()
         # 邀请自己负责把旧状态清掉：还挂在"进行中"的话，弹窗根本不会出来，
@@ -2479,6 +2547,10 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     MCP_TOOLS = [
         ('listen_status', '看宝宝在不在一起听、在放什么歌、有没有邀请你、最近说了什么', {}, [],
          lambda a: _mcp_status()),
+        ('now_lyric', '看宝宝正在放的这首唱到哪了：当前那句歌词和前后几句，有翻译会带上',
+         {'before': {'type': 'integer', 'description': '往前看几句，默认2'},
+          'after': {'type': 'integer', 'description': '往后看几句，默认4'}}, [],
+         lambda a: _mcp_lyric(int(a.get('before', 2)), int(a.get('after', 4)))),
         ('listen_invite', '邀请宝宝一起听', {'name': {'type': 'string', 'description': '你的名字，默认凛'}}, [],
          lambda a: _mcp_invite(a.get('name') or '凛')),
         ('listen_accept', '接受宝宝的一起听邀请，进入一起听', {}, [], lambda a: _mcp_accept()),
