@@ -1736,6 +1736,114 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     def _chat_save(d):
         jwrite(CHAT_FILE, d)
 
+    # ── 一起听 导出 / 导入（整份备份，原样恢复）────────────────────────
+    # 只备份"一起听"自己的数据。music_cred.json（网易云登录 cookie）不带，
+    # 免得备份文件一传出去账号就跟着走了；music_remote.json 是推歌队列的
+    # 瞬时指令，恢复旧的反而会让前端误以为来了新指令，也不带。
+    BACKUP_VERSION = 1
+    BACKUP_FILES = {
+        'music_chat.json': CHAT_FILE,
+        'music_listen.json': LISTEN_FILE,
+        'music_profile.json': PROFILE_FILE,
+        'music_meta.json': META_FILE,
+    }
+
+    def _backup_snapshot():
+        files = {}
+        for name, path in BACKUP_FILES.items():
+            files[name] = jread(path, None)
+        return {'version': BACKUP_VERSION,
+                'kind': 'yiqiting-backup',
+                'exported_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'exported_ts': int(time.time()),
+                'files': files}
+
+    @app.route('/api/music/backup', methods=['GET'])
+    def music_backup_export():
+        data = _backup_snapshot()
+        body = json.dumps(data, ensure_ascii=False, indent=1)
+        stamp = time.strftime('%Y%m%d-%H%M')
+        fn = '一起听-%s.json' % stamp
+        cd = ("attachment; filename=\"yiqiting-%s.json\"; filename*=UTF-8''%s"
+              % (stamp, urllib.parse.quote(fn)))
+        return Response(body, mimetype='application/json; charset=utf-8',
+                        headers={'Content-Disposition': cd,
+                                 'Cache-Control': 'no-store'})
+
+    @app.route('/api/music/backup', methods=['POST'])
+    def music_backup_import():
+        """收导出的那份 JSON（直接 JSON body，或 multipart 上传文件都行），
+        按文件名原样写回。只认已知的几个文件，别的键直接忽略。
+        覆盖前先把现在的存一份到 music_backup_before_import_<时间>.json，导错了还能导回去。"""
+        payload = None
+        up = None
+        if request.files:
+            up = request.files.get('file') or next(iter(request.files.values()), None)
+        if up is not None:
+            try:
+                raw = up.read()
+                payload = json.loads(raw.decode('utf-8-sig'))
+            except Exception as e:
+                return jsonify({'ok': False, 'error': '文件不是有效的 JSON：' + str(e)[:80]}), 400
+        else:
+            payload = request.get_json(silent=True, force=True)
+        if not isinstance(payload, dict):
+            return jsonify({'ok': False, 'error': '没收到备份内容'}), 400
+        files = payload.get('files')
+        if not isinstance(files, dict):
+            return jsonify({'ok': False, 'error': '备份格式不对：缺 files'}), 400
+
+        todo = {}
+        skipped = []
+        for name, content in files.items():
+            if name not in BACKUP_FILES:
+                skipped.append(str(name)[:60])
+                continue
+            if content is None:
+                continue          # 导出时这个文件本来就不存在，不动现有的
+            if not isinstance(content, dict):
+                skipped.append(name)
+                continue
+            if name == 'music_chat.json' and not isinstance(content.get('messages', []), list):
+                skipped.append(name)
+                continue
+            todo[name] = content
+        if not todo:
+            return jsonify({'ok': False, 'error': '备份里没有可恢复的内容',
+                            'skipped': skipped}), 400
+
+        # 先留底
+        before = _backup_snapshot()
+        snap_path = os.path.join(
+            data_dir, 'music_backup_before_import_%s-%03d.json'
+            % (time.strftime('%Y%m%d-%H%M%S'), int(time.time() * 1000) % 1000))
+        try:
+            jwrite(snap_path, before)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': '留底失败，没有导入：' + str(e)[:80]}), 500
+
+        restored = []
+        for name, content in todo.items():
+            if name == 'music_profile.json':
+                content = dict(content)
+                old = _profile_load()
+                try:
+                    old_m = int(old.get('together_mins', 0) or 0)
+                except Exception:
+                    old_m = 0
+                try:
+                    new_m = int(content.get('together_mins', 0) or 0)
+                except Exception:
+                    new_m = 0
+                content['together_mins'] = max(old_m, new_m)
+            jwrite(BACKUP_FILES[name], content)
+            restored.append(name)
+
+        prof = _profile_load()
+        return jsonify({'ok': True, 'restored': restored, 'skipped': skipped,
+                        'snapshot': os.path.basename(snap_path),
+                        'together_mins': int(prof.get('together_mins', 0) or 0)})
+
     # 聊天分两间房：'app' = app 里的凛，'mcp' = claude.ai 那边的凛。
     # 以前共用一间，两个凛抢着回话，还得靠 partner 决定谁回。分开之后
     # 各说各的，谁也不用被静音。老消息没有 room 字段，两边都给看。
