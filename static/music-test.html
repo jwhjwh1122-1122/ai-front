@@ -1131,9 +1131,17 @@ async function openPlaylist(pid,name){
     const all=r.songs||[];
     curSourceId=pid;
     warmFirst(all);
-    renderSongList(all,name||r.name,all);
-    setListTotal(all.length,r.total||all.length);
-    if(!r.done)loadPlaylistRest(my,pid,all,r.total||0);
+    let total=r.total||all.length,restP=null;
+    // 搜索要覆盖整个歌单：没续完的先等它续完；中途断了的再补一次
+    const ensureAll=async()=>{
+      if(restP)await restP;
+      if(my!==plLoadToken)return false;
+      if(all.length<total){restP=loadPlaylistRest(my,pid,all,total);await restP;}
+      return my===plLoadToken;
+    };
+    renderSongList(all,name||r.name,all,false,null,null,{ensureAll,total:()=>total});
+    setListTotal(all.length,total);
+    if(!r.done)restP=loadPlaylistRest(my,pid,all,r.total||0);
   }catch(e){$('lp-body').innerHTML='<div class="hint">出错：'+e+'</div>';}
 }
 // 一段一段往下续。往同一个数组里塞，列表和播放队列自动跟着变长
@@ -1171,22 +1179,28 @@ async function openList(url,name,editable){
 // 2000+首一次性塞进DOM会把Safari卡死,所以分批渲染:先出80首,往下滚再续
 const CHUNK=80;
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function renderSongList(songs,title,queue,editable,onBack,playAllText){
+function renderSongList(songs,title,queue,editable,onBack,playAllText,opts){
   if(!songs.length){$('lp-body').innerHTML='<div class="hint">'+title+'：空的</div>';return;}
+  opts=opts||{};
   $('lp-body').innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:4px 2px 12px;">'+
     '<span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span>'+
     '<span style="font-size:17px;font-weight:700;">'+esc(title)+'</span>'+
     '<span id="list-count" style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>'+
+    '<div class="lp-search pl-search"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'+
+    '<input id="pl-q" type="search" placeholder="在这里面搜歌名 / 歌手" enterkeyhint="search" autocomplete="off"></div>'+
     (playAllText?playAllRow(playAllText,songs.length+' 首'):'')+
     '<div id="song-rows"></div><div class="more-tip" id="more-tip"></div>';
   $('pl-back').onclick=()=>{if(onBack)onBack();else renderMine();};
   if(playAllText)$('play-all').onclick=()=>{setQueue(songs,0);expand();};
   const rows=$('song-rows'),tip=$('more-tip');
   let shown=0;
+  let view=null;   // null=正常列表；数组=搜索结果(存的是原列表里的下标)
+  const len=()=>view?view.length:songs.length;
   function chunk(){
-    const end=Math.min(shown+CHUNK,songs.length);
+    const end=Math.min(shown+CHUNK,len());
     let h='';
-    for(let i=shown;i<end;i++){
+    for(let k=shown;k<end;k++){
+      const i=view?view[k]:k;
       const s=songs[i];
       const cv=editable&&s.cover?'<img src="'+esc(s.cover)+'" style="width:40px;height:40px;border-radius:7px;object-fit:cover;flex-shrink:0;">':'';
       h+='<div class="res" data-i="'+i+'"><div style="width:26px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">'+(i+1)+'</div>'+cv+
@@ -1196,9 +1210,41 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
     }
     rows.insertAdjacentHTML('beforeend',h);
     shown=end;
+    if(view){tip.textContent=view.length?(shown<view.length?('找到 '+view.length+' 首，已显示 '+shown+'，继续下滑'):('找到 '+view.length+' 首')):'';return;}
     tip.textContent=shown<songs.length?('已显示 '+shown+' / '+songs.length+'，继续下滑'):(songs.length>CHUNK?'到底啦':'');
   }
   chunk();
+  // 歌单内搜索：歌名/歌手，不分大小写，空格隔开的几个词都要命中
+  let qTok=0,qTimer=0;
+  function norm(x){return String(x==null?'':x).toLowerCase();}
+  function resetRows(){rows.innerHTML='';shown=0;}
+  async function runSearch(){
+    const tok=++qTok;
+    const q=norm($('pl-q').value).trim();
+    const body=$('lp-body');
+    if(!q){view=null;resetRows();chunk();return;}
+    if(opts.ensureAll){
+      const tot=opts.total?opts.total():0;
+      if(tot&&songs.length<tot){
+        resetRows();tip.textContent='';
+        rows.innerHTML='<div class="hint">加载中…（'+songs.length+' / '+tot+'）搜索要等整个歌单载完</div>';
+      }
+      const ok=await opts.ensureAll();
+      if(!ok||tok!==qTok)return;
+    }
+    const terms=q.split(/\s+/).filter(Boolean);
+    const hit=[];
+    for(let i=0;i<songs.length;i++){
+      const s=songs[i];
+      const hay=norm(s.name)+' '+norm(s.artist);
+      if(terms.every(t=>hay.indexOf(t)>=0))hit.push(i);
+    }
+    view=hit;resetRows();body.scrollTop=0;
+    if(!hit.length){rows.innerHTML='<div class="hint">这个歌单里没找到「'+esc($('pl-q').value.trim())+'」</div>';tip.textContent='';return;}
+    chunk();
+  }
+  $('pl-q').addEventListener('input',()=>{clearTimeout(qTimer);qTimer=setTimeout(runSearch,180);});
+  $('pl-q').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(qTimer);runSearch();$('pl-q').blur();}});
   // 事件委托:一个监听器管全部,不再给每行挂两个
   rows.onclick=e=>{
     const ed=e.target.closest('[data-edit]');
@@ -1210,7 +1256,7 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
   };
   const body=$('lp-body');
   body.onscroll=()=>{
-    if(shown>=songs.length)return;
+    if(shown>=len())return;
     if(body.scrollTop+body.clientHeight>=body.scrollHeight-400)chunk();
   };
 }
