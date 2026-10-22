@@ -85,8 +85,10 @@
 |---|---|
 | `CC_MODEL` | 指定模型，例如 `sonnet`、`opus`。不设就用 Claude Code 的默认模型。也可以在 upstream.json 写 `"cc_model"` |
 | `CC_TIMEOUT` | 一次回复最长等多少秒，默认 `600`（10 分钟），超时会自动中断 |
-| `CC_MCP_CONFIG` | MCP 配置文件的路径（例如 `/data/mcp.json`）。设了才会加 `--mcp-config` |
-| `CC_ALLOWED_TOOLS` | 允许他直接用、不用审批的工具，例如 `mcp__lin__*`。用 MCP 工具时基本都要设 |
+| `CC_MCP_CONFIG` | 自己写的 MCP 配置文件路径（例如 `/data/mcp.json`）。**不设也行**：不设时会自动挂上记忆库 |
+| `CC_OB_URL` | 自动挂的记忆库地址，默认 `https://jwhjwh.zeabur.app/mcp`，搬家换地址了就改这个 |
+| `CC_AUTO_MCP` | 设成 `0` 就不自动挂记忆库 |
+| `CC_ALLOWED_TOOLS` | 允许他直接用、不用审批的工具。自动挂记忆库时默认就放行了记忆库的工具，一般不用设 |
 | `CC_PERMISSION_MODE` | 传给 `--permission-mode`，一般不用动 |
 | `CC_CWD` | Claude Code 的工作目录，默认是数据目录下的 `cc_workspace` |
 | `CC_BIN` | claude 命令的位置，默认就是 `claude` |
@@ -94,13 +96,16 @@
 
 ### 关于工具（时光墙、记忆库、欲望值……）
 
-原来这些工具是网页那边执行的。cc 模式下网页发来的工具列表**不会传给 Claude Code**，所以他暂时用不了这些工具（系统提示里提到的工具名他会看到，但调不了）。
-想让他在 cc 模式下也能用，需要把这些工具做成 MCP 服务，写进一个 MCP 配置文件，用 `CC_MCP_CONFIG` 指过去，再用 `CC_ALLOWED_TOOLS` 放行。
+**记忆库（Ombre Brain）已经自动接上了**：cc 模式下什么都不用设，他就能用 breath、hold、letter_read 这些记忆工具，醒来能读脑子、读交接信。记忆库搬家换了地址，改 `CC_OB_URL` 就行。
+
+其他原来在网页那边执行的工具（时光墙、欲望值……）cc 模式下**暂时用不了**（系统提示里提到的工具名他会看到，但调不了）。
+想让他也能用，需要把这些工具做成 MCP 服务，写进一个 MCP 配置文件，用 `CC_MCP_CONFIG` 指过去（这时自动配置就不生效了，记得把记忆库也写进去），再用 `CC_ALLOWED_TOOLS` 放行。
 
 MCP 配置文件示例（`/data/mcp.json`）：
 ```json
 {
   "mcpServers": {
+    "ob":  { "type": "http", "url": "https://jwhjwh.zeabur.app/mcp" },
     "lin": { "type": "http", "url": "https://你的地址/mcp" }
   }
 }

@@ -7,8 +7,11 @@
 可选环境变量：
   CC_BIN               claude 可执行文件路径，默认 "claude"
   CC_MODEL             传给 --model（也可在 upstream.json 里写 "cc_model"）
-  CC_MCP_CONFIG        MCP 配置文件路径，设置了才加 --mcp-config
-  CC_ALLOWED_TOOLS     传给 --allowedTools，例如 "mcp__lin__*"（逗号或空格分隔）
+  CC_MCP_CONFIG        MCP 配置文件路径。不设时自动生成一个，只挂记忆库 Ombre Brain
+  CC_OB_URL            自动配置里记忆库的地址，默认 https://jwhjwh.zeabur.app/mcp
+  CC_AUTO_MCP=0        关掉自动挂记忆库
+  CC_ALLOWED_TOOLS     传给 --allowedTools，例如 "mcp__ob__*"（逗号或空格分隔）；
+                       自动挂记忆库且没设这个时，默认放行 mcp__ob__*
   CC_PERMISSION_MODE   传给 --permission-mode
   CC_TIMEOUT           单次回复的超时秒数，默认 600（10 分钟）
   CC_CWD               claude 的工作目录，默认 <数据目录>/cc_workspace
@@ -130,7 +133,32 @@ def _split_list(s):
     return [x for x in s.replace(',', ' ').split() if x]
 
 
-def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None):
+DEFAULT_OB_URL = 'https://jwhjwh.zeabur.app/mcp'
+
+
+def auto_mcp_config(cwd):
+    """没设 CC_MCP_CONFIG 时，自动写一份只挂记忆库的 MCP 配置，返回路径；关掉了返回空。"""
+    if os.environ.get('CC_AUTO_MCP') == '0':
+        return ''
+    url = (os.environ.get('CC_OB_URL') or DEFAULT_OB_URL).strip()
+    if not url:
+        return ''
+    path = os.path.join(cwd, '.mcp_auto.json')
+    cfg = {'mcpServers': {'ob': {'type': 'http', 'url': url}}}
+    try:
+        old = open(path, encoding='utf-8').read()
+    except Exception:
+        old = ''
+    new = json.dumps(cfg, ensure_ascii=False)
+    if old != new:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(new)
+        os.replace(tmp, path)
+    return path
+
+
+def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     if resume_id:
@@ -143,11 +171,13 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None):
     model = (os.environ.get('CC_MODEL') or (upstream_cfg or {}).get('cc_model') or '').strip()
     if model:
         cmd += ['--model', model]
-    mcp = (os.environ.get('CC_MCP_CONFIG') or '').strip()
+    mcp = (os.environ.get('CC_MCP_CONFIG') or '').strip() or auto_mcp
     if mcp:
         # 用 = 的写法：--mcp-config 是可变参数，避免把后面的东西吞进去
         cmd.append('--mcp-config=' + mcp)
     allowed = _split_list(os.environ.get('CC_ALLOWED_TOOLS') or '')
+    if not allowed and auto_mcp and not (os.environ.get('CC_MCP_CONFIG') or '').strip():
+        allowed = ['mcp__ob__*']
     if allowed:
         cmd.append('--allowedTools=' + ','.join(allowed))
     pm = (os.environ.get('CC_PERMISSION_MODE') or '').strip()
@@ -388,7 +418,8 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg):
                 if tr:
                     stdin_text = ('（下面是你们之前的聊天记录，供你接上话，不用复述）\n'
                                   f'{tr}\n（记录结束）\n\n{prompt}')
-            cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file)
+            cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
+                            auto_mcp=auto_mcp_config(cwd))
             run = _Run(data_dir, key)
             try:
                 proc, q, err_tail = _spawn(cmd, stdin_text, cwd)
