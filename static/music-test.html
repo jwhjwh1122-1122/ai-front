@@ -243,12 +243,6 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .res .i .ar{font-size:12px;color:#9298a0;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res .go{color:#ec4141;font-size:22px;}
 .hint{text-align:center;color:#b0b6be;font-size:13px;padding:30px;}
-/* 我的页底部：一起听备份 */
-.bk-row{display:flex;justify-content:center;gap:10px;padding:26px 2px 8px;}
-.bk-row button{border:none;background:#e9ecef;color:#5a6068;font-size:13px;padding:8px 16px;border-radius:16px;}
-.bk-row button:active{opacity:.6;}
-.bk-row button:disabled{opacity:.5;}
-.bk-tip{text-align:center;font-size:11px;color:#b0b6be;padding:0 2px 10px;}
 /* 歌单内搜索 */
 .pl-search{margin:0 0 8px;}
 .pl-search input{padding:9px 14px 9px 38px;font-size:14px;}
@@ -310,6 +304,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
 .ed-btns button{flex:1;padding:12px;border-radius:22px;border:none;font-size:15px;font-weight:600;}
 .ed-reset{background:#eef0f2;color:#8a9098;}
 .ed-save{background:#ec4141;color:#fff;}
+.ed-btns button:disabled{opacity:.5;}
 /* 听歌排行入口图标(第一名封面+白色阶梯) */
 .rank-ic{width:46px;height:46px;border-radius:10px;flex-shrink:0;position:relative;display:grid;place-items:center;background:#8a9098 center/cover no-repeat;}
 .rank-ic::after{content:"";position:absolute;inset:0;border-radius:10px;background:rgba(0,0,0,.28);}
@@ -578,6 +573,16 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <div class="ed-btns">
       <button class="ed-reset" id="ed-reset">恢复原样</button>
       <button class="ed-save" id="ed-save">保存</button>
+    </div>
+  </div>
+</div>
+<div class="ed-mask" id="bk-mask">
+  <div class="ed-card">
+    <div class="ed-head"><b>一起听备份</b><button class="x" id="bk-x">✕</button></div>
+    <div class="ed-hint" style="margin-top:0;">导入会恢复聊天、时长、头像，导入前会自动留一份旧的。</div>
+    <div class="ed-btns">
+      <button class="ed-reset" id="bk-export">导出</button>
+      <button class="ed-save" id="bk-import">导入</button>
     </div>
   </div>
 </div>
@@ -990,7 +995,7 @@ document.querySelectorAll('.lp-tab').forEach(x=>x.onclick=()=>showTab(x.dataset.
 
 function skeletonMine(n){
   let h='';
-  for(let i=0;i<2;i++)h+='<div class="sk-item"><div class="sk-box sk-shine"></div>'+
+  for(let i=0;i<3;i++)h+='<div class="sk-item"><div class="sk-box sk-shine"></div>'+
     '<div class="sk-tx"><div class="sk-line sk-shine" style="width:38%"></div></div></div>';
   h+='<div class="sk-head">我的歌单</div>';
   for(let i=0;i<(n||6);i++)h+='<div class="sk-item"><div class="sk-box sk-shine"></div>'+
@@ -1017,6 +1022,7 @@ async function renderMine(){
   const fixed=[
     {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
     {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
+    {ic:'<path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/><path d="M9 7l3-3 3 3M12 4v11"/>',nm:'一起听备份',act:'tgbackup'},
   ];
   try{
     const r=await fetch('/api/music/my/playlists').then(r=>r.json());
@@ -1033,6 +1039,7 @@ function paintMine(playlists,rankSnap){
   const fixed=[
     {ic:'<path d="M4 6h16M4 12h16M4 18h10"/>',nm:'最近播放',act:'recent'},
     {ic:'<path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 007 18h11a4 4 0 000-8z"/>',nm:'音乐网盘',act:'cloud'},
+    {ic:'<path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"/><path d="M9 7l3-3 3 3M12 4v11"/>',nm:'一起听备份',act:'tgbackup'},
   ];
   let h='';
   {
@@ -1051,13 +1058,9 @@ function paintMine(playlists,rankSnap){
         }
         return row;
       }).join('');
-      h+='<div class="bk-row"><button id="bk-export">导出一起听</button><button id="bk-import">导入一起听</button></div>'+
-         '<div class="bk-tip">聊天、头像、一起听时长、自定义歌名封面，整份存成一个文件</div>';
     }
   }
   $('lp-body').innerHTML=h;
-  $('bk-export').onclick=exportTogether;
-  $('bk-import').onclick=()=>bkFileInput.click();
   hideSplash();
   document.querySelectorAll('.mine-item[data-pl]').forEach(el=>el.onclick=()=>openPlaylist(el.dataset.pl,el.dataset.name));
   document.querySelectorAll('.mine-item[data-act]').forEach(el=>el.onclick=()=>{
@@ -1065,9 +1068,16 @@ function paintMine(playlists,rankSnap){
     if(a==='recent')openList('/api/music/my/recent','最近播放');
     else if(a==='cloud')openList('/api/music/my/cloud','音乐网盘',true);
     else if(a==='rank')openRank(rankPeriod);
+    else if(a==='tgbackup')openBackupSheet();
   });
 }
 // ── 一起听 导出 / 导入 ──
+function openBackupSheet(){$('bk-mask').classList.add('open');}
+function closeBackupSheet(){$('bk-mask').classList.remove('open');}
+$('bk-x').onclick=closeBackupSheet;
+$('bk-mask').addEventListener('click',e=>{if(e.target===$('bk-mask'))closeBackupSheet();});
+$('bk-export').onclick=exportTogether;
+$('bk-import').onclick=()=>bkFileInput.click();
 async function exportTogether(){
   const b=$('bk-export');if(b)b.disabled=true;
   try{
@@ -1098,7 +1108,7 @@ bkFileInput.addEventListener('change',async e=>{
     const fd=new FormData();fd.append('file',f,f.name);
     const r=await fetch('/api/music/backup',{method:'POST',body:fd}).then(r=>r.json());
     if(!r||!r.ok){toast('导入失败：'+((r&&r.error)||'未知错误'));}
-    else{toast('导入好了，恢复了 '+r.restored.length+' 项');await reloadTogetherState(r.together_mins);}
+    else{closeBackupSheet();toast('导入好了，恢复了 '+r.restored.length+' 项');await reloadTogetherState(r.together_mins);}
   }catch(err){toast('导入失败：'+err.message);}
   if(b)b.disabled=false;
 });
