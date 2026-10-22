@@ -2214,7 +2214,8 @@ def chat_v2():
         cc_key = str(data.get('_conv_id') or sid)[:256]
         return Response(cc_mode.stream_chat(messages=data.get('messages', []),
                                             system_prompt=system_prompt, key=cc_key,
-                                            data_dir=DATA_DIR, upstream_cfg=up_cfg),
+                                            data_dir=DATA_DIR, upstream_cfg=up_cfg,
+                                            model=data.get('model')),
                         mimetype='text/event-stream', headers=sse_headers)
 
     oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(data.get('messages', []))

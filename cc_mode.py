@@ -6,7 +6,8 @@
 
 可选环境变量：
   CC_BIN               claude 可执行文件路径，默认 "claude"
-  CC_MODEL             传给 --model（也可在 upstream.json 里写 "cc_model"）
+  CC_MODEL             传给 --model（也可在 upstream.json 里写 "cc_model"）。
+                       前端选了模型时优先用前端的（去掉 "anthropic/" 这类前缀）
   CC_MCP_CONFIG        MCP 配置文件路径。不设时自动生成一个，只挂记忆库 Ombre Brain
   CC_OB_URL            自动配置里记忆库的地址，默认 https://jwhjwh.zeabur.app/mcp
   CC_AUTO_MCP=0        关掉自动挂记忆库
@@ -24,6 +25,7 @@
 import json
 import os
 import queue
+import re
 import signal
 import subprocess
 import threading
@@ -36,6 +38,22 @@ HISTORY_MAX_CHARS = 12000
 SYS_ARG_MAX = 100_000    # 系统提示超过这个字节数就改用 --append-system-prompt-file
 
 _map_lock = threading.Lock()
+_MODEL_RE = re.compile(r'^[A-Za-z0-9._:-]+$')
+
+
+def clean_model(m):
+    """'anthropic/claude-opus-4-7' -> 'claude-opus-4-7'；不像模型名的返回 ''。"""
+    if not isinstance(m, str):
+        return ''
+    m = m.strip().rsplit('/', 1)[-1].strip()
+    return m if m and len(m) <= 128 and _MODEL_RE.match(m) else ''
+
+
+def pick_model(req_model, upstream_cfg):
+    """顺序：前端选的 -> CC_MODEL -> upstream.json cc_model -> ''（不传 --model）。"""
+    return (clean_model(req_model)
+            or clean_model(os.environ.get('CC_MODEL') or '')
+            or clean_model((upstream_cfg or {}).get('cc_model') or ''))
 
 
 def sse(obj):
@@ -158,7 +176,7 @@ def auto_mcp_config(cwd):
     return path
 
 
-def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''):
+def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     if resume_id:
@@ -168,7 +186,8 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
             cmd += ['--append-system-prompt-file', sys_file]
         else:
             cmd += ['--append-system-prompt', system_prompt]
-    model = (os.environ.get('CC_MODEL') or (upstream_cfg or {}).get('cc_model') or '').strip()
+    # 每次调用都带上（包括 --resume 续会话），这样中途换模型也能生效
+    model = pick_model(req_model, upstream_cfg)
     if model:
         cmd += ['--model', model]
     mcp = (os.environ.get('CC_MCP_CONFIG') or '').strip() or auto_mcp
@@ -388,7 +407,7 @@ def _error_text(msg):
     return f'（出错了 cc：{msg}）'
 
 
-def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg):
+def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None):
     """生成器：产出前端格式的 SSE。"""
     timeout = float(os.environ.get('CC_TIMEOUT') or 600)
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
@@ -419,7 +438,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg):
                     stdin_text = ('（下面是你们之前的聊天记录，供你接上话，不用复述）\n'
                                   f'{tr}\n（记录结束）\n\n{prompt}')
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
-                            auto_mcp=auto_mcp_config(cwd))
+                            auto_mcp=auto_mcp_config(cwd), req_model=model)
             run = _Run(data_dir, key)
             try:
                 proc, q, err_tail = _spawn(cmd, stdin_text, cwd)

@@ -83,7 +83,7 @@
 
 | 环境变量 | 作用 |
 |---|---|
-| `CC_MODEL` | 指定模型，例如 `sonnet`、`opus`。不设就用 Claude Code 的默认模型。也可以在 upstream.json 写 `"cc_model"` |
+| `CC_MODEL` | 指定模型，例如 `sonnet`、`opus`。前端没选模型时才用它（见下面）。也可以在 upstream.json 写 `"cc_model"` |
 | `CC_TIMEOUT` | 一次回复最长等多少秒，默认 `600`（10 分钟），超时会自动中断 |
 | `CC_MCP_CONFIG` | 自己写的 MCP 配置文件路径（例如 `/data/mcp.json`）。**不设也行**：不设时会自动挂上记忆库 |
 | `CC_OB_URL` | 自动挂的记忆库地址，默认 `https://jwhjwh.zeabur.app/mcp`，搬家换地址了就改这个 |
@@ -93,6 +93,8 @@
 | `CC_CWD` | Claude Code 的工作目录，默认是数据目录下的 `cc_workspace` |
 | `CC_BIN` | claude 命令的位置，默认就是 `claude` |
 | `CC_KEEP_API_KEY` | 默认会把 `ANTHROPIC_API_KEY` 从 Claude Code 的环境里拿掉，**保证用订阅而不是 API 计费**。设成 `1` 才保留 |
+
+**前端选模型在 cc 模式下也管用了**：聊天界面里选的模型（例如 `anthropic/claude-opus-4-7`）会去掉前面的 `anthropic/` 前缀，变成 `--model claude-opus-4-7` 传给 Claude Code，每条消息都带，续会话（`--resume`）时换模型也会生效。先后顺序是：前端选的模型 → 环境变量 `CC_MODEL` → upstream.json 里的 `cc_model` → 都没有就不传，用 Claude Code 默认模型。模型名里只能有字母、数字和 `. _ : -`，不像模型名的会被忽略。
 
 ### 关于工具（时光墙、记忆库、欲望值……）
 
