@@ -279,6 +279,8 @@ class _Run:
             # 兜底：如果这条消息没有逐字流（老版本 CLI 或没开 partial），就整段发
             msg = d.get('message') or {}
             if msg.get('id') and msg['id'] in self.streamed_ids:
+                if self.text_emitted:
+                    self.need_sep = True
                 return []
             out = []
             for b in msg.get('content') or []:

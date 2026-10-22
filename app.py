@@ -10,6 +10,7 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, os, time, base64, hashlib, io, threading, uuid
+import cc_mode
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
@@ -2204,6 +2205,18 @@ def chat_v2():
     system_prompt = build_system(persona, "\n".join(x for x in extra if x),
                                  conv_id=data.get('_conv_id'))
 
+    up_cfg = load_upstream()
+    if cc_mode.is_cc_mode(up_cfg):
+        # cc 模式：不走上游 API，在服务器上跑 claude -p（用订阅登录），输出格式和下面一样
+        sse_headers = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+        if keepalive:
+            return Response(cc_mode.keepalive_stream(), mimetype='text/event-stream', headers=sse_headers)
+        cc_key = str(data.get('_conv_id') or sid)[:256]
+        return Response(cc_mode.stream_chat(messages=data.get('messages', []),
+                                            system_prompt=system_prompt, key=cc_key,
+                                            data_dir=DATA_DIR, upstream_cfg=up_cfg),
+                        mimetype='text/event-stream', headers=sse_headers)
+
     oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(data.get('messages', []))
     user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)
 
@@ -3344,7 +3357,7 @@ def upstream_api():
     if request.method == 'POST':
         d = request.json or {}
         cur = load_upstream()
-        for k in ('name', 'base', 'key', 'cache', 'small_model'):
+        for k in ('name', 'base', 'key', 'cache', 'small_model', 'mode', 'cc_model'):
             if k in d:
                 cur[k] = d[k]
         if 'models' in d:
@@ -3355,6 +3368,8 @@ def upstream_api():
     u = load_upstream()
     return jsonify({'name': u['name'], 'base': u['base'], 'models': u.get('models') or [],
                     'cache': u.get('cache', True), 'small_model': u.get('small_model', ''),
+                    'mode': u.get('mode', ''), 'cc_model': u.get('cc_model', ''),
+                    'cc_active': cc_mode.is_cc_mode(u),
                     'key_tail': (u['key'][-6:] if u.get('key') else ''),
                     'has_key': bool(u.get('key'))})
 
