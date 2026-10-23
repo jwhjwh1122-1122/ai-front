@@ -231,7 +231,17 @@ def register_cc_login(app, data_dir):
 
             elif action == 'code':
                 code = (request.form.get('code') or '').strip()
-                if code:
+                if code and re.match(r'^https?://(localhost|127\.0\.0\.1)(:\d+)?/', code):
+                    # 授权后浏览器跳到 http://localhost:端口/callback?code=...，
+                    # 那个端口在服务器里，手机打不开。把整串网址贴过来，由服务器自己去敲。
+                    import urllib.request
+                    try:
+                        urllib.request.build_opener(urllib.request.ProxyHandler({})) \
+                            .open(code.replace('https://', 'http://', 1), timeout=20).read()
+                    except Exception as e:
+                        print(f'[cc-login] 回调请求：{type(e).__name__}', flush=True)
+                    _pump(s, 60, lambda b: bool(_find_token(b)))
+                elif code:
                     try:
                         os.write(s['fd'], code.encode('utf-8'))
                         time.sleep(0.3)
@@ -277,7 +287,8 @@ def register_cc_login(app, data_dir):
             parts.append('<div class="msg err">没找到登录链接，看看下面的输出。</div>')
         if not alive:
             parts.append('<div class="msg err">登录进程已经结束了，需要重新开始。</div>')
-        parts.append('<p><b>第 2 步：</b>把授权页给的码粘贴到这里：</p>'
+        parts.append('<p><b>第 2 步：</b>授权后如果跳到一个打不开的 <code>localhost:…</code> 页面，'
+                     '把那个页面地址栏里的<b>整串网址</b>复制下来贴到这里；如果授权页直接给了一串码，就贴码：</p>'
                      '<form method="post">'
                      f'<input type="hidden" name="pw" value="{html.escape(pw)}">'
                      '<input type="hidden" name="action" value="code">'
