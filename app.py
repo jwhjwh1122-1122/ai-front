@@ -3984,6 +3984,12 @@ try:
 except Exception as e:
     print(f'[music] 挂载失败（不影响其他功能）: {e}', flush=True)
 
+try:
+    from cc_login import register_cc_login
+    register_cc_login(app, data_dir=DATA_DIR)
+except Exception as e:
+    print(f'[cc-login] 挂载失败（不影响其他功能）: {e}', flush=True)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True)

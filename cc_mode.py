@@ -207,8 +207,26 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     return cmd
 
 
-def child_env():
+TOKEN_FILE_NAME = '.cc_oauth_token'   # /cc-login 网页登录后存的长期令牌（在数据目录里）
+
+
+def _file_token(data_dir):
+    if not data_dir:
+        return ''
+    try:
+        with open(os.path.join(data_dir, TOKEN_FILE_NAME), encoding='utf-8') as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def child_env(data_dir=None):
     env = dict(os.environ)
+    if not (os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') or '').strip():
+        # 环境变量优先；没设时用 /cc-login 存下的令牌
+        tok = _file_token(data_dir)
+        if tok:
+            env['CLAUDE_CODE_OAUTH_TOKEN'] = tok
     if os.environ.get('CC_KEEP_API_KEY') != '1':
         # 有这些变量时 claude 会改用 API 计费，而不是订阅登录
         for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'):
@@ -363,9 +381,9 @@ class _Run:
         return out
 
 
-def _spawn(cmd, stdin_text, cwd):
+def _spawn(cmd, stdin_text, cwd, data_dir=None):
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, cwd=cwd, env=child_env(),
+                            stderr=subprocess.PIPE, cwd=cwd, env=child_env(data_dir),
                             start_new_session=True)   # 自成进程组，kill 时连 MCP 子进程一起收掉
     q = queue.Queue()
     err_tail = []
@@ -441,7 +459,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                             auto_mcp=auto_mcp_config(cwd), req_model=model)
             run = _Run(data_dir, key)
             try:
-                proc, q, err_tail = _spawn(cmd, stdin_text, cwd)
+                proc, q, err_tail = _spawn(cmd, stdin_text, cwd, data_dir)
             except FileNotFoundError:
                 for c in run.text(_error_text('服务器上找不到 claude 命令，请确认镜像里装了 @anthropic-ai/claude-code')):
                     yield c
