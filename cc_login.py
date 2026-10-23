@@ -254,6 +254,14 @@ def register_cc_login(app, data_dir):
                 parts.append('<div class="msg err">还没拿到令牌。看看下面的输出；'
                              '如果码贴错了可以再贴一次，或者重新开始。</div>')
 
+            elif action == 'enter':
+                # 命令行先问别的（比如让按回车/选主题）时，用这个按一下回车
+                try:
+                    os.write(s['fd'], b'\r')
+                except OSError:
+                    pass
+                _pump(s, 15, lambda b: bool(_find_url(b)))
+
             else:  # refresh
                 _pump(s, 3, lambda b: False)
 
@@ -275,7 +283,8 @@ def register_cc_login(app, data_dir):
                      '<input type="hidden" name="action" value="code">'
                      '<input type="text" name="code" autocomplete="off" placeholder="把授权页给的码粘贴到这里">'
                      '<button type="submit">提交</button></form>')
-        parts.append(_form(pw, 'refresh', '刷新输出') + _form(pw, 'start', '重新开始') + _form(pw, 'cancel', '取消'))
+        parts.append(_form(pw, 'refresh', '刷新输出') + _form(pw, 'enter', '按一下回车')
+                     + _form(pw, 'start', '重新开始') + _form(pw, 'cancel', '取消'))
         parts.append('<details><summary>命令行输出（调试用）</summary>'
                      f'<pre>{html.escape(_tail(raw))}</pre></details>')
         return _PAGE.format(body=''.join(parts))
