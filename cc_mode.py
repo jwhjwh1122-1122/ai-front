@@ -27,6 +27,8 @@
                          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1（不留后台 shell，聊天用不到）
                          CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
+  CC_THINKING_DISPLAY  思考怎么显示，默认 summarized（能看到他的思考）。可选 summarized / highlights / omitted；
+                       设成 off 就不传这个参数（新版 Claude Code 无头模式下默认不给思考文字）
   CC_WEB_MCP=0         不把网页「设置 → MCP」里自己加的服务器交给 Claude Code（默认会交）
   CC_LIN_MCP=0         不自动挂「家里的工具」（app 自带的本地 MCP：朋友圈、碎碎念、犯错本、书房……）。默认挂上
   CC_NODE_MAX_OLD_SPACE_MB  默认不设。设了才给 claude 加 --max-old-space-size=<值>；
@@ -674,10 +676,25 @@ def web_mcp_config(cwd, servers):
     return path, names, off
 
 
+# 新版 Claude Code 在 -p 模式下默认只给「思考进度」，思考文字是空的；
+# 加 --thinking-display summarized 才有思考内容（这是隐藏参数，以后版本不认的话会自动去掉重试）。
+_THINK_FLAG_BROKEN = False
+
+
+def thinking_display():
+    v = (os.environ.get('CC_THINKING_DISPLAY') or 'summarized').strip().lower()
+    if _THINK_FLAG_BROKEN or v in ('off', '0', 'none', ''):
+        return ''
+    return v if v in ('summarized', 'highlights', 'omitted') else 'summarized'
+
+
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
               local_mcp=('', []), image_input=False, web_mcp=('', [], [])):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+    td = thinking_display()
+    if td:
+        cmd.append('--thinking-display=' + td)
     if image_input:
         # 这一轮有图片：stdin 改喂一行 stream-json（带图片 block），他就能真的看到图
         cmd += ['--input-format', 'stream-json']
@@ -1176,6 +1193,13 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 if not detail:
                     detail = err[-400:] or f'claude 退出码 {proc.returncode}'
                 low = (detail + ' ' + err).lower()
+                # 这个版本的 Claude Code 不认 --thinking-display：记住，去掉它马上重试一次
+                if (not run.text_emitted and 'thinking-display' in low
+                        and ('unknown option' in low or 'invalid' in low)):
+                    global _THINK_FLAG_BROKEN
+                    _THINK_FLAG_BROKEN = True
+                    print('[cc] 这个版本不支持 --thinking-display，去掉后重试', flush=True)
+                    continue
                 # 续会话失败（比如凭据目录没持久化，旧会话文件没了）：丢掉映射，重开一次
                 if (resume_id and attempt == 1 and not run.text_emitted
                         and any(s in low for s in _RESUME_MISS)):

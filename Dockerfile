@@ -8,7 +8,7 @@ FROM node:22-bookworm-slim
 ARG CLAUDE_CODE_VERSION=latest
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates git procps \
+ && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates git procps tzdata \
  && rm -rf /var/lib/apt/lists/*
 
 # Claude Code 无头模式（claude -p）
@@ -21,6 +21,7 @@ WORKDIR /app
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai \
     PORT=8080
 
 COPY requirements.txt .

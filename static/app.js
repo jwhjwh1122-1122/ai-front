@@ -1038,6 +1038,7 @@ async function streamResponse(wrap, hist) {
               else messages.push({ role: 'assistant', content: responseText });
             } else if (dl.type === 'thinking_delta') {
               blk.thinking += dl.thinking;
+              if (!dl.thinking) continue;
               if (!currentThinkWrap) thinkBlock(wrap, '', false);
               thinkingText += dl.thinking;
               if (currentThinkContent) currentThinkContent.textContent = thinkingText;

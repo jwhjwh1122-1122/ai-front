@@ -7,9 +7,21 @@
 - 视频分片上传
 - 维基 UA 带联系方式，修 403
 """
+import os, time
+
+# 时区：服务器容器默认是 UTC，比北京时间慢 8 小时，他报的时间、早晚、日历日期都会错。
+# 没设 TZ 时默认用北京时间。有时区数据库就用 Asia/Shanghai，没有就用等价的 POSIX 写法 CST-8（中国没有夏令时）。
+# 想换别的时区：在 Zeabur 环境变量里设 TZ。Claude Code 子进程也会继承这个设置。
+if not (os.environ.get('TZ') or '').strip():
+    os.environ['TZ'] = 'Asia/Shanghai' if os.path.exists('/usr/share/zoneinfo/Asia/Shanghai') else 'CST-8'
+try:
+    time.tzset()
+except AttributeError:
+    pass
+
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os, time, base64, hashlib, hmac, io, threading, uuid
+import requests, json, base64, hashlib, hmac, io, threading, uuid
 import cc_mode
 from datetime import datetime
 from werkzeug.utils import secure_filename
