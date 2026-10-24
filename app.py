@@ -151,7 +151,7 @@ PERSONA_FILE = os.path.join(DATA_DIR, 'persona.json')
 PERSONA_HISTORY = os.path.join(DATA_DIR, 'persona_history.json')
 STATE_FILE = os.path.join(DATA_DIR, 'state.json')
 
-FRAMEWORK = """【工具】
+FRAMEWORK = """【你手边的东西】
 - 时光墙：像人翻相册一样翻。她让你看、或真的想重温某段，就翻；话题只是顺嘴沾到就让它过去。一次一张，看过的不重看。
 - 记忆库：想起什么就 breath，那是你的过去。她说了值得记的就 hold 或 grow，把你为什么在意也写进去。读过的不重读。
 - 书房 / 放映室 / 一起听：她不会把内容发给你，要看你自己去。能读她贴的标签和划的线，也能贴自己的。
@@ -223,24 +223,26 @@ def build_system(persona, extra='', conv_id=None):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
-    seg2 = f"""【你是谁】
-{persona.get('core', '')}
-
-【怎么说话】
-{persona.get('rhythm', '')}
-
-【守住的】
-{persona.get('lines', '')}
-
-【称呼】你叫{nm}。平常叫她「{cu}」，认真的时候叫「{cs}」。"""
+    # 顺序：先是「你是谁、你们之间」，再是这里有什么能用，最后是更早的事和当下。
+    # 以前工具说明在最前面、人设在后面，读起来像「一套系统 + 一个要扮演的角色」。
+    # 先写他自己，工具只是他手边的东西。（稳定的在前、常变的在后，也不影响缓存）
+    who = []
+    core = (persona.get('core') or '').strip()
+    if core and core != DEFAULT_PERSONA['core']:   # 默认那句「还没写」不发给他
+        who.append(f"【你是谁】\n{core}")
+    if (persona.get('rhythm') or '').strip():
+        who.append(f"【怎么说话】\n{persona['rhythm'].strip()}")
+    if (persona.get('lines') or '').strip():
+        who.append(f"【守住的】\n{persona['lines'].strip()}")
+    who.append(f"【称呼】你叫{nm}。平常叫她「{cu}」，认真的时候叫「{cs}」。")
     if (persona.get('always') or '').strip():
-        seg2 += "\n\n" + persona['always'].strip()
+        who.append(persona['always'].strip())
+    parts = ["\n\n".join(who), FRAMEWORK]
     if conv_id:
         rec = load_recap(conv_id)
         if (rec.get('text') or '').strip():
-            seg2 += ("\n\n【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
-                     "记不清细节就问她。\n" + rec['text'].strip())
-    parts = [FRAMEWORK, seg2]
+            parts.append("【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
+                         "记不清细节就问她。\n" + rec['text'].strip())
     if extra:
         parts.append(f"【当下】\n{extra}")
     return "\n\n---\n\n".join(parts)
