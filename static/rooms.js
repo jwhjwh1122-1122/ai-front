@@ -2103,6 +2103,7 @@ async function boot() {
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
   loadMcp(); updateMcpSub(); renderToolGroups();
+  syncMcpTools(false).then(r => { if (r) { updateMcpSub(); renderToolGroups(); } });
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
   $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
@@ -2936,7 +2937,11 @@ document.addEventListener('DOMContentLoaded', () => {
     searchTimer = setTimeout(doSearch, 220);
   });
   $('btn-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
-  $('btn-mcp').onclick = () => { renderMcp(); $('mcp-panel').classList.add('open'); };
+  $('btn-mcp').onclick = async () => {
+    renderMcp(); $('mcp-panel').classList.add('open');
+    $('mcp-count').textContent += ' · 正在同步工具列表…';
+    await syncMcpTools(true); renderMcp();
+  };
   $('mcp-add-btn').onclick = async () => {
     const url = $('mcp-url-input').value.trim(); if (!url) { toast('填个地址'); return; }
     const btn = $('mcp-add-btn'); btn.textContent = '连接中…'; btn.disabled = true;
@@ -3106,7 +3111,9 @@ function renderMcp() {
     const on = tools.filter(t => !off.has(t.name)).length;
     const d = document.createElement('div');
     d.className = 'mcp-server' + (s.enabled ? '' : ' off');
-    d.innerHTML = `<div class="mcp-name">${esc(s.name)}</div><div class="mcp-url">${esc(s.url)}</div>
+    const syncNote = s.syncError ? `<div class="mcp-url" style="color:#e8506a">同步失败：${esc(s.syncError)}（列表可能不是最新的）</div>`
+      : s.syncedAt ? `<div class="mcp-url">工具列表 ${new Date(s.syncedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} 同步</div>` : '';
+    d.innerHTML = `<div class="mcp-name">${esc(s.name)}</div><div class="mcp-url">${esc(s.url)}</div>${syncNote}
       <div class="mcp-tools"><span class="mt-count">${on} / ${tools.length} 个工具在发</span><span class="mcp-more">展开 ▾</span></div>
       <div class="mcp-tool-list"></div>
       <div class="mcp-actions"><div class="mcp-toggle${s.enabled ? ' on' : ''}"></div><div class="mcp-del">✕</div></div>`;

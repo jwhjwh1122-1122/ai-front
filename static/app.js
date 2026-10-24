@@ -147,11 +147,44 @@ function loadMcp() {
   if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
 function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); }
+// ============ MCP 工具列表同步 ============
+// 以前工具列表是添加那一刻拍的快照，服务器后来加了新工具这里也看不到。
+// 现在：打开 MCP 面板时、以及每次打开网页（最多一小时一次）都去每个服务器重新拉一遍 tools/list。
+// 新出现的工具默认打开；你关掉的继续关着；服务器上已经没有的工具从列表里去掉。
+let mcpSyncing = null;
+async function syncMcpTools(force) {
+  if (mcpSyncing) return mcpSyncing;
+  const last = Number(localStorage.getItem('mcp-sync-at') || 0);
+  if (!force && Date.now() - last < 3600e3) return null;
+  mcpSyncing = (async () => {
+    const report = [];
+    for (const s of mcpServers) {
+      if (!s || !/^https?:\/\//.test(s.url || '')) continue;
+      let d;
+      try { d = await jpost('/api/mcp-connect', { url: s.url }); } catch (e) { d = { error: '连不上' }; }
+      if (!d || d.error || !Array.isArray(d.tools)) { s.syncError = (d && d.error) || '连不上'; continue; }
+      const oldNames = new Set((s.tools || []).map(t => t.name));
+      const newNames = new Set(d.tools.map(t => t.name));
+      const added = d.tools.filter(t => !oldNames.has(t.name)).map(t => t.name);
+      const removed = [...oldNames].filter(n => !newNames.has(n));
+      s.tools = d.tools;
+      s.off = (s.off || []).filter(n => newNames.has(n));
+      if (d.session_id) s.sid = d.session_id;
+      s.syncedAt = Date.now(); delete s.syncError;
+      if (added.length || removed.length) report.push({ name: s.name, added, removed });
+    }
+    saveMcp();
+    localStorage.setItem('mcp-sync-at', String(Date.now()));
+    if (report.length) toast(report.map(r => `${r.name}：` + [r.added.length ? `新增 ${r.added.length} 个` : '', r.removed.length ? `去掉 ${r.removed.length} 个` : ''].filter(Boolean).join('、')).join('；'));
+    return report;
+  })();
+  try { return await mcpSyncing; } finally { mcpSyncing = null; }
+}
 // 思考深度（Claude Code 的 --effort）。空 = 用默认
 const ccEffort = () => localStorage.getItem('cc-effort') || '';
 // cc 模式下把「设置 → MCP」里开着的服务器交给服务器那边的 Claude Code（只传地址和关掉的工具名）
-const ccMcpServers = () => (mcpServers || []).filter(s => s && s.enabled && /^https?:\/\//.test(s.url || ''))
-  .map(s => ({ name: s.name || '', url: s.url, off: s.off || [] }));
+const ccMcpServers = () => (mcpServers || []).filter(s => s && /^https?:\/\//.test(s.url || ''))
+  .map(s => ({ name: s.name || '', url: s.url, off: s.off || [], enabled: !!s.enabled }));
 const enabledServers = () => mcpServers.filter(s => s.enabled && Array.isArray(s.tools) && s.tools.length);
 function buildTools() {
   const seen = new Set(), out = [];

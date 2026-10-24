@@ -647,17 +647,27 @@ def web_mcp_config(cwd, servers):
     if os.environ.get('CC_WEB_MCP') == '0' or not isinstance(servers, list):
         return '', [], []
     skip = set()
+    ob_url = ''
     if os.environ.get('CC_AUTO_MCP') != '0':
-        skip.add(_norm_url(os.environ.get('CC_OB_URL') or DEFAULT_OB_URL))
+        ob_url = _norm_url(os.environ.get('CC_OB_URL') or DEFAULT_OB_URL)
     cfg, names, off = {}, [], []
     taken = {'ob'} | set(_LOCAL_MCP)
+    tool_ok = lambda t: isinstance(t, str) and re.match(r'^[A-Za-z0-9_.-]{1,80}$', t)
     for sv in servers[:8]:
         if not isinstance(sv, dict):
             continue
         url = str(sv.get('url') or '').strip()
         if not re.match(r'^https?://[^\s]+$', url) or len(url) > 500:
             continue
-        if _norm_url(url) in skip or '/api/lin-mcp' in url:
+        enabled = sv.get('enabled', True) is not False
+        if ob_url and _norm_url(url) == ob_url:
+            # 记忆库已经自动挂上了（名字 ob）：网页里的开关照样生效
+            if not enabled:
+                off.append('mcp__ob')          # 整个记忆库关掉
+            else:
+                off += [f'mcp__ob__{t}' for t in (sv.get('off') or [])[:200] if tool_ok(t)]
+            continue
+        if not enabled or _norm_url(url) in skip or '/api/lin-mcp' in url:
             continue
         skip.add(_norm_url(url))
         base = re.sub(r'[^a-z0-9_-]+', '_', str(sv.get('name') or '').lower()).strip('_-')[:24] or 'web'
@@ -667,11 +677,9 @@ def web_mcp_config(cwd, servers):
         taken.add(name)
         cfg[name] = {'type': 'http', 'url': url}
         names.append(name)
-        for t in (sv.get('off') or [])[:200]:
-            if isinstance(t, str) and re.match(r'^[A-Za-z0-9_.-]{1,80}$', t):
-                off.append(f'mcp__{name}__{t}')
+        off += [f'mcp__{name}__{t}' for t in (sv.get('off') or [])[:200] if tool_ok(t)]
     if not cfg:
-        return '', [], []
+        return '', [], off
     path = os.path.join(cwd, '.mcp_web.json')
     _write_if_changed(path, json.dumps({'mcpServers': cfg}, ensure_ascii=False), private=True)
     return path, names, off
