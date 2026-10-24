@@ -1018,6 +1018,7 @@ async function streamResponse(wrap, hist) {
   wrap._segEls = []; wrap._segTxt = [];   // 工具轮之后接着说，新起一组气泡
   const ccTools = {}, ccTrace = [];       // cc 模式下他在服务器上调用的工具
   let thinkTok = 0;                       // Claude Code 估算的思考 token
+  let thinkZh = false;                    // 思考原本是外文、已经换成中文译文
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
   const ac = new AbortController();
   abortController = ac;
@@ -1064,6 +1065,11 @@ async function streamResponse(wrap, hist) {
           else if (d.type === 'cc_status') showCcStatus(wrap, d);
           else if (d.type === 'cc_tool') onCcTool(wrap, d, ccTools, ccTrace);
           else if (d.type === 'cc_think') thinkTok = Number(d.tokens) || 0;
+          else if (d.type === 'cc_think_zh' && d.text) {
+            // 思考原本不是中文：服务器翻好了，整段换成中文（存进记录的也是中文）
+            thinkingText = d.text; thinkZh = true;
+            if (currentThinkContent) currentThinkContent.textContent = thinkingText;
+          }
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
             if (b.type === 'tool_use') {
@@ -1089,10 +1095,18 @@ async function streamResponse(wrap, hist) {
               if (!dl.thinking) continue;
               if (!currentThinkWrap) thinkBlock(wrap, '', false);
               thinkingText += dl.thinking;
-              if (currentThinkContent) currentThinkContent.textContent = thinkingText;
+              if (currentThinkContent) {
+                const all = thinkingText, cj = (all.match(/[\u4e00-\u9fff]/g) || []).length, la = (all.match(/[A-Za-z]/g) || []).length;
+                currentThinkContent.textContent = cj >= la ? thinkingText : '（他这会儿在用英文想，想完会翻成中文给你看）';
+              }
               // 收起时也能看到他正在想的最后一句
               const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');
-              if (hs) { const ln = thinkingText.trim().split(/\n+/).pop() || ''; hs.textContent = '思考中：' + ln.slice(-40); }
+              if (hs) {
+                const ln = thinkingText.trim().split(/\n+/).pop() || '';
+                const cjk = (ln.match(/[\u4e00-\u9fff]/g) || []).length, lat = (ln.match(/[A-Za-z]/g) || []).length;
+                // 外文的思考先不露出来，等翻成中文
+                hs.textContent = cjk >= lat ? '思考中：' + ln.slice(-40) : '思考中…';
+              }
             } else if (dl.type === 'signature_delta') blk.signature = (blk.signature || '') + dl.signature;
             else if (dl.type === 'input_json_delta') blk._json += dl.partial_json;
           } else if (d.type === 'content_block_stop') {
@@ -1129,8 +1143,10 @@ async function streamResponse(wrap, hist) {
     if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
   }
   if (currentThinkWrap) {
+    // 翻译没成功时，至少把原文给出来
+    if (currentThinkContent && !thinkZh && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
-    const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(thinkingText, thinkTok);
+    const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · 已译成中文' : '');
   }
   turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');

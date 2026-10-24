@@ -1952,6 +1952,31 @@ def ledger_clear():
 TRANS_CACHE = os.path.join(DATA_DIR, 'translations.json')
 
 
+def _think_translate_upstream(text):
+    """cc 模式思考翻中文：用上游小模型（配了 key 才用）。没 key 或失败返回 None，cc_mode 会改用 haiku。"""
+    up = load_upstream()
+    if not (up.get('key') or '').strip():
+        return None
+    key = 'think:' + hashlib.md5(text.encode()).hexdigest()
+    cache = jread(TRANS_CACHE, {})
+    if key in cache:
+        return cache[key]
+    r = requests.post(upstream_url(), headers=upstream_headers(), timeout=40,
+                      json={'model': up.get('small_model') or 'anthropic/claude-haiku-4-5', 'max_tokens': 1500,
+                            'messages': [{'role': 'system', 'content': cc_mode.THINK_ZH_PROMPT},
+                                         {'role': 'user', 'content': text[:6000]}]})
+    if r.status_code != 200:
+        return None
+    out = ((r.json().get('choices') or [{}])[0].get('message') or {}).get('content', '').strip()
+    if out:
+        cache[key] = out
+        jwrite(TRANS_CACHE, cache)
+    return out or None
+
+
+cc_mode.set_translator(_think_translate_upstream)
+
+
 @app.route('/api/translate', methods=['POST'])
 def translate_api():
     text = ((request.json or {}).get('text') or '').strip()
