@@ -9,7 +9,7 @@
 """
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, os, time, base64, hashlib, io, threading, uuid
+import requests, json, os, time, base64, hashlib, hmac, io, threading, uuid
 import cc_mode
 from datetime import datetime
 from werkzeug.utils import secure_filename
@@ -1997,6 +1997,14 @@ def _blocks_to_openai(blocks):
             if src.get('type') == 'base64':
                 parts.append({'type': 'image_url', 'image_url': {
                     'url': f"data:{src.get('media_type','image/jpeg')};base64,{src.get('data','')}"}})
+            elif src.get('type') == 'url':
+                # 存在服务器上的聊天图片（/chatimg/xxx）：读出来转成 base64 发给上游
+                img = cc_mode.load_local_image(src.get('url'), DATA_DIR)
+                if img:
+                    parts.append({'type': 'image_url', 'image_url': {
+                        'url': f"data:{img[0]};base64,{img[1]}"}})
+                else:
+                    parts.append({'type': 'text', 'text': '（一张图片，已经找不到了）'})
         elif t == 'image_url':
             parts.append(b)
     if not parts:
@@ -3821,6 +3829,98 @@ def _call_mcp_tool(name, args):
 WAKE_LOG = os.path.join(DATA_DIR, 'wake_log.json')
 
 
+# ============================================================
+# 本地 MCP：cc 模式下 Claude Code 用不了网页里那套工具（朋友圈、碎碎念、犯错本、书房……），
+# 这里把服务器端已有的 exec_tool_server 包成一个 MCP，自动挂给 Claude Code。
+# 只接受本机（127.0.0.1）+ 正确令牌的请求，外网访问一律 403。
+# ============================================================
+LIN_MCP_SKIP = {'open_tools', 'sleep_again'}   # 这两个是自主唤醒专用的
+LIN_MCP_TOKEN_FILE = os.path.join(DATA_DIR, '.lin_mcp_token')
+
+
+def _lin_mcp_token():
+    try:
+        with open(LIN_MCP_TOKEN_FILE, encoding='utf-8') as f:
+            t = f.read().strip()
+        if len(t) >= 32:
+            return t
+    except OSError:
+        pass
+    t = uuid.uuid4().hex + uuid.uuid4().hex
+    tmp = LIN_MCP_TOKEN_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(t)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, LIN_MCP_TOKEN_FILE)
+    return t
+
+
+LIN_MCP_TOKEN = _lin_mcp_token()
+
+
+def _lin_mcp_tools():
+    seen, out = set(), []
+    for t in list(WAKE_CORE) + [x for g in WAKE_GROUPS.values() for x in g]:
+        if t['name'] in LIN_MCP_SKIP or t['name'] in seen:
+            continue
+        seen.add(t['name'])
+        out.append({'name': t['name'], 'description': t.get('description', ''),
+                    'inputSchema': t.get('input_schema') or {'type': 'object', 'properties': {}}})
+    return out
+
+
+def _lin_mcp_handle(method, params):
+    if method == 'initialize':
+        want = (params or {}).get('protocolVersion') or ''
+        ver = want if want in ('2025-06-18', '2025-03-26', '2024-11-05') else '2025-06-18'
+        return {'protocolVersion': ver, 'capabilities': {'tools': {'listChanged': False}},
+                'serverInfo': {'name': 'lin-home', 'version': '1.0'},
+                'instructions': '这是你们这个家里的东西：朋友圈、碎碎念、犯错本、时间线、日历、语录、书房、抽屉、资料库、你的十六条欲望数值。想用就直接用。'}
+    if method == 'ping':
+        return {}
+    if method == 'tools/list':
+        return {'tools': _lin_mcp_tools()}
+    if method == 'tools/call':
+        name = (params or {}).get('name') or ''
+        if name in LIN_MCP_SKIP:
+            return {'content': [{'type': 'text', 'text': '这个工具在这里用不了'}], 'isError': True}
+        res = exec_tool_server(name, (params or {}).get('arguments') or {})
+        print(f'[lin-mcp] 调用 {name}', flush=True)   # 只记工具名，不记内容
+        return {'content': [{'type': 'text', 'text': str(res)[:12000]}],
+                'isError': str(res).startswith(('出错了', '没有这个工具'))}
+    return {}
+
+
+@app.route('/api/lin-mcp', methods=['GET', 'POST', 'DELETE'])
+def lin_mcp():
+    auth = request.headers.get('Authorization') or ''
+    local = (request.remote_addr or '') in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+    if not local or not hmac.compare_digest(auth, 'Bearer ' + LIN_MCP_TOKEN):
+        return jsonify({'error': 'forbidden'}), 403
+    if request.method == 'DELETE':
+        return ('', 204)
+    if request.method == 'GET':
+        return Response('', status=405, headers={'Allow': 'POST'})
+    req = request.get_json(force=True, silent=True) or {}
+    batch = req if isinstance(req, list) else [req]
+    out = []
+    for one in batch:
+        if not isinstance(one, dict) or one.get('id') is None:
+            continue   # 通知类消息不用回
+        out.append({'jsonrpc': '2.0', 'id': one['id'],
+                    'result': _lin_mcp_handle(one.get('method', ''), one.get('params') or {})})
+    if not out:
+        return Response('', status=202)
+    return jsonify(out if isinstance(req, list) else out[0])
+
+
+cc_mode.register_local_mcp('lin', 'http://127.0.0.1:%s/api/lin-mcp' % (os.environ.get('PORT') or '8080'),
+                           {'Authorization': 'Bearer ' + LIN_MCP_TOKEN})
+
+
 def do_wake(manual=False, reason=''):
     p = load_persona()
     if not OR_KEY:
@@ -3998,6 +4098,13 @@ try:
     register_cc_login(app, data_dir=DATA_DIR)
 except Exception as e:
     print(f'[cc-login] 挂载失败（不影响其他功能）: {e}', flush=True)
+
+# 聊天图片、表情包存服务器（不再塞进浏览器 localStorage）
+try:
+    from chat_media import register_chat_media
+    register_chat_media(app, data_dir=DATA_DIR, media_dir=MEDIA_DIR, jread=jread, jwrite=jwrite)
+except Exception as e:
+    print(f'[media] 挂载失败（不影响其他功能）: {e}', flush=True)
 
 
 if __name__ == '__main__':

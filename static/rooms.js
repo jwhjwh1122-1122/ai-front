@@ -1320,10 +1320,10 @@ async function callTurn(text, silentUser) {
   if (!CALL.on) return;
   CALL.turns++;
   if (!silentUser) {
-    messages.push({ role: 'user', content: text, _call: true });
+    messages.push({ role: 'user', content: text, _call: true, _mid: genMid() });
     saveConv();
   } else {
-    messages.push({ role: 'user', content: text, _internal: true, _call: true });
+    messages.push({ role: 'user', content: text, _internal: true, _call: true, _mid: genMid() });
   }
   csState('他在想…');
   let reply = '';
@@ -1707,14 +1707,7 @@ function relTime(ts) {
   return new Date(ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
 }
 function emojiHtml(t) {
-  const customs = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-  let h = esc(t);
-  customs.forEach(it => {
-    if (!it.name) return;
-    const e = it.name;
-    h = h.split('[' + e + ']').join(`<img src="${it.data}" alt="${it.name}">`);
-  });
-  return h;
+  return stickerize(esc(t));
 }
 async function openMoments() {
   $('momentsroom').classList.add('open');
@@ -2013,6 +2006,7 @@ async function boot() {
   { const nb = $('btn-netease'); if (nb && !neteaseUrl()) nb.style.display = 'none'; }
   bindSplit('reader'); bindSplit('stage'); bindSplit('coread'); bindSplit('netease');
   startKeepalive();
+  loadStickers().then(changed => { if (changed && !isTyping && currentConvId && localStorage.getItem('conv-' + currentConvId)) loadConv(currentConvId); });
 }
 async function loadUpstream() {
   try {
@@ -2780,38 +2774,67 @@ document.addEventListener('DOMContentLoaded', () => {
     finally { btn.textContent = '连接并添加'; btn.disabled = false; }
   };
 
-  // 表情
+  // 表情（分「他的」「我的」，图存服务器）
   $('btn-emoji').onclick = () => { emojiTarget = 'chat'; renderEmoji(); $('emoji-panel').classList.add('open'); };
+  document.querySelectorAll('.emoji-tab').forEach(t => t.onclick = () => { emojiOwner = t.dataset.owner; renderEmoji(); });
   $('btn-emoji-upload').onclick = () => $('emoji-input').click();
   let pendingEmoji = null;
   $('emoji-input').onchange = e => {
     const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => { pendingEmoji = ev.target.result; $('emoji-name-input').value = ''; $('emoji-name-modal').classList.add('open'); };
-    r.readAsDataURL(f); e.target.value = '';
+    pendingEmoji = f; e.target.value = '';
+    $('emoji-name-input').value = '';
+    $('emoji-name-title').textContent = `给这个表情起个名字（放进「${emojiOwner === 'user' ? '我的' : '他的'}」）`;
+    $('emoji-name-modal').classList.add('open');
   };
   $('emoji-name-cancel').onclick = () => { pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); };
-  $('emoji-name-ok').onclick = () => {
+  $('emoji-name-ok').onclick = async () => {
     const name = $('emoji-name-input').value.trim();
     if (!name || !pendingEmoji) { toast('起个名字'); return; }
-    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-    l.push({ name, data: pendingEmoji });
-    try { localStorage.setItem('custom-emoji', JSON.stringify(l)); }
-    catch (err) { toast('存不下了，删几个'); return; }
-    pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了');
+    if (allStickers().some(x => x.name === name)) { toast('这个名字用过了，换一个'); return; }
+    const btn = $('emoji-name-ok'); btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('file', pendingEmoji, pendingEmoji.name || 'sticker.png');
+      fd.append('name', name); fd.append('owner', emojiOwner);
+      const r = await fetch('/api/stickers', { method: 'POST', body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) { toast(d.error || '没传上去'); return; }
+      setStickers(await jget('/api/stickers'));
+      pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了');
+    } catch (err) { toast('没传上去'); }
+    finally { btn.disabled = false; }
   };
+  // 长按表情：移到另一边 / 删除
+  $('emoji-act-move').onclick = async () => {
+    const it = emojiActItem; $('emoji-act-modal').classList.remove('open'); if (!it) return;
+    try { await jpost(`/api/stickers/${it.id}/move`, {}); setStickers(await jget('/api/stickers')); renderEmoji(); toast('挪好了'); }
+    catch (e) { toast('没挪成'); }
+  };
+  $('emoji-act-del').onclick = async () => {
+    const it = emojiActItem; $('emoji-act-modal').classList.remove('open'); if (!it) return;
+    if (!confirm(`删掉「${it.name}」？`)) return;
+    try { await jpost(`/api/stickers/${it.id}`, {}, 'DELETE'); setStickers(await jget('/api/stickers')); renderEmoji(); }
+    catch (e) { toast('没删掉'); }
+  };
+  $('emoji-act-cancel').onclick = () => $('emoji-act-modal').classList.remove('open');
 
-  // 聊天配图
+  // 聊天配图：压缩后传服务器，消息里只存地址（不再把整张图塞进浏览器存储）
   $('btn-img').onclick = () => $('chat-img-input').click();
-  $('chat-img-input').onchange = e => {
+  $('chat-img-input').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      pendingChatImg = { data: ev.target.result };
-      $('img-preview-thumb').src = ev.target.result;
-      $('img-preview-bar').classList.add('show');
-    };
-    r.readAsDataURL(f); e.target.value = '';
+    e.target.value = '';
+    const local = URL.createObjectURL(f);
+    const mine = { uploading: true, data: '' };
+    pendingChatImg = mine;
+    $('img-preview-thumb').src = local;
+    $('img-preview-bar').classList.add('show');
+    try {
+      mine.data = await uploadChatImage(f);
+      mine.uploading = false;
+    } catch (err) {
+      if (pendingChatImg === mine) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
+      toast(err.message || '图片没传上去');
+    } finally { URL.revokeObjectURL(local); }
   };
   $('img-preview-remove').onclick = () => { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); };
 });
@@ -2834,15 +2857,25 @@ function renderDaysModal() {
     el.appendChild(box);
   });
 }
+let emojiOwner = 'lin', emojiActItem = null;
 function renderEmoji() {
-  const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
+  document.querySelectorAll('.emoji-tab').forEach(t => t.classList.toggle('active', t.dataset.owner === emojiOwner));
+  const l = STICKERS[emojiOwner] || [];
   const g = $('emoji-grid');
-  if (!l.length) { g.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:30px;font-size:13px;">还没有表情<br>点右上角上传</div>'; return; }
+  if (!l.length) {
+    g.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:30px;font-size:13px;">${emojiOwner === 'user' ? '你还没有表情' : '他还没有表情'}<br>点右上角上传</div>`;
+    return;
+  }
   g.innerHTML = '';
-  l.forEach((item, i) => {
+  l.forEach(item => {
     const d = document.createElement('div'); d.className = 'emoji-item';
-    d.innerHTML = `<img src="${item.data}" alt="${esc(item.name)}">`;
+    const im = document.createElement('img'); im.src = item.url; im.alt = item.name; im.loading = 'lazy';
+    d.appendChild(im);
+    const nm = document.createElement('div'); nm.className = 'emoji-name'; nm.textContent = item.name;
+    d.appendChild(nm);
+    let timer = null, longPressed = false;
     d.onclick = () => {
+      if (longPressed) { longPressed = false; return; }
       let inp;
       if (emojiTarget === 'post') inp = $('post-text');
       else if (emojiTarget === 'comment') inp = $('cm-input');
@@ -2851,17 +2884,16 @@ function renderEmoji() {
       $('emoji-panel').classList.remove('open'); inp.focus();
       emojiTarget = 'chat';
     };
-    let timer = null;
-    d.addEventListener('touchstart', () => {
-      timer = setTimeout(() => {
-        if (confirm(`删掉「${item.name}」？`)) {
-          const nl = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-          nl.splice(i, 1); localStorage.setItem('custom-emoji', JSON.stringify(nl)); renderEmoji();
-        }
-      }, 600);
-    }, { passive: true });
+    const openAct = () => {
+      longPressed = true; emojiActItem = item;
+      $('emoji-act-title').textContent = `「${item.name}」`;
+      $('emoji-act-move').textContent = item.owner === 'user' ? '移到「他的」' : '移到「我的」';
+      $('emoji-act-modal').classList.add('open');
+    };
+    d.addEventListener('touchstart', () => { longPressed = false; timer = setTimeout(openAct, 550); }, { passive: true });
     d.addEventListener('touchend', () => clearTimeout(timer));
     d.addEventListener('touchmove', () => clearTimeout(timer), { passive: true });
+    d.addEventListener('contextmenu', ev => { ev.preventDefault(); openAct(); });
     g.appendChild(d);
   });
 }

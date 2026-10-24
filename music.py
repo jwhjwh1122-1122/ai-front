@@ -1815,7 +1815,6 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             return jsonify({'ok': True, 'reply': '', 'room': room, 'id': mine['id']})
         reply = ''
         try:
-            import urllib.request as _u
             ctx = ''
             if song:
                 ctx = f"（你和宝宝正在一起听《{song.get('name','')}》- {song.get('artist','')}。宝宝发信息了。）"
@@ -1824,21 +1823,29 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 'extra': ctx, 'max_tokens': 300,
                 '_conv_id': 'music_listen', '_session_id': 'music',
             }
-            req = _u.Request('http://127.0.0.1:' + str(_os.environ.get('PORT', 5000)) + '/api/chat-v2',
-                             data=json.dumps(payload).encode(),
-                             headers={'Content-Type': 'application/json'})
-            resp = _u.urlopen(req, timeout=60)
-            # chat-v2 是 SSE 流，简单收集文本
-            buf = ''
-            for line in resp:
-                s = line.decode('utf-8', 'ignore').strip()
-                if s.startswith('data:'):
-                    try:
-                        ev = json.loads(s[5:].strip())
-                        if ev.get('type') == 'content_block_delta':
-                            buf += ev.get('delta', {}).get('text', '')
-                    except Exception:
-                        pass
+            # 进程内直接调 chat-v2，不再绕一圈 HTTP 回环：gunicorn 只有 2 个线程，
+            # 回环要再占一个线程，cc 模式下 Claude Code 连本地 MCP 也要线程，会互相卡住。
+            buf, deadline = '', time.time() + 180
+            resp = app.test_client().post('/api/chat-v2', json=payload, buffered=False)
+            try:
+                if resp.status_code == 200:
+                    pend = b''
+                    for chunk in resp.response:
+                        pend += chunk if isinstance(chunk, bytes) else str(chunk).encode('utf-8')
+                        *lines, pend = pend.split(b'\n')
+                        for line in lines:
+                            s = line.decode('utf-8', 'ignore').strip()
+                            if s.startswith('data:'):
+                                try:
+                                    ev = json.loads(s[5:].strip())
+                                    if ev.get('type') == 'content_block_delta':
+                                        buf += ev.get('delta', {}).get('text', '')
+                                except Exception:
+                                    pass
+                        if time.time() > deadline:
+                            break
+            finally:
+                resp.close()   # 提前结束也会收掉 Claude Code 子进程、还回名额
             reply = buf.strip()
         except Exception as e:
             reply = ''

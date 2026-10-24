@@ -27,6 +27,7 @@
                          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1（不留后台 shell，聊天用不到）
                          CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
+  CC_LIN_MCP=0         不自动挂「家里的工具」（app 自带的本地 MCP：朋友圈、碎碎念、犯错本、书房……）。默认挂上
   CC_NODE_MAX_OLD_SPACE_MB  默认不设。设了才给 claude 加 --max-old-space-size=<值>；
                        删掉这个变量就恢复原样。太小会让长会话直接崩，不建议低于 768
 
@@ -286,15 +287,30 @@ def _map_load(data_dir):
         return {}
 
 
+DELIVERED_MAX = 80   # 每个会话记住最近多少条已经送到 claude 的消息 id
+
+
 def get_session(data_dir, key):
     return (_map_load(data_dir).get(key) or {}).get('session_id')
 
 
-def set_session(data_dir, key, session_id):
+def get_delivered(data_dir, key):
+    """这个对话里已经送进当前 claude 会话的消息 id（前端给每条消息的 _mid）。"""
+    return set((_map_load(data_dir).get(key) or {}).get('delivered') or [])
+
+
+def set_session(data_dir, key, session_id, add_mids=None):
     with _map_lock:
         m = _map_load(data_dir)
         if session_id:
-            m[key] = {'session_id': session_id, 'ts': int(time.time())}
+            old = m.get(key) or {}
+            # 换了新会话，旧会话里送过什么就不作数了
+            dl = list(old.get('delivered') or []) if old.get('session_id') == session_id else []
+            for mid in add_mids or []:
+                if mid and mid not in dl:
+                    dl.append(mid)
+            m[key] = {'session_id': session_id, 'ts': int(time.time()),
+                      'delivered': dl[-DELIVERED_MAX:]}
         else:
             m.pop(key, None)
         tmp = _map_path(data_dir) + '.tmp'
@@ -317,22 +333,95 @@ def _text_of(content):
         if t == 'text':
             out.append(b.get('text', ''))
         elif t in ('image', 'image_url'):
-            out.append('（发了一张图片，cc 模式下暂时看不到图片）')
+            out.append('（发了一张图片）')
         elif t == 'tool_result':
             c = b.get('content')
             out.append(c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
     return '\n'.join(x for x in out if x)
 
 
-def split_messages(messages):
-    """返回 (之前的历史, 本轮用户消息文本)。本轮 = 最后一条助手消息之后的所有用户消息。"""
+def split_turn(messages):
+    """返回 (之前的历史, 本轮的用户消息列表)。本轮 = 最后一条助手消息之后的所有用户消息。"""
     msgs = [m for m in (messages or []) if isinstance(m, dict)]
     i = len(msgs)
     while i > 0 and msgs[i - 1].get('role') != 'assistant':
         i -= 1
-    tail = [m for m in msgs[i:] if m.get('role') == 'user']
+    return msgs[:i], [m for m in msgs[i:] if m.get('role') == 'user']
+
+
+def split_messages(messages):
+    """返回 (之前的历史, 本轮用户消息文本)。"""
+    history, tail = split_turn(messages)
     prompt = '\n\n'.join(t for t in (_text_of(m.get('content')).strip() for m in tail) if t)
-    return msgs[:i], prompt
+    return history, prompt
+
+
+def _mid(m):
+    v = m.get('_mid')
+    return str(v)[:64] if v else ''
+
+
+# ------------------------------------------------------------
+# 图片：前端存在服务器上的 /chatimg/xxx、/stickers/xxx，或老的 data: URL
+# ------------------------------------------------------------
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+_MEDIA_PREFIX = {'/chatimg/': 'chatimg', '/stickers/': 'stickers'}
+_DATA_URL = re.compile(r'^data:(image/[a-zA-Z0-9.+-]+);base64,(.*)$', re.S)
+_MIME = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+         'gif': 'image/gif', 'webp': 'image/webp'}
+
+
+def load_local_image(url, data_dir):
+    """返回 (media_type, base64)；不认识、太大或找不到返回 None。"""
+    import base64
+    url = (url or '').strip()
+    m = _DATA_URL.match(url)
+    if m:
+        return (m.group(1), m.group(2)) if len(m.group(2)) * 3 // 4 <= MAX_IMAGE_BYTES else None
+    for prefix, sub in _MEDIA_PREFIX.items():
+        if url.startswith(prefix):
+            name = os.path.basename(url[len(prefix):].split('?', 1)[0])
+            ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+            if not re.match(r'^[A-Za-z0-9._-]+$', name) or ext not in _MIME:
+                return None
+            fp = os.path.join(data_dir, 'media', sub, name)
+            try:
+                if os.path.getsize(fp) > MAX_IMAGE_BYTES:
+                    return None
+                with open(fp, 'rb') as f:
+                    return _MIME[ext], base64.b64encode(f.read()).decode('ascii')
+            except OSError:
+                return None
+    return None
+
+
+def turn_content(tail, data_dir):
+    """本轮要说的：(文字, [图片 block, ...])。图片用 Anthropic 的 image block 格式。"""
+    texts, images = [], []
+    for m in tail:
+        c = m.get('content')
+        if isinstance(c, list):
+            for b in c:
+                if not isinstance(b, dict):
+                    continue
+                url = ''
+                if b.get('type') == 'image_url':
+                    url = (b.get('image_url') or {}).get('url') or ''
+                elif b.get('type') == 'image':
+                    src = b.get('source') or {}
+                    if src.get('type') == 'base64':
+                        url = f"data:{src.get('media_type', 'image/jpeg')};base64,{src.get('data', '')}"
+                    elif src.get('type') == 'url':
+                        url = src.get('url') or ''
+                if url:
+                    img = load_local_image(url, data_dir)
+                    if img:
+                        images.append({'type': 'image', 'source': {
+                            'type': 'base64', 'media_type': img[0], 'data': img[1]}})
+        t = _text_of(c).strip()
+        if t:
+            texts.append(t)
+    return '\n\n'.join(texts), images[:6]
 
 
 def history_transcript(history):
@@ -359,6 +448,23 @@ def _split_list(s):
 DEFAULT_OB_URL = 'https://jwhjwh.zeabur.app/mcp'
 
 
+def _write_if_changed(path, text, private=False):
+    try:
+        old = open(path, encoding='utf-8').read()
+    except Exception:
+        old = None
+    if old != text:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(text)
+        if private:
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+        os.replace(tmp, path)
+
+
 def auto_mcp_config(cwd):
     """没设 CC_MCP_CONFIG 时，自动写一份只挂记忆库的 MCP 配置，返回路径；关掉了返回空。"""
     if os.environ.get('CC_AUTO_MCP') == '0':
@@ -368,22 +474,34 @@ def auto_mcp_config(cwd):
         return ''
     path = os.path.join(cwd, '.mcp_auto.json')
     cfg = {'mcpServers': {'ob': {'type': 'http', 'url': url}}}
-    try:
-        old = open(path, encoding='utf-8').read()
-    except Exception:
-        old = ''
-    new = json.dumps(cfg, ensure_ascii=False)
-    if old != new:
-        tmp = path + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.write(new)
-        os.replace(tmp, path)
+    _write_if_changed(path, json.dumps(cfg, ensure_ascii=False))
     return path
 
 
-def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None):
+# app.py 自己提供的本地 MCP（朋友圈、碎碎念、犯错本、书房……），名字 -> {url, headers}
+_LOCAL_MCP = {}
+
+
+def register_local_mcp(name, url, headers=None):
+    _LOCAL_MCP[name] = {'type': 'http', 'url': url, 'headers': dict(headers or {})}
+
+
+def local_mcp_config(cwd):
+    """写本地 MCP 的配置文件（里面有访问令牌，权限 600），返回 (路径, [名字])；关掉了返回 ('', [])。"""
+    if os.environ.get('CC_LIN_MCP') == '0' or not _LOCAL_MCP:
+        return '', []
+    path = os.path.join(cwd, '.mcp_local.json')
+    _write_if_changed(path, json.dumps({'mcpServers': _LOCAL_MCP}, ensure_ascii=False), private=True)
+    return path, list(_LOCAL_MCP)
+
+
+def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
+              local_mcp=('', []), image_input=False):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+    if image_input:
+        # 这一轮有图片：stdin 改喂一行 stream-json（带图片 block），他就能真的看到图
+        cmd += ['--input-format', 'stream-json']
     if resume_id:
         cmd += ['--resume', resume_id]
     if system_prompt:
@@ -395,13 +513,21 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     model = pick_model(req_model, upstream_cfg)
     if model:
         cmd += ['--model', model]
-    mcp = (os.environ.get('CC_MCP_CONFIG') or '').strip() or auto_mcp
+    user_mcp = (os.environ.get('CC_MCP_CONFIG') or '').strip()
+    mcp = user_mcp or auto_mcp
     if mcp:
         # 用 = 的写法：--mcp-config 是可变参数，避免把后面的东西吞进去
         cmd.append('--mcp-config=' + mcp)
+    local_path, local_names = local_mcp
+    if local_path:
+        cmd.append('--mcp-config=' + local_path)
     allowed = _split_list(os.environ.get('CC_ALLOWED_TOOLS') or '')
-    if not allowed and auto_mcp and not (os.environ.get('CC_MCP_CONFIG') or '').strip():
+    if not allowed and auto_mcp and not user_mcp:
         allowed = ['mcp__ob__*']
+    for n in local_names:
+        # 本地这组是 app 自己的工具，不放行的话 -p 模式下一用就被拒，所以总是放行
+        if not any(a.startswith(f'mcp__{n}__') or a == f'mcp__{n}' for a in allowed):
+            allowed.append(f'mcp__{n}__*')
     if allowed:
         cmd.append('--allowedTools=' + ','.join(allowed))
     pm = (os.environ.get('CC_PERMISSION_MODE') or '').strip()
@@ -505,8 +631,9 @@ _RESUME_MISS = ('no conversation found', 'session not found', 'no session found'
 # 跑一次 claude，把输出翻成前端格式
 # ------------------------------------------------------------
 class _Run:
-    def __init__(self, data_dir, key):
+    def __init__(self, data_dir, key, mids=None):
         self.data_dir, self.key = data_dir, key
+        self.mids = list(mids or [])   # 这一轮送进去的消息 id，会话建好后记为「已送达」
         self.text_open = self.think_open = False
         self.text_emitted = False
         self.need_sep = False
@@ -552,7 +679,7 @@ class _Run:
         if sid and sid != self.session_id:
             self.session_id = sid
             try:
-                set_session(self.data_dir, self.key, sid)
+                set_session(self.data_dir, self.key, sid, add_mids=self.mids)
             except Exception as e:
                 print(f'[cc] 保存 session 失败: {e}', flush=True)
 
@@ -691,9 +818,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
     os.makedirs(cwd, exist_ok=True)
 
-    history, prompt = split_messages(messages)
-    if not prompt:
-        prompt = '（对方没有说话）'
+    history, tail = split_turn(messages)
 
     sys_file = None
     if system_prompt and len(system_prompt.encode('utf-8')) > SYS_ARG_MAX:
@@ -710,21 +835,39 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     try:
         while True:
             attempt += 1
+            # 续会话时，上次已经送进 claude 会话里的消息（比如上次等太久、断了、没回上）不再重复送，
+            # 不然重发几遍他就会看到几遍。新会话（没有 resume）则全部带上。
+            this_turn, skipped = tail, 0
+            if resume_id:
+                dl = get_delivered(data_dir, key)
+                this_turn = [m for m in tail if not (_mid(m) and _mid(m) in dl)]
+                skipped = len(tail) - len(this_turn)
+            prompt, images = turn_content(this_turn, data_dir)
+            if not prompt and not images:
+                prompt = ('（她刚才那条你已经收到了，但你的回复没送到她那边。接着回她就行，不用提这件事）'
+                          if skipped else '（对方没有说话）')
             stdin_text = prompt
             if not resume_id and history:
                 tr = history_transcript(history)
                 if tr:
                     stdin_text = ('（下面是你们之前的聊天记录，供你接上话，不用复述）\n'
                                   f'{tr}\n（记录结束）\n\n{prompt}')
+            if images:
+                content = images + ([{'type': 'text', 'text': stdin_text}] if stdin_text else [])
+                stdin_text = json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}},
+                                        ensure_ascii=False) + '\n'
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
-                            auto_mcp=auto_mcp_config(cwd), req_model=model)
-            run = _Run(data_dir, key)
+                            auto_mcp=auto_mcp_config(cwd), req_model=model,
+                            local_mcp=local_mcp_config(cwd), image_input=bool(images))
+            run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
             st = concurrency()
             # 只记元数据：不记提示词、聊天内容、令牌
             print(f'[cc] 启动 #{tag} attempt={attempt} model={pick_model(model, upstream_cfg) or "default"} '
                   f'resume={"yes" if resume_id else "no"}'
                   + (f' session_file={_mb(sf)}' if sf is not None else '')
+                  + (f' images={len(images)}' if images else '')
+                  + (f' skipped_dup={skipped}' if skipped else '')
                   + f' running={st["running"]}/{st["max"]} waiting={st["waiting"]} {mem_line()}',
                   flush=True)
             t_start = time.time()

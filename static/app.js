@@ -14,6 +14,8 @@ let roomCtx = null;   // 'reader' | 'stage' | null —— 决定发哪组工具�
 const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const nowStr = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// 每条用户消息一个 id：服务器据此知道哪条已经送到他那边，断线重发不会让他看到两遍
+const genMid = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const fmtTime = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(0) + 'MB' : (b / 1024).toFixed(0) + 'KB';
 function toast(m) { const t = $('toast'); t.textContent = m; t.className = 'toast show'; setTimeout(() => t.className = 'toast', 2200); }
@@ -438,6 +440,8 @@ function toAnthropic(c) {
     if (p && p.type === 'image_url') {
       const m = /^data:(.+?);base64,(.*)$/.exec(p.image_url?.url || '');
       if (m) return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+      const u = p.image_url?.url || '';
+      if (/^\/(chatimg|stickers)\//.test(u)) return { type: 'image', source: { type: 'url', url: u } };
       return { type: 'text', text: '（图片）' };
     }
     return p;
@@ -517,12 +521,79 @@ function buildMsgs(msgs) {
   }
   return out;
 }
+// ============ 表情包（存在服务器上，分「他的」「我的」） ============
+// 以前整张图 base64 存在浏览器 localStorage 里，几张就把 5MB 撑满了，聊天记录也跟着存不进去。
+let STICKERS = { lin: [], user: [] };
+try { const c = JSON.parse(localStorage.getItem('stickers-cache') || 'null'); if (c && Array.isArray(c.lin)) STICKERS = { lin: c.lin, user: c.user || [] }; } catch (e) { }
+const allStickers = () => [...STICKERS.lin, ...STICKERS.user];
+function setStickers(d) {
+  if (!d || !Array.isArray(d.lin)) return false;
+  const next = { lin: d.lin, user: d.user || [] };
+  const changed = JSON.stringify(next) !== JSON.stringify(STICKERS);
+  STICKERS = next;
+  try { localStorage.setItem('stickers-cache', JSON.stringify(STICKERS)); } catch (e) { }
+  return changed;
+}
+async function loadStickers() {
+  let changed = false;
+  try { changed = setStickers(await jget('/api/stickers')); } catch (e) { }
+  // 一次性搬家：浏览器里的老表情传到服务器（算他的），成功后从浏览器删掉，腾出空间
+  const old = localStorage.getItem('custom-emoji');
+  if (old) {
+    try {
+      const items = JSON.parse(old || '[]').filter(x => x && x.name && x.data);
+      const r = items.length ? await jpost('/api/stickers/import', { owner: 'lin', items }) : { ok: true };
+      if (r && r.ok) {
+        localStorage.removeItem('custom-emoji');
+        changed = setStickers(await jget('/api/stickers')) || changed;
+      }
+    } catch (e) { }
+  }
+  return changed;
+}
+// html 里的 [名字] 换成表情图（html 已经转义过）
+function stickerize(html) {
+  for (const it of allStickers()) {
+    if (!it || !it.name) continue;
+    html = html.split('[' + esc(it.name) + ']').join(`<img class="sticker-img" src="${esc(it.url).replace(/"/g, '&quot;')}" alt="${esc(it.name).replace(/"/g, '&quot;')}">`);
+  }
+  return html;
+}
+const isStickerOnly = t => { const m = /^\[([^\[\]]+)\]$/.exec((t || '').trim()); return !!m && allStickers().some(x => x.name === m[1]); };
 function emojiNames() {
-  try {
-    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]')
-      .map(x => x && x.name).filter(Boolean);
-    return l.length ? `你能用的表情：${l.join('、')}。` : '';
-  } catch (e) { return ''; }
+  const his = STICKERS.lin.map(x => x.name).filter(Boolean);
+  const hers = STICKERS.user.map(x => x.name).filter(Boolean);
+  let s = his.length ? `你能用的表情：${his.join('、')}。` : '';
+  if (hers.length) s += `她的表情包：${hers.join('、')}（她发 [名字] 就是发了那张表情）。`;
+  return s;
+}
+// ============ 聊天图片：先压缩再传服务器，消息里只存地址 ============
+function shrinkImage(file, maxSide = 1600, quality = 0.85) {
+  return new Promise(resolve => {
+    if (!file || /gif/i.test(file.type) || file.size < 350 * 1024) { resolve(file); return; }
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      try {
+        const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(b => { URL.revokeObjectURL(url); resolve(b && b.size < file.size ? b : file); }, 'image/jpeg', quality);
+      } catch (e) { URL.revokeObjectURL(url); resolve(file); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+async function uploadChatImage(file) {
+  const blob = await shrinkImage(file);
+  const fd = new FormData();
+  const ext = (blob.type || '').includes('png') ? 'png' : (blob.type || '').includes('gif') ? 'gif' : (blob.type || '').includes('webp') ? 'webp' : 'jpg';
+  fd.append('file', blob, 'chat.' + ext);
+  const r = await fetch('/api/chat-img', { method: 'POST', body: fd });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.url) throw new Error(d.error || '上传失败');
+  return d.url;
 }
 function roomNote() {
   if (roomCtx === 'reader' && currentBook) {
@@ -591,13 +662,7 @@ function renderMd(text) {
   return h.replace(/^#{1,3} (.+)$/gm, '<b>$1</b>').replace(/^[-•] (.+)$/gm, '• $1');
 }
 function renderBubble(text) {
-  const customs = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-  let html = renderMd(text);
-  customs.forEach(item => {
-    if (!item.name) return;
-    html = html.split('[' + item.name + ']').join(`<img src="${item.data}" style="width:120px;display:block;margin:4px 0;" alt="${item.name}">`);
-  });
-  return html;
+  return stickerize(renderMd(text));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx) {
@@ -627,7 +692,7 @@ function addUserBubble(text, imgData, idx, audio) {
   const av = uav ? `<div class="msg-avatar has-img"><img src="${uav}"></div>` : '';
   let c = '';
   if (imgData) c += `<div class="bubble-img"><img src="${imgData}"></div>`;
-  if (text && !(audio && audio.url)) c += `<div class="bubble user">${esc(text)}</div>`;
+  if (text && !(audio && audio.url)) c += `<div class="bubble user${isStickerOnly(text) ? ' sticker-only' : ''}">${stickerize(esc(text))}</div>`;
   row.innerHTML = `${av}<div class="bubble-wrap">${c}<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
     <span class="msg-action-btn" data-edit="1" title="编辑" style="font-size:21px">ฅ</span><span class="msg-action-btn" data-copy="1" title="复制" style="font-size:21px">✎</span>
     <span class="msg-time">${nowStr()}</span></div></div>`;
@@ -878,7 +943,7 @@ async function streamResponse(wrap, hist) {
     throw err;
   }
   const reader = resp.body.getReader(), dec = new TextDecoder();
-  let buf = '', thinkingText = '', responseText = '', stopReason = null, outTok = 0, inTok = 0;
+  let buf = '', thinkingText = '', responseText = '', stopReason = null, outTok = 0, inTok = 0, gotDone = false;
   const absorb = u => {
     if (!u) return;
     if (u.cache_read_input_tokens != null) lastCacheRead = u.cache_read_input_tokens;
@@ -899,7 +964,8 @@ async function streamResponse(wrap, hist) {
       for (const line of lines) {
         if (!line.startsWith('data:')) continue;
         const raw = line.slice(5).trim();
-        if (!raw || raw === '[DONE]') continue;
+        if (raw === '[DONE]') { gotDone = true; continue; }
+        if (!raw) continue;
         try {
           const d = JSON.parse(raw);
           if (d.type === 'message_start') absorb(d.message?.usage);
@@ -959,6 +1025,11 @@ async function streamResponse(wrap, hist) {
   if (currentThinkWrap) {
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
     const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = '已思考';
+  }
+  const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
+  if (!responseText && !hadTool && stopReason !== 'tool_use' && !ac.signal.aborted) {
+    // 以前这里什么都不显示，气泡就空着。给句话，只显示不存进记录（重发不会让他看到两遍）
+    updateBubble(wrap, gotDone ? '（他这次没出声，可以再说一句）' : '（连接断了，他可能没说完。直接再发一句就行）', true);
   }
   if (responseText) {
     const segs = splitSay(responseText);
@@ -1091,6 +1162,7 @@ async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && !!pendingChatImg;
   if ((!text && !hasImg) || isTyping) return;
+  if (hasImg && pendingChatImg.uploading) { toast('图片还在上传，稍等一下'); return; }
   inp.value = ''; inp.style.height = 'auto';
   const seq = beginTurn();
   if (editingMsgIdx !== null) {
@@ -1101,7 +1173,7 @@ async function sendMsg(fromCtx) {
   const content = hasImg
     ? [...(text ? [{ type: 'text', text }] : []), { type: 'image_url', image_url: { url: pendingChatImg.data } }]
     : text;
-  messages.push({ role: 'user', content });
+  messages.push({ role: 'user', content, _mid: genMid() });
   addUserBubble(text, hasImg ? pendingChatImg.data : null, messages.length - 1);
   saveConv();
   if (hasImg) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
@@ -1122,7 +1194,7 @@ async function sendComposed(text, imgs, opts) {
     imgs.forEach(u => content.push({ type: 'image_url', image_url: { url: u } }));
   }
   const seq = beginTurn();
-  const msg = { role: 'user', content };
+  const msg = { role: 'user', content, _mid: genMid() };
   if (opts.audio) { msg._audio = opts.audio; msg._dur = opts.dur; }
   messages.push(msg);
   const myIdx = messages.length - 1;
@@ -1160,10 +1232,39 @@ async function regenAt(row) {
 // ============ 对话管理 ============
 const getConvs = () => { try { return JSON.parse(localStorage.getItem('conversations') || '[]'); } catch (e) { return []; } };
 const saveConvs = l => localStorage.setItem('conversations', JSON.stringify(l));
+// 老记录里直接存着 base64 图片，最占地方。存不下时把它们换成一句文字再存
+const isDataImg = c => c && c.type === 'image_url' && /^data:/.test(c.image_url?.url || '');
+function stripDataImages(list) {
+  let hit = false;
+  const out = list.map(m => {
+    if (!Array.isArray(m.content) || !m.content.some(isDataImg)) return m;
+    hit = true;
+    return { ...m, content: m.content.map(c => isDataImg(c) ? { type: 'text', text: '（一张看过的画面）' } : c) };
+  });
+  return hit ? out : list;
+}
+function freeOldConvImages() {
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith('conv-') || k === 'conv-' + currentConvId) continue;
+    try {
+      const v = localStorage.getItem(k);
+      if (!v || v.indexOf('data:image') < 0) continue;
+      const nl = stripDataImages(JSON.parse(v));
+      localStorage.setItem(k, JSON.stringify(nl));
+    } catch (e) { }
+  }
+}
 function saveConv() {
   if (!currentConvId || !messages.length) return;
   try { localStorage.setItem('conv-' + currentConvId, JSON.stringify(messages)); }
-  catch (e) { toast('存储空间快满了'); return; }
+  catch (e) {
+    try {
+      messages = stripDataImages(messages);
+      freeOldConvImages();
+      localStorage.setItem('conv-' + currentConvId, JSON.stringify(messages));
+    } catch (e2) { toast('存储空间快满了'); return; }
+  }
   const list = getConvs();
   const idx = list.findIndex(c => c.id === currentConvId);
   const fu = messages.find(m => m.role === 'user' && !m._internal);

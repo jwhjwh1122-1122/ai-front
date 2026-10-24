@@ -1129,23 +1129,38 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="emoji-panel">
   <div class="sheet-inner">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <div class="sheet-title" style="margin:0;">表情</div>
+      <div class="emoji-tabs">
+        <span class="emoji-tab active" data-owner="lin">他的</span>
+        <span class="emoji-tab" data-owner="user">我的</span>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="emoji-upload-btn" id="btn-emoji-upload">+ 上传</button>
         <div class="emoji-close-btn" data-close-sheet="emoji-panel">✕</div>
       </div>
     </div>
     <div class="emoji-grid" id="emoji-grid"></div>
+    <div class="emoji-hint">点一下放进输入框 · 长按可以挪到另一边或删除</div>
   </div>
 </div>
 
 <div class="sheet" id="emoji-name-modal">
   <div class="sheet-inner">
-    <div class="sheet-title">给这个表情起个名字</div>
+    <div class="sheet-title" id="emoji-name-title">给这个表情起个名字</div>
     <input id="emoji-name-input" class="note-input" style="height:44px;" placeholder="比如：哭哭、笑死" maxlength="10">
     <div class="sheet-btns">
       <button class="btn-ghost" id="emoji-name-cancel">取消</button>
       <button class="btn-solid" id="emoji-name-ok">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="emoji-act-modal">
+  <div class="sheet-inner">
+    <div class="sheet-title" id="emoji-act-title">表情</div>
+    <div class="sheet-btns" style="flex-direction:column;gap:8px;">
+      <button class="btn-solid" id="emoji-act-move">移到「我的」</button>
+      <button class="btn-ghost" id="emoji-act-del" style="color:#c0392b;">删除</button>
+      <button class="btn-ghost" id="emoji-act-cancel">取消</button>
     </div>
   </div>
 </div>
