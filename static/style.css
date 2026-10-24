@@ -89,6 +89,8 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .msg-avatar.has-img{opacity:1;}.msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
 .bubble-wrap{max-width:76%;display:flex;flex-direction:column;gap:3px;}
 .msg-row.user .bubble-wrap{align-items:flex-end;}
+/* 他的气泡跟着字数走，不再被下面那排按钮撑成一样宽 */
+.msg-row:not(.user) .bubble-wrap{align-items:flex-start;}
 .bubble{padding:7px 14px;border-radius:18px;font-size:15px;line-height:1.6;word-break:break-word;box-shadow:0 2px 8px var(--shadow);white-space:pre-wrap;user-select:text;}
 .bubble.ai{background:var(--bubble-ai);border:1.5px solid var(--bubble-border-ai);}
 .bubble.user{background:var(--bubble-user);border:1.5px solid var(--bubble-border-user);}
@@ -751,3 +753,11 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .call-mark{display:flex;align-items:center;gap:8px;justify-content:center;margin:12px 0;font-size:11.5px;color:var(--text-muted);}
 .call-mark::before,.call-mark::after{content:'';flex:1;height:1px;background:var(--border);max-width:60px;}
 .bubble.in-call{border-style:dashed;}
+
+/* 顶栏正中：对方正在输入… */
+.typing-title{flex:1;min-width:0;text-align:center;align-self:flex-start;margin-top:2px;padding:0 6px;font-size:12.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;opacity:0;transition:opacity .25s ease;}
+.typing-title.show{opacity:1;}
+.tt-dots i{font-style:normal;animation:ttd 1.2s infinite;opacity:.2;}
+.tt-dots i:nth-child(2){animation-delay:.2s;}
+.tt-dots i:nth-child(3){animation-delay:.4s;}
+@keyframes ttd{0%,100%{opacity:.2}40%{opacity:1}}

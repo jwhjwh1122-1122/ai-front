@@ -147,6 +147,9 @@ function loadMcp() {
   if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
 function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); }
+// cc 模式下把「设置 → MCP」里开着的服务器交给服务器那边的 Claude Code（只传地址和关掉的工具名）
+const ccMcpServers = () => (mcpServers || []).filter(s => s && s.enabled && /^https?:\/\//.test(s.url || ''))
+  .map(s => ({ name: s.name || '', url: s.url, off: s.off || [] }));
 const enabledServers = () => mcpServers.filter(s => s.enabled && Array.isArray(s.tools) && s.tools.length);
 function buildTools() {
   const seen = new Set(), out = [];
@@ -567,32 +570,51 @@ function emojiNames() {
   if (hers.length) s += `她的表情包：${hers.join('、')}（她发 [名字] 就是发了那张表情）。`;
   return s;
 }
-// ============ 聊天图片：先压缩再传服务器，消息里只存地址 ============
-function shrinkImage(file, maxSide = 1600, quality = 0.85) {
+// ============ 图片压缩：聊天图、表情、头像、背景都先缩小再存 ============
+// 手机拍的照片动辄几 MB，还可能是 HEIC。一律在手机上解码、缩边、转成 JPEG（带透明的 PNG 保留 PNG）。
+// 解码失败（比如非 Safari 打不开 HEIC）就原样返回，交给服务器那边判断。
+function shrinkImage(file, maxSide = 1280, quality = 0.82) {
   return new Promise(resolve => {
-    if (!file || /gif/i.test(file.type) || file.size < 350 * 1024) { resolve(file); return; }
+    if (!file || /gif/i.test(file.type)) { resolve(file); return; }
     const url = URL.createObjectURL(file), img = new Image();
     img.onload = () => {
       try {
         const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
         const c = document.createElement('canvas');
-        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        c.toBlob(b => { URL.revokeObjectURL(url); resolve(b && b.size < file.size ? b : file); }, 'image/jpeg', quality);
+        const png = /png/i.test(file.type);
+        c.toBlob(b => {
+          URL.revokeObjectURL(url);
+          // 原图本来就是小 JPEG/PNG/WebP 且没变小，就用原图；HEIC 之类一律用转好的
+          const plain = /^image\/(jpeg|png|webp)$/i.test(file.type);
+          resolve(b && (!plain || b.size < file.size) ? b : file);
+        }, png ? 'image/png' : 'image/jpeg', quality);
       } catch (e) { URL.revokeObjectURL(url); resolve(file); }
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
     img.src = url;
   });
 }
+// 存进浏览器的小图（头像、背景）：直接给 dataURL
+async function shrinkToDataUrl(file, maxSide, quality) {
+  const b = await shrinkImage(file, maxSide, quality);
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = ev => resolve(ev.target.result);
+    r.onerror = reject;
+    r.readAsDataURL(b);
+  });
+}
+const blobExt = b => { const t = (b && b.type) || ''; return t.includes('png') ? 'png' : t.includes('gif') ? 'gif' : t.includes('webp') ? 'webp' : t.includes('heic') ? 'heic' : t.includes('heif') ? 'heif' : 'jpg'; };
 async function uploadChatImage(file) {
   const blob = await shrinkImage(file);
   const fd = new FormData();
-  const ext = (blob.type || '').includes('png') ? 'png' : (blob.type || '').includes('gif') ? 'gif' : (blob.type || '').includes('webp') ? 'webp' : 'jpg';
-  fd.append('file', blob, 'chat.' + ext);
+  fd.append('file', blob, 'chat.' + blobExt(blob));
   const r = await fetch('/api/chat-img', { method: 'POST', body: fd });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.url) throw new Error(d.error || '上传失败');
+  if (d.warn) toast(d.warn);
   return d.url;
 }
 function roomNote() {
@@ -631,7 +653,30 @@ function splitSay(text) {
     if (prev && prev.length <= 2 && p.length <= 2) out[out.length - 1] = prev + '\n' + p;
     else out.push(p);
   }
-  return out.slice(0, 6);
+  // 超过 6 段时，后面的并进第 6 段，不丢字
+  if (out.length > 6) out.splice(5, out.length - 5, out.slice(5).join('\n\n'));
+  return out;
+}
+// 边收边拆：每段一个气泡，正在写的那段带光标。done 时去掉光标、单个表情去掉气泡底色
+function streamSegs(wrap, text, done) {
+  const segs = splitSay(text).filter(x => x !== '');
+  const els = wrap._segEls || (wrap._segEls = []);
+  const txt = wrap._segTxt || (wrap._segTxt = []);
+  while (els.length > segs.length) { els.pop().remove(); txt.pop(); }
+  segs.forEach((sg, i) => {
+    let b = els[i];
+    if (!b) {
+      b = document.createElement('div');
+      b.className = 'bubble ai'; b.dataset.seg = '1';
+      wrap.appendChild(b); els[i] = b; txt[i] = null;
+    }
+    if (txt[i] !== sg) { b.innerHTML = renderBubble(sg); txt[i] = sg; }
+    const last = i === segs.length - 1;
+    b.classList.toggle('typing-cursor', !done && last);
+    b.classList.toggle('sticker-only', done && isStickerOnly(sg));
+  });
+  currentBubble = els[els.length - 1] || null;
+  scrollBottom();
 }
 function sayDelay(text) {
   return Math.min(2200, 420 + [...String(text)].length * 42);
@@ -926,12 +971,13 @@ async function attachVoiceReply(wrap, text) {
 // ============ 流式 ============
 let abortController = null;
 async function streamResponse(wrap, hist) {
+  wrap._segEls = []; wrap._segTxt = [];   // 工具轮之后接着说，新起一组气泡
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
   const ac = new AbortController();
   abortController = ac;
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers() })
   });
   if (!resp.ok) {
     // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试
@@ -986,7 +1032,7 @@ async function streamResponse(wrap, hist) {
             const dl = d.delta;
             if (dl.type === 'text_delta') {
               blk.text += dl.text; responseText += dl.text;
-              updateBubble(wrap, responseText, false);
+              streamSegs(wrap, responseText, false);
               if (messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1].content = responseText;
               else messages.push({ role: 'assistant', content: responseText });
             } else if (dl.type === 'thinking_delta') {
@@ -1029,31 +1075,12 @@ async function streamResponse(wrap, hist) {
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
   if (!responseText && !hadTool && stopReason !== 'tool_use' && !ac.signal.aborted) {
     // 以前这里什么都不显示，气泡就空着。给句话，只显示不存进记录（重发不会让他看到两遍）
+    currentBubble = null;
     updateBubble(wrap, gotDone ? '（他这次没出声，可以再说一句）' : '（连接断了，他可能没说完。直接再发一句就行）', true);
   }
   if (responseText) {
-    const segs = splitSay(responseText);
-    if (segs.length > 1) {
-      // 拆成几条，一条一条冒出来
-      if (currentBubble) { currentBubble.remove(); currentBubble = null; }
-      for (let i = 0; i < segs.length; i++) {
-        if (i > 0) {
-          const dots = document.createElement('div');
-          dots.className = 'bubble ai typing-dots';
-          dots.innerHTML = '<i></i><i></i><i></i>';
-          wrap.appendChild(dots); scrollBottom();
-          await sleep(sayDelay(segs[i]));
-          dots.remove();
-        }
-        const b = document.createElement('div');
-        b.className = 'bubble ai';
-        b.dataset.seg = '1';
-        b.innerHTML = renderBubble(segs[i]);
-        wrap.appendChild(b);
-        currentBubble = b;
-        scrollBottom();
-      }
-    }
+    // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
+    streamSegs(wrap, responseText, true);
     updateBubble(wrap, responseText, true, responseText, currentAiRow, outTok);
     saveConv();
   }
@@ -1145,6 +1172,7 @@ function beginTurn() {
   lastTalk = Date.now();
   isTyping = true;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '■');
+  showTypingTitle(true);
   return ++turnSeq;
 }
 function endTurn(seq) {
@@ -1152,10 +1180,16 @@ function endTurn(seq) {
   if (seq === undefined) turnSeq++;
   isTyping = false;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '↑');
+  showTypingTitle(false);
+}
+// 顶栏正中的「对方正在输入…」：发出去到他说完都亮着
+function showTypingTitle(on) {
+  const el = $('typing-title'); if (el) el.classList.toggle('show', !!on);
 }
 function turnError(wrap, e) {
   if (e && e.name === 'AbortError') return;   // 自己按了停，不算出错
   console.error(e);
+  currentBubble = null;
   updateBubble(wrap, (e && e.friendly) || '连接出错，请重试。', true);
 }
 async function sendMsg(fromCtx) {

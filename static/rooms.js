@@ -1337,7 +1337,7 @@ async function callTurn(text, silentUser) {
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
-        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300
+        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers()
       })
     });
     if (r.status === 429) { csState('他还在忙上一句，等下再说'); return; }
@@ -2191,29 +2191,29 @@ document.addEventListener('DOMContentLoaded', () => {
       $('clear-bg-btn').style.display = 'none';
     }
   });
-  $('avatar-input').onchange = e => {
+  // 头像、背景：先在手机上缩小（头像 320px、背景 1280px）再存，大图也能用
+  $('avatar-input').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      const key = avatarTarget === 'user' ? 'chat-avatar-user' : 'chat-avatar-ai';
-      try { localStorage.setItem(key, ev.target.result); } catch (err) { toast('图片太大了'); return; }
-      if (avatarTarget === 'ai') {
-        $('avatar').classList.add('has-img'); $('avatar').innerHTML = `<img src="${ev.target.result}">`;
-        document.querySelectorAll('.msg-avatar-lin').forEach(a => { a.classList.add('has-img'); a.innerHTML = `<img src="${ev.target.result}">`; });
-      }
-      toast('换好了');
-    };
-    r.readAsDataURL(f); e.target.value = '';
+    e.target.value = '';
+    const tgt = avatarTarget;
+    let url;
+    try { url = await shrinkToDataUrl(f, 320, 0.88); } catch (err) { toast('这张图打不开'); return; }
+    const key = tgt === 'user' ? 'chat-avatar-user' : 'chat-avatar-ai';
+    try { localStorage.setItem(key, url); } catch (err) { toast('图片太大了'); return; }
+    if (tgt === 'ai') {
+      $('avatar').classList.add('has-img'); $('avatar').innerHTML = `<img src="${url}">`;
+      document.querySelectorAll('.msg-avatar-lin').forEach(a => { a.classList.add('has-img'); a.innerHTML = `<img src="${url}">`; });
+    }
+    toast('换好了');
   };
-  $('bg-input').onchange = e => {
+  $('bg-input').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try { localStorage.setItem('chat-bg', ev.target.result); } catch (err) { toast('图片太大了'); return; }
-      document.body.style.backgroundImage = `url(${ev.target.result})`;
-      $('clear-bg-btn').style.display = 'flex'; toast('换好了');
-    };
-    r.readAsDataURL(f); e.target.value = '';
+    e.target.value = '';
+    let url;
+    try { url = await shrinkToDataUrl(f, 1280, 0.8); } catch (err) { toast('这张图打不开'); return; }
+    try { localStorage.setItem('chat-bg', url); } catch (err) { toast('图片太大了'); return; }
+    document.body.style.backgroundImage = `url(${url})`;
+    $('clear-bg-btn').style.display = 'flex'; toast('换好了');
   };
   document.querySelectorAll('#status-presets .status-preset').forEach(p => p.onclick = () => {
     if (p.dataset.clear) { localStorage.removeItem('user-status'); showUserStatus(''); }
@@ -2793,8 +2793,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (allStickers().some(x => x.name === name)) { toast('这个名字用过了，换一个'); return; }
     const btn = $('emoji-name-ok'); btn.disabled = true;
     try {
+      // 表情不用很大：静图缩到 512px；GIF 保留动图原样
+      const blob = await shrinkImage(pendingEmoji, 512, 0.9);
       const fd = new FormData();
-      fd.append('file', pendingEmoji, pendingEmoji.name || 'sticker.png');
+      fd.append('file', blob, 'sticker.' + blobExt(blob));
       fd.append('name', name); fd.append('owner', emojiOwner);
       const r = await fetch('/api/stickers', { method: 'POST', body: fd });
       const d = await r.json().catch(() => ({}));

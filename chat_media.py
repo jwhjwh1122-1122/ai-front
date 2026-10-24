@@ -24,10 +24,26 @@ from werkzeug.utils import secure_filename
 
 IMG_EXTS = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'}
 MAX_IMG_BYTES = 12 * 1024 * 1024        # 单张图片上限（前端会先压缩，正常远小于这个）
-MAX_STICKER_BYTES = 6 * 1024 * 1024
+MAX_STICKER_BYTES = 10 * 1024 * 1024    # 静图前端会缩到 512px；主要是给动图 GIF 留余地
 OWNERS = ('lin', 'user')
 _DATA_URL = re.compile(r'^data:image/([a-zA-Z0-9.+-]+);base64,(.*)$', re.S)
 _lock = threading.Lock()
+
+
+def sniff(raw):
+    """按文件头认格式，不信文件名。认不出返回 ''。"""
+    b = raw[:16]
+    if b[:3] == b'\xff\xd8\xff':
+        return 'jpg'
+    if b[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'png'
+    if b[:6] in (b'GIF87a', b'GIF89a'):
+        return 'gif'
+    if b[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return 'webp'
+    if raw[4:8] == b'ftyp' and raw[8:12] in (b'heic', b'heix', b'hevc', b'heim', b'heis', b'mif1', b'msf1'):
+        return 'heic'
+    return ''
 
 
 def chatimg_dir(media_dir):
@@ -78,16 +94,17 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
             return jsonify({'error': '没有收到图片'}), 400
         if request.content_length and request.content_length > MAX_IMG_BYTES + 65536:
             return jsonify({'error': '图片太大了'}), 413
-        ext = _ext_of(f.filename, f.mimetype)
+        raw = f.read(MAX_IMG_BYTES + 1)
+        if len(raw) > MAX_IMG_BYTES:
+            return jsonify({'error': '图片太大了'}), 413
+        ext = sniff(raw)
         if not ext:
             return jsonify({'error': '只支持图片'}), 400
         fn = _new_name('ci', ext)
-        fp = os.path.join(img_dir, fn)
-        f.save(fp)
-        if os.path.getsize(fp) > MAX_IMG_BYTES:
-            os.remove(fp)
-            return jsonify({'error': '图片太大了'}), 413
-        return jsonify({'url': '/chatimg/' + fn, 'filename': fn})
+        with open(os.path.join(img_dir, fn), 'wb') as out:
+            out.write(raw)
+        return jsonify({'url': '/chatimg/' + fn, 'filename': fn,
+                        'warn': '这个格式他可能看不了，最好换成截图或 JPG' if ext == 'heic' else ''})
 
     @app.route('/chatimg/<filename>')
     def chat_img_serve(filename):
@@ -112,12 +129,12 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
         owner = request.form.get('owner') if request.form.get('owner') in OWNERS else 'lin'
         if not f or not name:
             return jsonify({'error': '要有图片和名字'}), 400
-        ext = _ext_of(f.filename, f.mimetype)
-        if not ext:
-            return jsonify({'error': '只支持图片'}), 400
         raw = f.read(MAX_STICKER_BYTES + 1)
         if len(raw) > MAX_STICKER_BYTES:
-            return jsonify({'error': '这张太大了'}), 413
+            return jsonify({'error': '这张太大了（动图最大 10MB）'}), 413
+        ext = sniff(raw)
+        if not ext or ext == 'heic':
+            return jsonify({'error': '这个格式用不了，换成 PNG、JPG 或 GIF'}), 400
         with _lock:
             items = _list()
             item = {'id': 'st' + uuid.uuid4().hex[:10], 'name': name, 'owner': owner,
@@ -142,14 +159,12 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
                 m = _DATA_URL.match(it.get('data') or '')
                 if not name or not m or (owner, name) in have:
                     continue
-                ext = m.group(1).lower().replace('jpeg', 'jpg').replace('svg+xml', '')
-                if ext not in IMG_EXTS:
-                    continue
                 try:
                     raw = base64.b64decode(m.group(2))
                 except Exception:
                     continue
-                if not raw or len(raw) > MAX_STICKER_BYTES:
+                ext = sniff(raw)
+                if not raw or len(raw) > MAX_STICKER_BYTES or ext in ('', 'heic'):
                     continue
                 items.append({'id': 'st' + uuid.uuid4().hex[:10], 'name': name, 'owner': owner,
                               'file': _save_bytes(raw, ext), 'ts': int(time.time() * 1000)})

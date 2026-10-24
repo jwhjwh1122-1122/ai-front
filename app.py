@@ -2228,7 +2228,7 @@ def chat_v2():
             gen = cc_mode.stream_chat(messages=data.get('messages', []),
                                       system_prompt=system_prompt, key=cc_key,
                                       data_dir=DATA_DIR, upstream_cfg=up_cfg,
-                                      model=data.get('model'))
+                                      model=data.get('model'), web_mcp=data.get('_mcp'))
             return Response(cc_mode.GuardedStream(gen, slot),
                             mimetype='text/event-stream', headers=sse_headers)
         except Exception:

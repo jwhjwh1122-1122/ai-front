@@ -27,6 +27,7 @@
                          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1（不留后台 shell，聊天用不到）
                          CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
+  CC_WEB_MCP=0         不把网页「设置 → MCP」里自己加的服务器交给 Claude Code（默认会交）
   CC_LIN_MCP=0         不自动挂「家里的工具」（app 自带的本地 MCP：朋友圈、碎碎念、犯错本、书房……）。默认挂上
   CC_NODE_MAX_OLD_SPACE_MB  默认不设。设了才给 claude 加 --max-old-space-size=<值>；
                        删掉这个变量就恢复原样。太小会让长会话直接崩，不建议低于 768
@@ -365,39 +366,79 @@ def _mid(m):
 # 图片：前端存在服务器上的 /chatimg/xxx、/stickers/xxx，或老的 data: URL
 # ------------------------------------------------------------
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_TURN_IMAGES = 4   # 一轮最多送几张图进去（每张都会写进会话记录，越多越占内存）
 _MEDIA_PREFIX = {'/chatimg/': 'chatimg', '/stickers/': 'stickers'}
 _DATA_URL = re.compile(r'^data:(image/[a-zA-Z0-9.+-]+);base64,(.*)$', re.S)
 _MIME = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
          'gif': 'image/gif', 'webp': 'image/webp'}
 
 
-def load_local_image(url, data_dir):
-    """返回 (media_type, base64)；不认识、太大或找不到返回 None。"""
+_SNIFF_MIME = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'}
+
+
+def _sniff(raw):
+    b = raw[:16]
+    if b[:3] == b'\xff\xd8\xff':
+        return 'jpg'
+    if b[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'png'
+    if b[:6] in (b'GIF87a', b'GIF89a'):
+        return 'gif'
+    if b[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return 'webp'
+    if raw[4:8] == b'ftyp':
+        return 'heic'
+    return ''
+
+
+def load_image(url, data_dir):
+    """返回 (media_type, base64, 问题)。成功时问题为 ''；失败时前两项为 None，问题写原因。
+    格式按文件头认，不信扩展名：HEIC 被当成 JPEG 发给模型会让整条回复报错。"""
     import base64
     url = (url or '').strip()
+    raw = None
     m = _DATA_URL.match(url)
     if m:
-        return (m.group(1), m.group(2)) if len(m.group(2)) * 3 // 4 <= MAX_IMAGE_BYTES else None
-    for prefix, sub in _MEDIA_PREFIX.items():
-        if url.startswith(prefix):
-            name = os.path.basename(url[len(prefix):].split('?', 1)[0])
-            ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
-            if not re.match(r'^[A-Za-z0-9._-]+$', name) or ext not in _MIME:
-                return None
-            fp = os.path.join(data_dir, 'media', sub, name)
-            try:
-                if os.path.getsize(fp) > MAX_IMAGE_BYTES:
-                    return None
-                with open(fp, 'rb') as f:
-                    return _MIME[ext], base64.b64encode(f.read()).decode('ascii')
-            except OSError:
-                return None
-    return None
+        if len(m.group(2)) * 3 // 4 > MAX_IMAGE_BYTES:
+            return None, None, '图片太大'
+        try:
+            raw = base64.b64decode(m.group(2))
+        except Exception:
+            return None, None, '图片数据坏了'
+    else:
+        for prefix, sub in _MEDIA_PREFIX.items():
+            if url.startswith(prefix):
+                name = os.path.basename(url[len(prefix):].split('?', 1)[0])
+                if not re.match(r'^[A-Za-z0-9._-]+$', name):
+                    return None, None, '地址不对'
+                fp = os.path.join(data_dir, 'media', sub, name)
+                try:
+                    if os.path.getsize(fp) > MAX_IMAGE_BYTES:
+                        return None, None, '图片太大'
+                    with open(fp, 'rb') as f:
+                        raw = f.read()
+                except OSError:
+                    return None, None, '服务器上找不到这张图了'
+                break
+        else:
+            return None, None, '不是这里存的图片'
+    kind = _sniff(raw or b'')
+    if kind == 'heic':
+        return None, None, 'HEIC 格式（苹果原图），你这边看不了'
+    if kind not in _SNIFF_MIME:
+        return None, None, '格式认不出来'
+    return _SNIFF_MIME[kind], base64.b64encode(raw).decode('ascii'), ''
+
+
+def load_local_image(url, data_dir):
+    """返回 (media_type, base64)；不认识、太大或找不到返回 None。"""
+    mt, b64, _ = load_image(url, data_dir)
+    return (mt, b64) if mt else None
 
 
 def turn_content(tail, data_dir):
     """本轮要说的：(文字, [图片 block, ...])。图片用 Anthropic 的 image block 格式。"""
-    texts, images = [], []
+    texts, images, problems = [], [], []
     for m in tail:
         c = m.get('content')
         if isinstance(c, list):
@@ -414,14 +455,22 @@ def turn_content(tail, data_dir):
                     elif src.get('type') == 'url':
                         url = src.get('url') or ''
                 if url:
-                    img = load_local_image(url, data_dir)
-                    if img:
+                    mt, b64, why = load_image(url, data_dir)
+                    if mt and len(images) < MAX_TURN_IMAGES:
                         images.append({'type': 'image', 'source': {
-                            'type': 'base64', 'media_type': img[0], 'data': img[1]}})
+                            'type': 'base64', 'media_type': mt, 'data': b64}})
+                    else:
+                        why = why or f'一次最多看 {MAX_TURN_IMAGES} 张'
+                        problems.append(why)
+                        print(f'[cc] 有一张图没送进去：{why}', flush=True)
         t = _text_of(c).strip()
         if t:
             texts.append(t)
-    return '\n\n'.join(texts), images[:6]
+    if problems:
+        # 明确告诉他哪张没看到、为什么，免得他瞎猜图里是什么
+        texts.append('（系统提示：她发的图里有 %d 张你这次看不到（%s）。如实告诉她看不到、请她换成截图或 JPG 再发，不要猜图片内容）'
+                     % (len(problems), '；'.join(dict.fromkeys(problems))))
+    return '\n\n'.join(texts), images
 
 
 def history_transcript(history):
@@ -495,8 +544,49 @@ def local_mcp_config(cwd):
     return path, list(_LOCAL_MCP)
 
 
+def _norm_url(u):
+    return (u or '').strip().rstrip('/').lower()
+
+
+def web_mcp_config(cwd, servers):
+    """网页「设置 → MCP」里自己加的服务器，也交给 Claude Code。
+    返回 (配置文件路径, [名字], [要禁用的工具全名])；没有就返回 ('', [], [])。
+    跟自动挂的记忆库是同一个地址的会跳过，免得同一套工具出现两遍。"""
+    if os.environ.get('CC_WEB_MCP') == '0' or not isinstance(servers, list):
+        return '', [], []
+    skip = set()
+    if os.environ.get('CC_AUTO_MCP') != '0':
+        skip.add(_norm_url(os.environ.get('CC_OB_URL') or DEFAULT_OB_URL))
+    cfg, names, off = {}, [], []
+    taken = {'ob'} | set(_LOCAL_MCP)
+    for sv in servers[:8]:
+        if not isinstance(sv, dict):
+            continue
+        url = str(sv.get('url') or '').strip()
+        if not re.match(r'^https?://[^\s]+$', url) or len(url) > 500:
+            continue
+        if _norm_url(url) in skip or '/api/lin-mcp' in url:
+            continue
+        skip.add(_norm_url(url))
+        base = re.sub(r'[^a-z0-9_-]+', '_', str(sv.get('name') or '').lower()).strip('_-')[:24] or 'web'
+        name, i = base, 2
+        while name in taken:
+            name, i = f'{base}{i}', i + 1
+        taken.add(name)
+        cfg[name] = {'type': 'http', 'url': url}
+        names.append(name)
+        for t in (sv.get('off') or [])[:200]:
+            if isinstance(t, str) and re.match(r'^[A-Za-z0-9_.-]{1,80}$', t):
+                off.append(f'mcp__{name}__{t}')
+    if not cfg:
+        return '', [], []
+    path = os.path.join(cwd, '.mcp_web.json')
+    _write_if_changed(path, json.dumps({'mcpServers': cfg}, ensure_ascii=False), private=True)
+    return path, names, off
+
+
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
-              local_mcp=('', []), image_input=False):
+              local_mcp=('', []), image_input=False, web_mcp=('', [], [])):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     if image_input:
@@ -521,6 +611,10 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     local_path, local_names = local_mcp
     if local_path:
         cmd.append('--mcp-config=' + local_path)
+    web_path, web_names, web_off = web_mcp
+    if web_path:
+        cmd.append('--mcp-config=' + web_path)
+        local_names = list(local_names) + list(web_names)   # 网页里加的也一并放行
     allowed = _split_list(os.environ.get('CC_ALLOWED_TOOLS') or '')
     if not allowed and auto_mcp and not user_mcp:
         allowed = ['mcp__ob__*']
@@ -530,6 +624,9 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
             allowed.append(f'mcp__{n}__*')
     if allowed:
         cmd.append('--allowedTools=' + ','.join(allowed))
+    if web_off:
+        # 网页里关掉的那几个工具，Claude Code 这边也不给用
+        cmd.append('--disallowedTools=' + ','.join(web_off))
     pm = (os.environ.get('CC_PERMISSION_MODE') or '').strip()
     if pm:
         cmd += ['--permission-mode', pm]
@@ -812,7 +909,7 @@ def _error_text(msg):
     return f'（出错了 cc：{msg}）'
 
 
-def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None):
+def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None):
     """生成器：产出前端格式的 SSE。"""
     timeout = float(os.environ.get('CC_TIMEOUT') or 600)
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
@@ -843,6 +940,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 this_turn = [m for m in tail if not (_mid(m) and _mid(m) in dl)]
                 skipped = len(tail) - len(this_turn)
             prompt, images = turn_content(this_turn, data_dir)
+            web = web_mcp_config(cwd, web_mcp)
             if not prompt and not images:
                 prompt = ('（她刚才那条你已经收到了，但你的回复没送到她那边。接着回她就行，不用提这件事）'
                           if skipped else '（对方没有说话）')
@@ -858,7 +956,8 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                                         ensure_ascii=False) + '\n'
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model,
-                            local_mcp=local_mcp_config(cwd), image_input=bool(images))
+                            local_mcp=local_mcp_config(cwd), image_input=bool(images),
+                            web_mcp=web)
             run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
             st = concurrency()
@@ -867,6 +966,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                   f'resume={"yes" if resume_id else "no"}'
                   + (f' session_file={_mb(sf)}' if sf is not None else '')
                   + (f' images={len(images)}' if images else '')
+                  + (f' web_mcp={",".join(web[1])}' if web[1] else '')
                   + (f' skipped_dup={skipped}' if skipped else '')
                   + f' running={st["running"]}/{st["max"]} waiting={st["waiting"]} {mem_line()}',
                   flush=True)

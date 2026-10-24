@@ -109,6 +109,7 @@
 | `CC_MAX_CONCURRENT` | 同时最多跑几个 Claude Code，默认 `1`。2GB 内存的机器别调大 |
 | `CC_QUEUE_WAIT` | 上一条还没回完时，新消息最多排队等几秒，默认 `20`。等不到会提示「他还在回上一条消息」，不会无限堆积 |
 | `CC_LEAN_ENV` | 默认开：没设过的话自动补上 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`、`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`、`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1`（聊天用不到，省资源）。设成 `0` 关掉 |
+| `CC_WEB_MCP` | 默认会把网页「设置 → MCP」里你自己加、并且开着的服务器也交给 Claude Code（关掉的工具同样不给用；和记忆库同地址的会跳过）。设成 `0` 不交 |
 | `CC_LIN_MCP` | 默认会自动给 Claude Code 挂上「家里的工具」：朋友圈、碎碎念、犯错本、时间线、日历、语录、书房、抽屉、资料库、欲望数值（名字叫 `lin`，只有本机能连，带随机令牌）。设成 `0` 不挂 |
 | `CC_NODE_MAX_OLD_SPACE_MB` | **默认不设**。设了才给 Claude Code 加 Node 堆上限（例如 `1024`）；删掉变量即恢复。太小会让长会话直接崩，不建议低于 `768` |
 
@@ -167,3 +168,4 @@ MCP 配置文件示例（`/data/mcp.json`）：
 - 网页上显示的 token 数字是 Claude Code 报回来的，订阅模式下不按这个扣钱，看个大概就好。
 - 聊天里发的图片存在数据目录 `media/chatimg/`，表情包存在 `media/stickers/` 和 `stickers.json`，都在持久卷里，不再占浏览器空间。cc 模式下他能直接看到你发的图。
 - 每条消息带一个编号，服务器记得哪些已经送到他那边。网络断了重发，他不会看到两遍。
+- 他看不到图时：日志搜 `没送进去` 能看到原因（常见是 HEIC 苹果原图、太大）。他也会被明确告知「这张看不到」，不会瞎猜。启动行里的 `images=` 是这一轮真正送进去的张数。
