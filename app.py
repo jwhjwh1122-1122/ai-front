@@ -21,7 +21,7 @@ except AttributeError:
 
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
-import requests, json, base64, hashlib, hmac, io, threading, uuid
+import requests, json, base64, hashlib, hmac, io, re, threading, uuid
 import cc_mode
 from datetime import datetime
 from werkzeug.utils import secure_filename
@@ -2298,21 +2298,57 @@ def chat_v2():
 # ============================================================
 # MCP
 # ============================================================
-def _mcp_once(url, body, sid=None, timeout=60):
+MCP_PROTO = '2025-06-18'
+
+
+def _mcp_parse(r, want_id):
+    """把 MCP 服务器的回复解析成 JSON-RPC 消息。
+    支持普通 JSON，也支持 SSE（一条回复里可能有好几个事件：日志、进度通知、最后才是结果；
+    一个事件的 data 也可能分好几行）。优先挑 id 跟请求一致的那条。"""
+    raw = r.content.decode('utf-8', 'replace')    # 不靠 requests 猜编码，中文描述不会乱码
+    ct = (r.headers.get('Content-Type') or '').lower()
+    msgs = []
+    if 'text/event-stream' in ct or raw.lstrip().startswith(('event:', 'data:', 'id:', ':')):
+        for block in re.split(r'\r?\n\r?\n', raw):
+            data = '\n'.join(ln[5:].lstrip() for ln in re.split(r'\r?\n', block) if ln.startswith('data:'))
+            if not data.strip():
+                continue
+            try:
+                msgs.append(json.loads(data))
+            except Exception:
+                continue
+    else:
+        try:
+            d = json.loads(raw)
+            msgs = d if isinstance(d, list) else [d]
+        except Exception:
+            msgs = []
+    msgs = [m for m in msgs if isinstance(m, dict)]
+    pick = next((m for m in msgs if want_id is not None and m.get('id') == want_id), None) \
+        or next((m for m in msgs if 'result' in m or 'error' in m), None)
+    return pick, raw
+
+
+def _mcp_once(url, body, sid=None, timeout=60, detail=False):
     headers = {'Content-Type': 'application/json',
                'Accept': 'application/json, text/event-stream'}
     if sid:
         headers['Mcp-Session-Id'] = sid
+    if body.get('method') != 'initialize':
+        headers['MCP-Protocol-Version'] = MCP_PROTO
     r = requests.post(url, json=body, headers=headers, timeout=timeout)
     new_sid = r.headers.get('Mcp-Session-Id') or sid
-    text = r.text or ''
-    if 'text/event-stream' in (r.headers.get('Content-Type') or ''):
-        text = ''.join(l[5:].strip() for l in text.split('\n') if l.startswith('data:'))
-    try:
-        d = json.loads(text)
-    except Exception:
-        return {'error': 'parse failed', 'raw': text[:300]}, new_sid
-    return d.get('result', d), new_sid
+    msg, raw = _mcp_parse(r, body.get('id'))
+    if msg is None:
+        err = {'error': f'HTTP {r.status_code}，回复读不懂', 'raw': raw[:300]}
+        return (err, new_sid, r.status_code) if detail else (err, new_sid)
+    if 'error' in msg and 'result' not in msg:
+        e = msg.get('error') or {}
+        em = e.get('message') if isinstance(e, dict) else e
+        err = {'error': f"HTTP {r.status_code}，服务器报错：{em or e}"[:300], 'raw': raw[:300]}
+        return (err, new_sid, r.status_code) if detail else (err, new_sid)
+    res = msg.get('result', msg)
+    return (res, new_sid, r.status_code) if detail else (res, new_sid)
 
 
 @app.route('/api/mcp-connect', methods=['POST'])
@@ -2321,24 +2357,42 @@ def mcp_connect():
     if not url:
         return jsonify({'error': '请填写服务器地址'}), 400
     try:
-        _, sid = _mcp_once(url, {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
-                                 'params': {'protocolVersion': '2024-11-05', 'capabilities': {},
-                                            'clientInfo': {'name': 'lin', 'version': '1.0'}}})
-        if sid:
-            try:
-                requests.post(url, json={'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
-                              headers={'Content-Type': 'application/json',
-                                       'Accept': 'application/json, text/event-stream',
-                                       'Mcp-Session-Id': sid}, timeout=30)
-            except Exception:
-                pass
-        result, sid = _mcp_once(url, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}}, sid)
-        tools = result.get('tools') if isinstance(result, dict) else None
-        if tools is None:
-            return jsonify({'error': '连上了但没拿到工具列表'}), 502
+        init, sid, code = _mcp_once(url, {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+                                          'params': {'protocolVersion': MCP_PROTO, 'capabilities': {},
+                                                     'clientInfo': {'name': 'lin', 'version': '1.0'}}},
+                                    detail=True)
+        if isinstance(init, dict) and init.get('error'):
+            print(f"[mcp-connect] initialize 失败 {url}: {init['error']} | {init.get('raw', '')[:200]}", flush=True)
+            return jsonify({'error': f"连不上：{init['error']}"}), 502
+        try:
+            h = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
+                 'MCP-Protocol-Version': MCP_PROTO}
+            if sid:
+                h['Mcp-Session-Id'] = sid
+            requests.post(url, json={'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
+                          headers=h, timeout=30)
+        except Exception:
+            pass
+        tools, cursor, rid = [], None, 2
+        for _ in range(20):   # 工具多的服务器会分页
+            params = {'cursor': cursor} if cursor else {}
+            result, sid, code = _mcp_once(url, {'jsonrpc': '2.0', 'id': rid, 'method': 'tools/list', 'params': params},
+                                          sid, detail=True)
+            rid += 1
+            if not isinstance(result, dict) or result.get('error') or not isinstance(result.get('tools'), list):
+                why = (result or {}).get('error') if isinstance(result, dict) else ''
+                raw = (result or {}).get('raw', '') if isinstance(result, dict) else ''
+                print(f"[mcp-connect] tools/list 失败 {url}: HTTP {code} {why} | {raw[:200]}", flush=True)
+                if tools:
+                    break
+                return jsonify({'error': f"连上了但没拿到工具列表：{why or ('HTTP ' + str(code))}"[:300]}), 502
+            tools += result['tools']
+            cursor = result.get('nextCursor')
+            if not cursor:
+                break
         slim = [{'name': t.get('name'), 'description': (t.get('description') or '')[:300],
                  'input_schema': t.get('inputSchema') or t.get('input_schema') or {'type': 'object', 'properties': {}}}
-                for t in tools if t.get('name')]
+                for t in tools if isinstance(t, dict) and t.get('name')]
         return jsonify({'ok': True, 'session_id': sid, 'tools': slim})
     except Exception as e:
         return jsonify({'error': f'连接失败：{e}'}), 502
