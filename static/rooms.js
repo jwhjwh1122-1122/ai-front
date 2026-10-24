@@ -3149,6 +3149,17 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally { URL.revokeObjectURL(local); }
   };
   $('img-preview-remove').onclick = () => { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); };
+
+  // 直达：网址带 #music / #listen 就直接打开一起听（给桌面图标用，点一下不经过聊天页）
+  const openByHash = () => {
+    const h = (location.hash || '').replace('#', '').toLowerCase();
+    if (h === 'music' || h === 'listen' || h === '一起听') {
+      if (typeof neteaseUrl === 'function' && neteaseUrl()) openNetease();
+      else openRoomMedia('music');
+    }
+  };
+  setTimeout(openByHash, 300);
+  window.addEventListener('hashchange', openByHash);
 });
 
 function renderDaysModal() {
