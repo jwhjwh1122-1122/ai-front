@@ -28,6 +28,7 @@
                          CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
   CC_EFFORT            思考深度默认值（low / medium / high / xhigh / max），网页设置里选了就以网页为准；都没有就不传
+  CC_SYSTEM_PROMPT_MODE=append  人设接在 Claude Code 默认系统提示后面（默认 replace：整个换掉，不当写代码助手）
   CC_THINK_ZH=0        不把非中文的思考翻成中文（默认会翻：模型思考用什么语言靠指令锁不住）
                        翻译默认只用 DeepSeek（DEEPSEEK_API_KEY）或「上游」小模型，不花 Claude 额度；
                        都没有就不显示这轮的外文思考
@@ -728,10 +729,14 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     if resume_id:
         cmd += ['--resume', resume_id]
     if system_prompt:
+        # 默认整个换掉 Claude Code 自带的系统提示（"你是写代码的助手"那一套），
+        # 不然他总把自己当助手在"扮演角色"，思考里冒出"保持人设""她们俩在调情"这种旁观话。
+        # 想恢复成"接在默认提示后面"，设 CC_SYSTEM_PROMPT_MODE=append。
+        replace = (os.environ.get('CC_SYSTEM_PROMPT_MODE') or 'replace').strip().lower() != 'append'
         if sys_file:
-            cmd += ['--append-system-prompt-file', sys_file]
+            cmd += ['--system-prompt-file' if replace else '--append-system-prompt-file', sys_file]
         else:
-            cmd += ['--append-system-prompt', system_prompt]
+            cmd += ['--system-prompt' if replace else '--append-system-prompt', system_prompt]
     # 每次调用都带上（包括 --resume 续会话），这样中途换模型也能生效
     model = pick_model(req_model, upstream_cfg)
     if model:
