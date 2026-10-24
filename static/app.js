@@ -182,6 +182,8 @@ async function syncMcpTools(force) {
 }
 // 思考深度（Claude Code 的 --effort）。空 = 用默认
 const ccEffort = () => localStorage.getItem('cc-effort') || '';
+// 思考开关：默认开；关了这一句就不思考（回得快、省额度）
+const ccThinking = () => localStorage.getItem('cc-thinking') !== 'off';
 // cc 模式下把「设置 → MCP」里开着的服务器交给服务器那边的 Claude Code（只传地址和关掉的工具名）
 const ccMcpServers = () => (mcpServers || []).filter(s => s && /^https?:\/\//.test(s.url || ''))
   .map(s => ({ name: s.name || '', url: s.url, off: s.off || [], enabled: !!s.enabled }));
@@ -1025,7 +1027,7 @@ async function streamResponse(wrap, hist) {
   abortController = ac;
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort() })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking() })
   });
   if (!resp.ok) {
     // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试

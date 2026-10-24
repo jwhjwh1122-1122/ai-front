@@ -1564,7 +1564,7 @@ async function callTurn(text, silentUser) {
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
-        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort()
+        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking()
       })
     });
     if (r.status === 429) { csState('他还在忙上一句，等下再说'); return; }
@@ -2888,6 +2888,23 @@ document.addEventListener('DOMContentLoaded', () => {
       el.appendChild(d);
     });
   };
+
+  // 思考开关：对应 Claude Code 的 alwaysThinkingEnabled。只在 cc 模式下起作用
+  (function renderThinking() {
+    const el = $('thinking-list'); if (!el) return;
+    const cur = localStorage.getItem('cc-thinking') === 'off' ? 'off' : 'on';
+    [['on', '开'], ['off', '关']].forEach(([v, label]) => {
+      const d = document.createElement('div');
+      d.className = 'ctx-option' + (v === cur ? ' active' : '');
+      d.textContent = label;
+      d.onclick = () => {
+        if (v === 'off') localStorage.setItem('cc-thinking', 'off'); else localStorage.removeItem('cc-thinking');
+        [...el.children].forEach(x => x.classList.remove('active'));
+        d.classList.add('active');
+      };
+      el.appendChild(d);
+    });
+  })();
 
   // 思考深度：对应 Claude Code 的 --effort。只在 cc 模式下起作用
   (function renderEffort() {

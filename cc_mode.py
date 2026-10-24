@@ -715,12 +715,15 @@ def pick_effort(req_effort):
 
 
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
-              local_mcp=('', []), image_input=False, web_mcp=('', [], []), effort=''):
+              local_mcp=('', []), image_input=False, web_mcp=('', [], []), effort='', thinking=True):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     if effort:
         cmd.append('--effort=' + effort)
-    td = thinking_display()
+    if not thinking:
+        # 网页上把「思考」关了：这一句不想，回得快、省额度
+        cmd.append('--settings=' + json.dumps({'alwaysThinkingEnabled': False}))
+    td = thinking_display() if thinking else ''
     if td:
         cmd.append('--thinking-display=' + td)
     if image_input:
@@ -1224,7 +1227,8 @@ def think_to_zh(text, data_dir):
     return None, '', False
 
 
-def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None):
+def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None,
+                thinking=True):
     """生成器：产出前端格式的 SSE。"""
     timeout = float(os.environ.get('CC_TIMEOUT') or 600)
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
@@ -1273,7 +1277,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model,
                             local_mcp=local_mcp_config(cwd), image_input=bool(images),
-                            web_mcp=web, effort=eff)
+                            web_mcp=web, effort=eff, thinking=thinking is not False)
             run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
             st = concurrency()
