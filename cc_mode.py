@@ -27,6 +27,7 @@
                          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1（不留后台 shell，聊天用不到）
                          CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
+  CC_EFFORT            思考深度默认值（low / medium / high / xhigh / max），网页设置里选了就以网页为准；都没有就不传
   CC_THINKING_DISPLAY  思考怎么显示，默认 summarized（能看到他的思考）。可选 summarized / highlights / omitted；
                        设成 off 就不传这个参数（新版 Claude Code 无头模式下默认不给思考文字）
   CC_WEB_MCP=0         不把网页「设置 → MCP」里自己加的服务器交给 Claude Code（默认会交）
@@ -688,10 +689,24 @@ def thinking_display():
     return v if v in ('summarized', 'highlights', 'omitted') else 'summarized'
 
 
+EFFORT_LEVELS = ('low', 'medium', 'high', 'xhigh', 'max')
+
+
+def pick_effort(req_effort):
+    """网页选的 -> 环境变量 CC_EFFORT -> ''（不传，用 Claude Code 默认）。"""
+    for v in (req_effort, os.environ.get('CC_EFFORT')):
+        v = str(v or '').strip().lower()
+        if v in EFFORT_LEVELS:
+            return v
+    return ''
+
+
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
-              local_mcp=('', []), image_input=False, web_mcp=('', [], [])):
+              local_mcp=('', []), image_input=False, web_mcp=('', [], []), effort=''):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+    if effort:
+        cmd.append('--effort=' + effort)
     td = thinking_display()
     if td:
         cmd.append('--thinking-display=' + td)
@@ -847,6 +862,8 @@ class _Run:
         self.session_id = None
         self.mcp = []          # [{name, status}]，来自 init
         self.tools = {}        # 工具调用 id -> {'name', 'input_sent'}，给网页显示「调用了什么、结果是什么」
+        self.think_tokens = 0  # Claude Code 估算的思考 token（这一轮累计），网页拿来和摘要字数对比
+        self._think_sent = 0
 
     def _open_text(self):
         if self.text_open:
@@ -932,6 +949,16 @@ class _Run:
     def handle(self, d):
         """处理 stream-json 的一行，返回要发给前端的 SSE 片段列表。"""
         t = d.get('type')
+        if t == 'system' and d.get('subtype') == 'thinking_tokens':
+            dl_tok = d.get('estimated_tokens_delta')
+            if isinstance(dl_tok, (int, float)):
+                self.think_tokens += int(dl_tok)
+            elif isinstance(d.get('estimated_tokens'), (int, float)):
+                self.think_tokens = max(self.think_tokens, int(d['estimated_tokens']))
+            if self.think_tokens - self._think_sent >= 40:
+                self._think_sent = self.think_tokens
+                return [sse({'type': 'cc_think', 'tokens': self.think_tokens})]
+            return []
         if t == 'system':
             if d.get('subtype') == 'init':
                 self._sid(d)
@@ -1014,6 +1041,9 @@ class _Run:
 
     def close_blocks(self):
         out = []
+        if self.think_tokens and self.think_tokens != self._think_sent:
+            self._think_sent = self.think_tokens
+            out.append(sse({'type': 'cc_think', 'tokens': self.think_tokens}))
         if self.think_open:
             out.append(sse({'type': 'content_block_stop', 'index': THINK}))
             self.think_open = False
@@ -1085,7 +1115,7 @@ def _error_text(msg):
     return f'（出错了 cc：{msg}）'
 
 
-def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None):
+def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None):
     """生成器：产出前端格式的 SSE。"""
     timeout = float(os.environ.get('CC_TIMEOUT') or 600)
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
@@ -1102,6 +1132,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     yield sse({'type': 'message_start', 'message': {'usage': {}}})
 
     resume_id = get_session(data_dir, key)
+    eff = pick_effort(effort)
     attempt = 0
     run = None
     tag = _short(key)
@@ -1133,7 +1164,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model,
                             local_mcp=local_mcp_config(cwd), image_input=bool(images),
-                            web_mcp=web)
+                            web_mcp=web, effort=eff)
             run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
             st = concurrency()
@@ -1141,6 +1172,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             print(f'[cc] 启动 #{tag} attempt={attempt} model={pick_model(model, upstream_cfg) or "default"} '
                   f'resume={"yes" if resume_id else "no"}'
                   + (f' session_file={_mb(sf)}' if sf is not None else '')
+                  + (f' effort={eff}' if eff else '')
                   + (f' images={len(images)}' if images else '')
                   + (f' web_mcp={",".join(web[1])}' if web[1] else '')
                   + (f' skipped_dup={skipped}' if skipped else '')
@@ -1253,6 +1285,12 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 if not detail:
                     detail = err[-400:] or f'claude 退出码 {proc.returncode}'
                 low = (detail + ' ' + err).lower()
+                # 这个模型 / 版本不支持选的思考深度：这一条去掉 --effort 重试一次，并在回复里说明
+                if eff and not run.text_emitted and 'effort' in low and attempt <= 3:
+                    print(f'[cc] 思考深度 {eff} 不被接受，去掉后重试：{detail[:160]}', flush=True)
+                    yield sse({'type': 'cc_status', 'note': '这个模型不支持「%s」思考深度，这条先用了默认深度' % eff})
+                    eff = ''
+                    continue
                 # 这个版本的 Claude Code 不认 --thinking-display：记住，去掉它马上重试一次
                 if (not run.text_emitted and 'thinking-display' in low
                         and ('unknown option' in low or 'invalid' in low)):

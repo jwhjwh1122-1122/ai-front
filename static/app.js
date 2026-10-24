@@ -147,6 +147,8 @@ function loadMcp() {
   if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
 function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); }
+// 思考深度（Claude Code 的 --effort）。空 = 用默认
+const ccEffort = () => localStorage.getItem('cc-effort') || '';
 // cc 模式下把「设置 → MCP」里开着的服务器交给服务器那边的 Claude Code（只传地址和关掉的工具名）
 const ccMcpServers = () => (mcpServers || []).filter(s => s && s.enabled && /^https?:\/\//.test(s.url || ''))
   .map(s => ({ name: s.name || '', url: s.url, off: s.off || [] }));
@@ -518,7 +520,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, ...rest } = m;
+    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, _thinkTok, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -638,7 +640,7 @@ function extraNote() {
 }
 
 // ============ 气泡 ============
-let currentBubble = null, currentThinkWrap = null, currentThinkContent = null, currentAiRow = null, turnThinking = '';
+let currentBubble = null, currentThinkWrap = null, currentThinkContent = null, currentAiRow = null, turnThinking = '', turnThinkTok = 0;
 let wantMore = false, moreRounds = 0;
 const MAX_MORE = 3;
 
@@ -768,6 +770,13 @@ function startAiBubble(idx) {
   row.innerHTML = `${ah}<div class="bubble-wrap"></div>`;
   msgBox().appendChild(row); currentAiRow = row;
   return row.querySelector('.bubble-wrap');
+}
+// 「已思考 · 想了约 1.2k tok → 摘要 300 字」：一眼看出这轮想了多少、压成了多少
+function thinkLabel(text, tok) {
+  const n = [...String(text || '').replace(/\s/g, '')].length;
+  if (!tok) return '已思考';
+  const t = tok < 1000 ? tok + ' tok' : (tok / 1000).toFixed(1) + 'k tok';
+  return n ? `已思考 · 想了约 ${t} → 摘要 ${n} 字` : `已思考 · 想了约 ${t}（这轮没给摘要）`;
 }
 function thinkBlock(wrap, text, saved) {
   const t = document.createElement('div'); t.className = 'thinking-wrap';
@@ -973,12 +982,13 @@ let abortController = null;
 async function streamResponse(wrap, hist) {
   wrap._segEls = []; wrap._segTxt = [];   // 工具轮之后接着说，新起一组气泡
   const ccTools = {}, ccTrace = [];       // cc 模式下他在服务器上调用的工具
+  let thinkTok = 0;                       // Claude Code 估算的思考 token
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
   const ac = new AbortController();
   abortController = ac;
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers() })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort() })
   });
   if (!resp.ok) {
     // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试
@@ -1018,6 +1028,7 @@ async function streamResponse(wrap, hist) {
           if (d.type === 'message_start') absorb(d.message?.usage);
           else if (d.type === 'cc_status') showCcStatus(wrap, d);
           else if (d.type === 'cc_tool') onCcTool(wrap, d, ccTools, ccTrace);
+          else if (d.type === 'cc_think') thinkTok = Number(d.tokens) || 0;
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
             if (b.type === 'tool_use') {
@@ -1075,10 +1086,18 @@ async function streamResponse(wrap, hist) {
   const contentBlocks = keys.map(k => { const { _json, _rb, ...c } = blocks[k]; return c; });
   const toolUses = keys.map(k => blocks[k]).filter(b => b.type === 'tool_use')
     .map(b => ({ id: b.id, name: b.name, input: b.input, rb: b._rb }));
+  // 想了但一个字摘要都没给（比如这个模型只给进度）：也建个框，说明想了多少
+  if (!currentThinkWrap && thinkTok > 0 && !thinkingText) {
+    thinkBlock(wrap, '', false);
+    const first = wrap.querySelector('.cc-tool, .bubble');
+    if (first && currentThinkWrap) wrap.insertBefore(currentThinkWrap, first);
+    if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
+  }
   if (currentThinkWrap) {
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
-    const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = '已思考';
+    const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(thinkingText, thinkTok);
   }
+  turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
   if (!responseText && !hadTool && stopReason !== 'tool_use' && !ac.signal.aborted) {
     // 以前这里什么都不显示，气泡就空着。给句话，只显示不存进记录（重发不会让他看到两遍）
@@ -1167,9 +1186,13 @@ async function runToolLoop(wrap, origLen) {
   }
   const extraMsgs = work.slice(origLen).map(sanitize);
   if (extraMsgs.length) messages.splice(origLen, 0, ...extraMsgs);
-  if (turnThinking)
+  if (turnThinking || turnThinkTok)
     for (let i = messages.length - 1; i >= 0; i--)
-      if (messages[i].role === 'assistant' && messages[i].content) { messages[i]._thinking = turnThinking.slice(0, 3000); break; }
+      if (messages[i].role === 'assistant' && messages[i].content) {
+        if (turnThinking) messages[i]._thinking = turnThinking.slice(0, 3000);
+        if (turnThinkTok) messages[i]._thinkTok = turnThinkTok;
+        break;
+      }
   saveConv(); refreshHome();
   return finalText;
 }
@@ -1257,6 +1280,10 @@ function showCcStatus(wrap, d) {
       host.appendChild(el);
     }
   }
+  if (d.note) {
+    const el = document.createElement('div'); el.className = 'mcp-warn'; el.style.color = 'var(--text-muted)';
+    el.textContent = d.note; wrap.appendChild(el);
+  }
   if (Array.isArray(d.mcp)) {
     const bad = d.mcp.filter(m => m.status && !['connected', 'pending'].includes(m.status));
     if (bad.length) {
@@ -1296,7 +1323,7 @@ async function sendMsg(fromCtx) {
   saveConv();
   if (hasImg) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
   catch (e) { turnError(wrap, e); }
@@ -1320,7 +1347,7 @@ async function sendComposed(text, imgs, opts) {
   addUserBubble(text, imgs[0] || null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null);
   saveConv();
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
   catch (e) { turnError(wrap, e); }
@@ -1338,7 +1365,7 @@ async function regenAt(row) {
   [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= idx) r.remove(); });
   if (!messages.length || messages[messages.length - 1].role !== 'user') return;
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
   const seq = beginTurn();
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
@@ -1422,7 +1449,10 @@ function loadConv(id) {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
       if (!text && !msg._thinking) return;
       const wrap = startAiBubble(i);
-      if (msg._thinking) thinkBlock(wrap, msg._thinking, true);
+      if (msg._thinking) {
+        thinkBlock(wrap, msg._thinking, true);
+        const sp = wrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(msg._thinking, msg._thinkTok);
+      }
       if (Array.isArray(msg._tools)) msg._tools.forEach(t => wrap.appendChild(toolRow(t)));
       if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
       if (text) {

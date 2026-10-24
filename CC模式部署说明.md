@@ -109,6 +109,7 @@
 | `CC_MAX_CONCURRENT` | 同时最多跑几个 Claude Code，默认 `1`。2GB 内存的机器别调大 |
 | `CC_QUEUE_WAIT` | 上一条还没回完时，新消息最多排队等几秒，默认 `20`。等不到会提示「他还在回上一条消息」，不会无限堆积 |
 | `CC_LEAN_ENV` | 默认开：没设过的话自动补上 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`、`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`、`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1`（聊天用不到，省资源）。设成 `0` 关掉 |
+| `CC_EFFORT` | 思考深度的默认值（`low` / `medium` / `high` / `xhigh` / `max`）。网页「设置 → 模型 → 思考深度」选了就以网页为准；模型不支持选的深度时，这一条自动退回默认并提示 |
 | `CC_THINKING_DISPLAY` | 思考怎么显示，默认 `summarized`（能看到他的思考摘要）。新版 Claude Code 在服务器上运行时默认不给思考文字，所以要这个。可选 `highlights`、`omitted`，设成 `off` 就不加 |
 | `TZ` | 时区，默认北京时间（`Asia/Shanghai`）。一般不用设 |
 | `CC_WEB_MCP` | 默认会把网页「设置 → MCP」里你自己加、并且开着的服务器也交给 Claude Code（关掉的工具同样不给用；和记忆库同地址的会跳过）。设成 `0` 不交 |

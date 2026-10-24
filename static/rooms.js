@@ -1457,7 +1457,7 @@ async function callTurn(text, silentUser) {
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
-        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers()
+        _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort()
       })
     });
     if (r.status === 429) { csState('他还在忙上一句，等下再说'); return; }
@@ -2749,6 +2749,32 @@ document.addEventListener('DOMContentLoaded', () => {
       el.appendChild(d);
     });
   };
+
+  // 思考深度：对应 Claude Code 的 --effort。只在 cc 模式下起作用
+  (function renderEffort() {
+    const el = $('effort-list'); if (!el) return;
+    const OPTS = [['', '默认', '用模型自己的默认深度'],
+      ['low', '低', '简单闲聊，回得快，几乎不怎么想'],
+      ['medium', '中', '想一想再说，速度和深度折中'],
+      ['high', '高', '更常思考、想得更细，回得慢一点'],
+      ['xhigh', '很高', '认真想，适合要动脑的事，更耗额度'],
+      ['max', '最高', '想到最深，最慢也最耗额度；有的模型不支持，会自动退回默认']];
+    const cur = localStorage.getItem('cc-effort') || '';
+    const sub = v => { const o = OPTS.find(x => x[0] === v) || OPTS[0]; $('effort-sub').textContent = o[2]; };
+    el.innerHTML = '';
+    OPTS.forEach(([v, label]) => {
+      const d = document.createElement('div');
+      d.className = 'ctx-option' + (v === cur ? ' active' : '');
+      d.textContent = label;
+      d.onclick = () => {
+        if (v) localStorage.setItem('cc-effort', v); else localStorage.removeItem('cc-effort');
+        [...el.children].forEach(x => x.classList.remove('active'));
+        d.classList.add('active'); sub(v);
+      };
+      el.appendChild(d);
+    });
+    sub(cur);
+  })();
 
   document.querySelectorAll('[data-val]').forEach(o => o.onclick = () => {
     document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
