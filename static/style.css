@@ -821,3 +821,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .emoji-item.broken{outline:2px solid #e8506a;outline-offset:-2px;border-radius:10px;}
 .emoji-item.broken .emoji-name{color:#e8506a;}
 .emoji-item.broken .emoji-name::after{content:' · 坏了';}
+
+/* 顶栏线条图标（电话、搜索）：和 ☰ ✦ 一样的大小和粗细，颜色跟主题 */
+.theme-btn.tb-ico{color:var(--text);}
+.theme-btn.tb-ico svg{width:15px;height:15px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
