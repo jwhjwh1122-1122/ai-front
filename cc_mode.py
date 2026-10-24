@@ -846,6 +846,7 @@ class _Run:
         self.result = None
         self.session_id = None
         self.mcp = []          # [{name, status}]，来自 init
+        self.tools = {}        # 工具调用 id -> {'name', 'input_sent'}，给网页显示「调用了什么、结果是什么」
 
     def _open_text(self):
         if self.text_open:
@@ -887,6 +888,47 @@ class _Run:
             except Exception as e:
                 print(f'[cc] 保存 session 失败: {e}', flush=True)
 
+    # ---------- 工具调用：只给网页看，网页不会自己去执行 ----------
+    TOOL_TEXT_MAX = 4000
+
+    def _tool_start(self, tid, name):
+        if not tid or tid in self.tools:
+            return []
+        self.tools[tid] = {'name': name, 'input_sent': False}
+        return [sse({'type': 'cc_tool', 'phase': 'start', 'id': tid, 'name': name})]
+
+    def _tool_input(self, tid, name, inp):
+        out = self._tool_start(tid, name)
+        rec = self.tools.get(tid)
+        if rec is None or rec['input_sent']:
+            return out
+        rec['input_sent'] = True
+        try:
+            txt = json.dumps(inp if inp is not None else {}, ensure_ascii=False, indent=1)
+        except Exception:
+            txt = str(inp)
+        if len(txt) > self.TOOL_TEXT_MAX:
+            txt = txt[:self.TOOL_TEXT_MAX] + '\n…（太长，截断了）'
+        return out + [sse({'type': 'cc_tool', 'phase': 'input', 'id': tid, 'input': txt})]
+
+    def _tool_result(self, tid, content, is_error):
+        if isinstance(content, str):
+            txt = content
+        else:
+            parts = []
+            for b in content or []:
+                if isinstance(b, dict):
+                    if b.get('type') == 'text':
+                        parts.append(b.get('text', ''))
+                    elif b.get('type') == 'image':
+                        parts.append('[图片]')
+            txt = '\n'.join(parts)
+        if len(txt) > self.TOOL_TEXT_MAX:
+            txt = txt[:self.TOOL_TEXT_MAX] + '\n…（太长，截断了）'
+        name = (self.tools.get(tid) or {}).get('name', '')
+        return [sse({'type': 'cc_tool', 'phase': 'result', 'id': tid, 'name': name,
+                     'result': txt, 'is_error': bool(is_error)})]
+
     def handle(self, d):
         """处理 stream-json 的一行，返回要发给前端的 SSE 片段列表。"""
         t = d.get('type')
@@ -914,6 +956,13 @@ class _Run:
                 if self.text_emitted:
                     self.need_sep = True
                 return []
+            if et == 'content_block_start':
+                cb = ev.get('content_block') or {}
+                if cb.get('type') == 'tool_use':
+                    if self.text_emitted:
+                        self.need_sep = True   # 工具后面再说的话另起一个气泡
+                    return self._tool_start(cb.get('id'), cb.get('name') or '')
+                return []
             if et == 'content_block_delta':
                 dl = ev.get('delta') or {}
                 if dl.get('type') == 'text_delta':
@@ -928,11 +977,15 @@ class _Run:
         if t == 'assistant':
             # 兜底：如果这条消息没有逐字流（老版本 CLI 或没开 partial），就整段发
             msg = d.get('message') or {}
+            tool_out = []
+            for b in msg.get('content') or []:
+                if isinstance(b, dict) and b.get('type') == 'tool_use':
+                    tool_out += self._tool_input(b.get('id'), b.get('name') or '', b.get('input'))
             if msg.get('id') and msg['id'] in self.streamed_ids:
                 if self.text_emitted:
                     self.need_sep = True
-                return []
-            out = []
+                return tool_out
+            out = tool_out
             for b in msg.get('content') or []:
                 if b.get('type') == 'text':
                     out += self.text(b.get('text', ''))
@@ -942,6 +995,12 @@ class _Run:
                 self.streamed_ids.add(msg['id'])
             if self.text_emitted:
                 self.need_sep = True
+            return out
+        if t == 'user':
+            out = []
+            for b in (d.get('message') or {}).get('content') or []:
+                if isinstance(b, dict) and b.get('type') == 'tool_result':
+                    out += self._tool_result(b.get('tool_use_id'), b.get('content'), b.get('is_error'))
             return out
         if t == 'result':
             self._sid(d)
@@ -1166,6 +1225,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                         'dur': round(dur, 1), 'model': pick_model(model, upstream_cfg) or 'default',
                         'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
                         'skipped_dup': skipped, 'mcp': run.mcp, 'error': err_short,
+                        'tools': [v['name'] for v in run.tools.values()][:30],
                         'peak_mb': round(peak / 1048576), 'tokens': {
                             'in': u.get('input_tokens', 0), 'out': u.get('output_tokens', 0),
                             'cr': u.get('cache_read_input_tokens', 0),

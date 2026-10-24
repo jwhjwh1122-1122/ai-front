@@ -518,7 +518,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, ...rest } = m;
+    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -972,6 +972,7 @@ async function attachVoiceReply(wrap, text) {
 let abortController = null;
 async function streamResponse(wrap, hist) {
   wrap._segEls = []; wrap._segTxt = [];   // 工具轮之后接着说，新起一组气泡
+  const ccTools = {}, ccTrace = [];       // cc 模式下他在服务器上调用的工具
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
   const ac = new AbortController();
   abortController = ac;
@@ -1016,6 +1017,7 @@ async function streamResponse(wrap, hist) {
           const d = JSON.parse(raw);
           if (d.type === 'message_start') absorb(d.message?.usage);
           else if (d.type === 'cc_status') showCcStatus(wrap, d);
+          else if (d.type === 'cc_tool') onCcTool(wrap, d, ccTools, ccTrace);
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
             if (b.type === 'tool_use') {
@@ -1042,6 +1044,9 @@ async function streamResponse(wrap, hist) {
               if (!currentThinkWrap) thinkBlock(wrap, '', false);
               thinkingText += dl.thinking;
               if (currentThinkContent) currentThinkContent.textContent = thinkingText;
+              // 收起时也能看到他正在想的最后一句
+              const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');
+              if (hs) { const ln = thinkingText.trim().split(/\n+/).pop() || ''; hs.textContent = '思考中：' + ln.slice(-40); }
             } else if (dl.type === 'signature_delta') blk.signature = (blk.signature || '') + dl.signature;
             else if (dl.type === 'input_json_delta') blk._json += dl.partial_json;
           } else if (d.type === 'content_block_stop') {
@@ -1079,6 +1084,10 @@ async function streamResponse(wrap, hist) {
     // 以前这里什么都不显示，气泡就空着。给句话，只显示不存进记录（重发不会让他看到两遍）
     currentBubble = null;
     updateBubble(wrap, gotDone ? '（他这次没出声，可以再说一句）' : '（连接断了，他可能没说完。直接再发一句就行）', true);
+  }
+  if (ccTrace.length && messages.length && messages[messages.length - 1].role === 'assistant') {
+    const cut = x => x == null ? x : (x.length > 1500 ? x.slice(0, 1500) + '…' : x);
+    messages[messages.length - 1]._tools = ccTrace.map(t => ({ name: t.name, input: cut(t.input), result: cut(t.result), err: t.err }));
   }
   if (responseText) {
     // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
@@ -1183,6 +1192,54 @@ function endTurn(seq) {
   isTyping = false;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '↑');
   showTypingTitle(false);
+}
+// ============ 他调用工具：一行显示「调用了什么」，点开看参数和结果（像 Claude app 那样） ============
+const TOOL_SERVER = { ob: '记忆库', lin: '家里' };
+const TOOL_CN = {
+  breath: '想起点什么', hold: '记下来', grow: '整理进记忆', dream: '做梦', letter_write: '写信', letter_read: '读信', plan: '记个约定',
+  write_note: '写碎碎念', post_moment: '发朋友圈', read_moments: '看朋友圈', react_moment: '朋友圈点赞/评论',
+  write_fault: '记犯错本', write_timeline: '写时间线', write_calendar: '写日历', keep_quote: '收一句话',
+  lin_status: '改状态', get_memories: '翻时光墙', view_memory: '看照片', my_drawer: '放进抽屉',
+  library_list: '看资料库', library_read: '读资料', room_books: '看书架', room_read_page: '翻书', room_highlight: '划线',
+  room_read_tags: '看标签', room_write_tag: '贴标签', call_her: '给你打电话', desire_state: '看自己的数值',
+  desire_adjust: '改数值', desire_note: '给数值留话', desire_feed: '记下在想的事', desire_vent: '自己解决',
+  desire_grudge: '记一笔账', desire_ack: '标记说出口了', desire_event: '心情动了一下',
+  WebSearch: '上网搜', WebFetch: '看网页', Read: '读文件', ToolSearch: '找工具',
+};
+function toolLabel(name) {
+  const m = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name || '');
+  if (m) {
+    const srv = TOOL_SERVER[m[1]] || m[1];
+    return (TOOL_CN[m[2]] ? TOOL_CN[m[2]] + ' · ' : '') + srv + ' / ' + m[2];
+  }
+  return TOOL_CN[name] ? `${TOOL_CN[name]} · ${name}` : (name || '工具');
+}
+function toolRow(t) {
+  const el = document.createElement('div'); el.className = 'cc-tool';
+  el.innerHTML = `<div class="cc-tool-head"><span class="ct-state"></span><span class="ct-name"></span><span class="ct-arrow">▸</span></div>
+    <div class="cc-tool-body"><div class="ct-label">参数</div><pre class="ct-pre ct-in"></pre><div class="ct-label">结果</div><pre class="ct-pre ct-out"></pre></div>`;
+  el.querySelector('.ct-name').textContent = toolLabel(t.name);
+  el.querySelector('.cc-tool-head').onclick = () => el.classList.toggle('open');
+  paintTool(el, t);
+  return el;
+}
+function paintTool(el, t) {
+  const st = el.querySelector('.ct-state');
+  st.className = 'ct-state ' + (t.result == null ? 'run' : t.err ? 'bad' : 'ok');
+  st.textContent = t.result == null ? '' : t.err ? '✗' : '✓';
+  el.querySelector('.ct-in').textContent = t.input == null ? '（等他写完参数…）' : (t.input === '{}' ? '（没有参数）' : t.input);
+  el.querySelector('.ct-out').textContent = t.result == null ? '（还在跑…）' : (t.result || '（空）');
+}
+function onCcTool(wrap, d, tools, trace) {
+  let t = tools[d.id];
+  if (!t) {
+    t = tools[d.id] = { name: d.name || '', input: null, result: null, err: false };
+    t.el = toolRow(t); wrap.appendChild(t.el); trace.push(t);
+    currentBubble = null; scrollBottom();
+  }
+  if (d.phase === 'input') t.input = d.input;
+  if (d.phase === 'result') { t.result = d.result || ''; t.err = !!d.is_error; if (d.name && !t.name) t.name = d.name; }
+  paintTool(t.el, t);
 }
 // cc 模式的小提示：图片有没有送到他那边、哪个 MCP 没连上。只显示，不存进记录
 function showCcStatus(wrap, d) {
@@ -1366,6 +1423,7 @@ function loadConv(id) {
       if (!text && !msg._thinking) return;
       const wrap = startAiBubble(i);
       if (msg._thinking) thinkBlock(wrap, msg._thinking, true);
+      if (Array.isArray(msg._tools)) msg._tools.forEach(t => wrap.appendChild(toolRow(t)));
       if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
       if (text) {
         const segs = splitSay(text);

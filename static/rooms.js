@@ -126,6 +126,7 @@ async function loadCcRuns() {
     }
     if ((r.mcp || []).length) lines.push('MCP：' + r.mcp.map(m => m.status === 'connected'
       ? `<span class="run-ok">${esc(m.name)} ✓</span>` : `<span class="run-bad">${esc(m.name)} ✗(${esc(m.status)})</span>`).join(' · '));
+    if ((r.tools || []).length) lines.push('调用工具：' + r.tools.map(n => esc(toolLabel(n))).join('、'));
     if (r.skipped_dup) lines.push(`跳过 ${r.skipped_dup} 条他已经收到过的消息（防重复）`);
     if (r.tokens) lines.push(`token：新输入 ${fmtTok((r.tokens.in || 0) + (r.tokens.cw || 0))} · 读缓存 ${fmtTok(r.tokens.cr)} · 输出 ${fmtTok(r.tokens.out)}`);
     if (r.error) lines.push(`<span class="run-bad">错误：${esc(r.error)}</span>`);
