@@ -825,3 +825,33 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 顶栏线条图标（电话、搜索）：和 ☰ ✦ 一样的大小和粗细，颜色跟主题 */
 .theme-btn.tb-ico{color:var(--text);}
 .theme-btn.tb-ico svg{width:15px;height:15px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+
+/* ============ 悬浮随身听：贴边缩成唱片（半透明彩胶，颜色从主题色算） ============ */
+.ipod-disc{position:fixed;z-index:121;width:72px;height:72px;border-radius:50%;display:none;touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;
+  --hl:color-mix(in srgb,var(--accent) 35%,#fff);
+  filter:drop-shadow(0 3px 8px color-mix(in srgb,var(--accent) 35%,transparent));
+  transition:transform .25s cubic-bezier(.3,1.5,.5,1),opacity .2s ease;}
+.ipod-disc.show{display:block;}
+.ipod-disc.side-right{right:-24px;}
+.ipod-disc.side-left{left:-24px;}
+.ipod-disc.enter{transform:scale(.4);opacity:0;}
+.ipod-disc .spin{position:absolute;inset:0;border-radius:50%;animation:discspin 5s linear infinite;
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+  background:
+    conic-gradient(from 20deg,transparent 0 10%,rgba(255,255,255,.55) 15%,transparent 22% 58%,rgba(255,255,255,.4) 64%,transparent 71%),
+    repeating-radial-gradient(circle,color-mix(in srgb,var(--accent) 55%,transparent) 0 1.3px,color-mix(in srgb,var(--accent) 30%,transparent) 1.3px 2.6px);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 70%,#fff);}
+.ipod-disc.paused .spin{animation-play-state:paused;}
+.ipod-disc .label{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;object-fit:cover;border:2px solid var(--hl);background:var(--hl);}
+.ipod-disc .hole{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--bg2,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.3);}
+.ipod-disc .badge{position:absolute;bottom:2px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-size:8px;display:none;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.25);}
+.ipod-disc.side-right .badge{left:4px;}
+.ipod-disc.side-left .badge{right:4px;}
+.ipod-disc.paused .badge{display:grid;}
+@keyframes discspin{to{transform:rotate(360deg)}}
+/* 双击关闭：缩小淡出 */
+.ipod-closing{transition:transform .22s ease,opacity .22s ease!important;transform:scale(.55)!important;opacity:0!important;}
+/* 随身听本体也禁止双击放大页面 */
+.hpod,.ipod-ball{touch-action:none;}
+/* 随身听/唱片里的封面图不接收触摸：不然按在封面上一拖，会变成「拖图片」，拖动/贴边就失效了 */
+.hpod img,.ipod-ball img,.ipod-disc img{pointer-events:none;-webkit-user-drag:none;user-drag:none;-webkit-touch-callout:none;}

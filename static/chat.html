@@ -676,7 +676,7 @@ window.addEventListener('error', function (e) {
 <div class="hpod" id="ipod-bar" style="bottom:110px;">
   <div class="hscreen">
     <div class="hstop"><b>Now Playing</b><div class="r"><span class="pz" id="hb-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
-    <div class="hbody"><img class="hcover" id="hb-cover" src="" alt=""><div class="hmeta"><div class="hnm" id="hb-nm">—</div><div class="har" id="hb-ar">—</div></div></div>
+    <div class="hbody"><img class="hcover" id="hb-cover" src="" alt="" draggable="false"><div class="hmeta"><div class="hnm" id="hb-nm">—</div><div class="har" id="hb-ar">—</div></div></div>
     <div class="hprog"><span id="hb-cur">0:00</span><div class="htrack"><div class="hfill" id="hb-fill"></div></div><span id="hb-rem">0:00</span></div>
   </div>
   <div class="hwheel"><span class="hmenu">MENU</span>
@@ -686,13 +686,19 @@ window.addEventListener('error', function (e) {
     <span class="hhub"></span></div>
 </div>
 
+<!-- 贴边后缩成的唱片（半透明彩胶，跟主题色）。单击弹回随身听，双击关掉音乐，上下拖沿边移动，往外拖弹回 -->
+<div class="ipod-disc" id="ipod-disc" style="bottom:110px;">
+  <div class="spin"><img class="label" id="disc-cover" src="" alt="" draggable="false"><div class="hole"></div></div>
+  <span class="badge">&#9654;</span>
+</div>
+
 <div class="ipod-ball" id="ipod-ball" style="bottom:110px;">
   <div class="ib-scale">
     <div class="ipod">
       <div class="screen">
         <div class="scr-top"><b>Now Playing</b><div class="r"><span class="pz" id="ib-pz">&#10074;&#10074;</span><span class="bt"></span></div></div>
         <div class="scr-body">
-          <img class="scr-cover" id="ib-cover" src="" alt="">
+          <img class="scr-cover" id="ib-cover" src="" alt="" draggable="false">
           <div class="scr-meta"><div class="nm" id="ib-nm">—</div><div class="ar" id="ib-ar">—</div></div>
         </div>
         <div class="scr-prog"><span id="ib-cur">0:00</span><div class="scr-track"><div class="scr-fill" id="ib-fill"></div></div><span id="ib-rem">0:00</span></div>

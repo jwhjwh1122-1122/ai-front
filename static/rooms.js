@@ -496,14 +496,32 @@ function ipodSend(cmd) {
   if (f && f.contentWindow) { try { f.contentWindow.postMessage({ __ipodCmd: 1, cmd }, '*'); } catch (e) { } }
 }
 function setText(id, v) { const e = document.getElementById(id); if (e && v != null) e.textContent = v; }
+// 贴边状态：{side:'left'|'right', bottom}，记住，下次有歌时还是唱片
+let _ipodDock = null;
+try { _ipodDock = JSON.parse(localStorage.getItem('ipod-dock') || 'null'); } catch (e) { _ipodDock = null; }
+let _ipodKilledAt = 0;
+function saveDock() { try { if (_ipodDock) localStorage.setItem('ipod-dock', JSON.stringify(_ipodDock)); else localStorage.removeItem('ipod-dock'); } catch (e) { } }
+function placeDisc() {
+  const d = $('ipod-disc'); if (!d || !_ipodDock) return;
+  d.classList.toggle('side-left', _ipodDock.side === 'left');
+  d.classList.toggle('side-right', _ipodDock.side !== 'left');
+  d.style.left = ''; d.style.right = '';
+  d.style.bottom = Math.min(window.innerHeight - 80, Math.max(8, _ipodDock.bottom || 110)) + 'px';
+}
 function refreshIpodBall() {
   const cur = ipodEl(); if (!cur) return;
+  const disc = $('ipod-disc');
   const panelOpen = $('netease') && $('netease').classList.contains('open');
   const has = _ipodNP && _ipodNP.song;
   ipodBoth().forEach(el => el.classList.remove('show'));
+  if (disc) disc.classList.remove('show');
   if (!has || panelOpen) return;
-  cur.classList.add('show');
   const sg = _ipodNP.song, playing = !!_ipodNP.playing;
+  if (_ipodDock && disc) {
+    placeDisc(); disc.classList.add('show');
+    disc.classList.toggle('paused', !playing);
+    const dc = $('disc-cover'); if (dc && sg.cover && dc.src !== sg.cover) dc.src = sg.cover;
+  } else cur.classList.add('show');
   const pzHtml = playing ? '&#10074;&#10074;' : '&#9654;';
   // 两套 DOM 一起喂，切换造型时不用重新拉数据
   [['ib-cover', 'ib-nm', 'ib-ar', 'ib-fill', 'ib-cur', 'ib-rem', 'ib-pz'],
@@ -520,27 +538,105 @@ function refreshIpodBall() {
 window.addEventListener('message', e => {
   const d = e.data;
   if (!d || !d.__ipod || d.type !== 'np') return;
+  if (Date.now() - _ipodKilledAt < 1500) return;   // 刚关掉，播放器卸载前最后几条消息不算
   _ipodNP = d;
   refreshIpodBall();
 });
+
+// ---------- 单击 / 双击：单击等 0.3 秒确认不是双击再执行；双击 = 整个关掉 ----------
+let _tapT = null, _tapAt = 0;
+function ipodTap(single) {
+  const now = Date.now();
+  if (_tapT && now - _tapAt < 300) { clearTimeout(_tapT); _tapT = null; ipodCloseAll(); return; }
+  clearTimeout(_tapT);
+  _tapAt = now;
+  _tapT = setTimeout(() => { _tapT = null; if (single) single(); }, 300);
+}
+// 双击：停掉音乐、卸载播放器、收起悬浮窗（像把程序划掉）。再开听音房会重新加载
+function ipodCloseAll() {
+  const els = [...ipodBoth(), $('ipod-disc')].filter(x => x && x.classList.contains('show'));
+  els.forEach(x => x.classList.add('ipod-closing'));
+  if (navigator.vibrate) try { navigator.vibrate(15); } catch (_) { }
+  setTimeout(() => {
+    ipodSend('pause');
+    const f = $('netease-frame');
+    if (f) { f.src = 'about:blank'; f.style.visibility = 'hidden'; }
+    _ipodKilledAt = Date.now(); _ipodNP = null;
+    els.forEach(x => x.classList.remove('ipod-closing', 'show'));
+    refreshIpodBall();
+    if (window.toast) toast('音乐关掉了 · 想听再去听音房');
+  }, 230);
+}
+// 随身听本体上点到哪里：转盘分区跟真 iPod 一样，屏幕=打开播放器，其他地方单击不做事（但双击照样关）
+function ipodZoneAction(b, x, y) {
+  const wheel = b.querySelector('.wheel') || b.querySelector('.hwheel');
+  const scr = b.querySelector('.screen') || b.querySelector('.hscreen');
+  const inside = el => { if (!el) return null; const r = el.getBoundingClientRect(); return (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) ? r : null; };
+  const wr = inside(wheel);
+  if (wr) {
+    const dx = (x - wr.left) / wr.width - .5, dy = (y - wr.top) / wr.height - .5;
+    if (Math.hypot(dx, dy) < .22) return openNetease;
+    if (Math.abs(dx) > Math.abs(dy)) return () => ipodSend(dx < 0 ? 'prev' : 'next');
+    if (dy > 0) return () => ipodSend('toggle');
+    return openNetease;
+  }
+  if (inside(scr)) return openNetease;
+  return null;
+}
+// 贴边：缩成唱片
+function dockIpod(b, side) {
+  const h = b.offsetHeight;
+  const bottom = parseInt(b.style.bottom || '110', 10) + h / 2 - 36;
+  _ipodDock = { side, bottom: Math.round(bottom) }; saveDock();
+  refreshIpodBall();
+  const d = $('ipod-disc');
+  if (d) { d.classList.add('enter'); requestAnimationFrame(() => requestAnimationFrame(() => d.classList.remove('enter'))); }
+  if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
+}
+// 弹回随身听；给了手指位置就放在手指下面，否则放回贴的那一边
+function undockIpod(px, py) {
+  const side = _ipodDock ? _ipodDock.side : 'right', db = _ipodDock ? _ipodDock.bottom : 110;
+  _ipodDock = null; saveDock();
+  const b = ipodEl(); if (!b) return;
+  b.classList.add('show');
+  const w = b.offsetWidth || 170, h = b.offsetHeight || 56;
+  let right, bottom;
+  if (px != null) { right = window.innerWidth - px - w / 2; bottom = window.innerHeight - py - h / 2; }
+  else { right = side === 'left' ? window.innerWidth - w - 12 : 12; bottom = db + 36 - h / 2; }
+  right = Math.min(window.innerWidth - w - 8, Math.max(8, right));
+  bottom = Math.min(window.innerHeight - h - 8, Math.max(8, bottom));
+  ipodBoth().forEach(x => { x.style.right = right + 'px'; x.style.bottom = bottom + 'px'; });
+  try { localStorage.setItem('ipod-ball-bottom', Math.round(bottom)); localStorage.setItem('ipod-ball-right', Math.round(right)); } catch (_) { }
+  refreshIpodBall();
+}
+function bindIpodDisc() {
+  const d = $('ipod-disc'); if (!d || d._bound) return; d._bound = true;
+  let sx = 0, sy = 0, startB = 0, moved = false, gone = false;
+  d.addEventListener('pointerdown', e => {
+    sx = e.clientX; sy = e.clientY; moved = false; gone = false;
+    startB = parseInt(d.style.bottom || '110', 10);
+    try { d.setPointerCapture(e.pointerId); } catch (_) { }
+  });
+  d.addEventListener('pointermove', e => {
+    if (!e.buttons || gone) return;
+    const dx = e.clientX - sx, dy = sy - e.clientY;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
+    if (!moved) return;
+    const away = (_ipodDock && _ipodDock.side === 'left') ? dx : -dx;
+    if (away > 40) { gone = true; undockIpod(e.clientX, e.clientY); return; }   // 往屏幕里拖：弹回随身听
+    d.style.bottom = Math.min(window.innerHeight - 80, Math.max(8, startB + dy)) + 'px';   // 上下拖：沿着边移动
+  });
+  d.addEventListener('pointerup', () => {
+    if (gone) return;
+    if (!moved) { ipodTap(() => undockIpod()); return; }   // 单击弹回，双击关掉
+    if (_ipodDock) { _ipodDock.bottom = parseInt(d.style.bottom, 10); saveDock(); }
+  });
+}
 function bindIpodBall() {
+  bindIpodDisc();
   ipodBoth().forEach(b => {
     if (b._bound) return; b._bound = true;
     let moved = false, sx = 0, sy = 0, startBottom = 0, startRight = 0, pressT = null, longPressed = false;
-    const wheel = b.querySelector('.wheel') || b.querySelector('.hwheel');
-    if (wheel) wheel.addEventListener('click', e => {
-      e.stopPropagation();
-      if (moved || longPressed) return;
-      // 转盘分区跟真 iPod 一样：左=上一首 右=下一首 下=播放/暂停 中间/MENU=回播放器
-      const r = wheel.getBoundingClientRect();
-      const dx = (e.clientX - r.left) / r.width - .5, dy = (e.clientY - r.top) / r.height - .5;
-      if (Math.hypot(dx, dy) < .22) { openNetease(); return; }
-      if (Math.abs(dx) > Math.abs(dy)) ipodSend(dx < 0 ? 'prev' : 'next');
-      else if (dy > 0) ipodSend('toggle');
-      else openNetease();
-    });
-    const scr = b.querySelector('.screen') || b.querySelector('.hscreen');
-    if (scr) scr.addEventListener('click', e => { e.stopPropagation(); if (!moved && !longPressed) openNetease(); });
     b.addEventListener('pointerdown', e => {
       moved = false; longPressed = false; sx = e.clientX; sy = e.clientY;
       startBottom = parseInt(b.style.bottom || '110', 10);
@@ -565,24 +661,34 @@ function bindIpodBall() {
       const dy = sy - e.clientY, dx = sx - e.clientX;
       if (Math.abs(dy) > 8 || Math.abs(dx) > 8) { moved = true; clearTimeout(pressT); }   // 手抖不算拖
       if (moved) {
-        // 全屏任意位置，只留 8px 边距，别飞出屏幕
+        // 上下留 8px；左右允许推出去半个身子——推出边就是要贴边
         const w = b.offsetWidth, h = b.offsetHeight;
         const nb = Math.min(window.innerHeight - h - 8, Math.max(8, startBottom + dy));
-        const nr = Math.min(window.innerWidth - w - 8, Math.max(8, startRight + dx));
+        const nr = Math.min(window.innerWidth - w * .5, Math.max(-w * .5, startRight + dx));
         b.style.bottom = nb + 'px';
         b.style.right = nr + 'px';
       }
     });
-    b.addEventListener('pointerup', () => {
+    b.addEventListener('pointerup', e => {
       clearTimeout(pressT);
-      if (moved) {
-        try {
-          localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10));
-          localStorage.setItem('ipod-ball-right', parseInt(b.style.right, 10));
-        } catch (_) { }
-        ipodBoth().forEach(x => { x.style.bottom = b.style.bottom; x.style.right = b.style.right; });
+      if (!moved) {
+        if (!longPressed) ipodTap(ipodZoneAction(b, e.clientX, e.clientY));
+        setTimeout(() => { longPressed = false; }, 30);
+        return;
       }
-      setTimeout(() => { moved = false; longPressed = false; }, 30);
+      const r = b.getBoundingClientRect();
+      if (r.right > window.innerWidth + 14) { dockIpod(b, 'right'); moved = false; return; }
+      if (r.left < -14) { dockIpod(b, 'left'); moved = false; return; }
+      // 没推出去：收回到屏幕里（留 8px），记住位置
+      const w = b.offsetWidth;
+      const nr = Math.min(window.innerWidth - w - 8, Math.max(8, parseInt(b.style.right, 10)));
+      b.style.right = nr + 'px';
+      try {
+        localStorage.setItem('ipod-ball-bottom', parseInt(b.style.bottom, 10));
+        localStorage.setItem('ipod-ball-right', nr);
+      } catch (_) { }
+      ipodBoth().forEach(x => { x.style.bottom = b.style.bottom; x.style.right = b.style.right; });
+      setTimeout(() => { moved = false; }, 30);
     });
     const saved = localStorage.getItem('ipod-ball-bottom');
     if (saved) b.style.bottom = saved + 'px';
