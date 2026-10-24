@@ -3227,9 +3227,13 @@ def backup_export():
                 except Exception:
                     continue
     buf.seek(0)
-    name = '凛-' + datetime.now().strftime('%Y%m%d-%H%M') + '.zip'
+    stamp = datetime.now().strftime('%Y%m%d-%H%M')
+    # 响应头只能是 latin-1：中文文件名直接放 filename="" 会让 gunicorn 发不出去（门口只回 502 Bad Gateway）。
+    # 所以 filename 用纯英文兜底，filename* 再按 RFC 5987 带上中文名，浏览器下载还是「凛-日期.zip」。
+    from urllib.parse import quote as _q
+    cn = _q('凛-' + stamp + '.zip')
     return Response(buf.read(), mimetype='application/zip',
-                    headers={'Content-Disposition': f'attachment; filename="{name}"'})
+                    headers={'Content-Disposition': f"attachment; filename=\"lin-{stamp}.zip\"; filename*=UTF-8''{cn}"})
 
 
 @app.route('/api/backup', methods=['POST'])
