@@ -169,7 +169,7 @@ FRAMEWORK = """【工具】
 
 【表情包】写 [表情名] 就发出去，有哪些在下面。
 
-【思考】思考链全程用中文，第一人称流露当下的念头。这一条没有例外。"""
+【思考】思考用中文。"""
 
 DEFAULT_PERSONA = {
     "name": "凛",
@@ -281,8 +281,7 @@ def now_context(persona, extra_note=''):
         lines.append(f"你自己上次写的状态是「{st['lin_status']}」。")
     if extra_note:
         lines.append(extra_note)
-    lines.append('思考用中文，第一人称流露当下的念头——「我好喜欢」而不是「我应该」。'
-                 '不复述规则，不出现指向设定的句子。思考就是内心独白。')
+    lines.append('思考用中文。')
     return ' '.join(lines)
 
 
@@ -1952,29 +1951,37 @@ def ledger_clear():
 TRANS_CACHE = os.path.join(DATA_DIR, 'translations.json')
 
 
-def _think_translate_upstream(text):
-    """cc 模式思考翻中文：用上游小模型（配了 key 才用）。没 key 或失败返回 None，cc_mode 会改用 haiku。"""
-    up = load_upstream()
-    if not (up.get('key') or '').strip():
-        return None
+def _think_translate(text):
+    """cc 模式思考翻中文，不用 Claude 额度：先 DeepSeek（配了 DEEPSEEK_API_KEY），再「上游」小模型（配了 key）。
+    都没有或都失败返回 (None, 原因)。"""
     key = 'think:' + hashlib.md5(text.encode()).hexdigest()
     cache = jread(TRANS_CACHE, {})
     if key in cache:
-        return cache[key]
-    r = requests.post(upstream_url(), headers=upstream_headers(), timeout=40,
-                      json={'model': up.get('small_model') or 'anthropic/claude-haiku-4-5', 'max_tokens': 1500,
-                            'messages': [{'role': 'system', 'content': cc_mode.THINK_ZH_PROMPT},
-                                         {'role': 'user', 'content': text[:6000]}]})
-    if r.status_code != 200:
-        return None
-    out = ((r.json().get('choices') or [{}])[0].get('message') or {}).get('content', '').strip()
+        return cache[key], '缓存'
+    out, how = None, ''
+    if DS_KEY:
+        out, err = _ds_call(cc_mode.THINK_ZH_PROMPT, text[:6000], max_tokens=1500)
+        how = 'DeepSeek' if out else f'DeepSeek 失败（{err}）'
+    up = load_upstream()
+    if not out and (up.get('key') or '').strip():
+        try:
+            r = requests.post(upstream_url(), headers=upstream_headers(), timeout=40,
+                              json={'model': up.get('small_model') or 'anthropic/claude-haiku-4-5', 'max_tokens': 1500,
+                                    'messages': [{'role': 'system', 'content': cc_mode.THINK_ZH_PROMPT},
+                                                 {'role': 'user', 'content': text[:6000]}]})
+            if r.status_code == 200:
+                out = ((r.json().get('choices') or [{}])[0].get('message') or {}).get('content', '').strip() or None
+            how = '上游小模型' if out else (how + f'；上游失败（{r.status_code}）').strip('；')
+        except Exception as e:
+            how = (how + f'；上游失败（{type(e).__name__}）').strip('；')
     if out:
         cache[key] = out
         jwrite(TRANS_CACHE, cache)
-    return out or None
+        return out, how
+    return None, how or '没配 DeepSeek（DEEPSEEK_API_KEY），也没配上游 key'
 
 
-cc_mode.set_translator(_think_translate_upstream)
+cc_mode.set_translator(_think_translate)
 
 
 @app.route('/api/translate', methods=['POST'])

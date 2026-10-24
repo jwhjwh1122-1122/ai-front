@@ -1019,6 +1019,7 @@ async function streamResponse(wrap, hist) {
   const ccTools = {}, ccTrace = [];       // cc 模式下他在服务器上调用的工具
   let thinkTok = 0;                       // Claude Code 估算的思考 token
   let thinkZh = false;                    // 思考原本是外文、已经换成中文译文
+  let thinkHide = '';                     // 外文思考没翻成：不显示、不保存（这里放原因）
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
   const ac = new AbortController();
   abortController = ac;
@@ -1065,6 +1066,7 @@ async function streamResponse(wrap, hist) {
           else if (d.type === 'cc_status') showCcStatus(wrap, d);
           else if (d.type === 'cc_tool') onCcTool(wrap, d, ccTools, ccTrace);
           else if (d.type === 'cc_think') thinkTok = Number(d.tokens) || 0;
+          else if (d.type === 'cc_think_hide') { thinkHide = d.why || '没翻成'; }
           else if (d.type === 'cc_think_zh' && d.text) {
             // 思考原本不是中文：服务器翻好了，整段换成中文（存进记录的也是中文）
             thinkingText = d.text; thinkZh = true;
@@ -1130,6 +1132,8 @@ async function streamResponse(wrap, hist) {
       where: roomCtx ? 'room' : 'chat'
     }).catch(() => { });
   }
+  const hiddenEn = thinkHide ? thinkingText : '';
+  if (thinkHide) thinkingText = '';   // 没翻成的外文思考不存
   if (thinkingText) turnThinking += (turnThinking ? '\n\n' : '') + thinkingText;
   const keys = Object.keys(blocks).map(Number).sort((a, b) => a - b);
   const contentBlocks = keys.map(k => { const { _json, _rb, ...c } = blocks[k]; return c; });
@@ -1142,11 +1146,17 @@ async function streamResponse(wrap, hist) {
     if (first && currentThinkWrap) wrap.insertBefore(currentThinkWrap, first);
     if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
   }
+  if (thinkHide) {
+    // 你要「完全不要英文」：没翻成的外文思考不显示、不存
+    if (currentThinkContent) currentThinkContent.textContent = `这轮他是用英文想的，没翻成中文，就不给你看了。（${thinkHide}）`;
+  }
   if (currentThinkWrap) {
-    // 翻译没成功时，至少把原文给出来
-    if (currentThinkContent && !thinkZh && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
+    // 关掉了翻译（CC_THINK_ZH=0）时没有任何翻译消息：把原文放回去，别一直挂着「稍后翻成中文」
+    if (currentThinkContent && !thinkZh && !thinkHide && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
-    const sp = currentThinkWrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · 已译成中文' : '');
+    const sp = currentThinkWrap.querySelector('.thinking-header span');
+    if (sp) sp.textContent = thinkHide ? `已思考${thinkTok ? ' · 想了约 ' + (thinkTok < 1000 ? thinkTok + ' tok' : (thinkTok / 1000).toFixed(1) + 'k tok') : ''}（英文，没显示）`
+      : thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · 已译成中文' : '');
   }
   turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');

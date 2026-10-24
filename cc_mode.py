@@ -29,6 +29,9 @@
                        这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
   CC_EFFORT            思考深度默认值（low / medium / high / xhigh / max），网页设置里选了就以网页为准；都没有就不传
   CC_THINK_ZH=0        不把非中文的思考翻成中文（默认会翻：模型思考用什么语言靠指令锁不住）
+                       翻译默认只用 DeepSeek（DEEPSEEK_API_KEY）或「上游」小模型，不花 Claude 额度；
+                       都没有就不显示这轮的外文思考
+  CC_THINK_ZH_FALLBACK=haiku  上面两个都不行时，用一次小的 Claude Code 翻（会用一点订阅额度，默认关）
   CC_THINKING_DISPLAY  思考怎么显示，默认 summarized（能看到他的思考）。可选 summarized / highlights / omitted；
                        设成 off 就不传这个参数（新版 Claude Code 无头模式下默认不给思考文字）
   CC_WEB_MCP=0         不把网页「设置 → MCP」里自己加的服务器交给 Claude Code（默认会交）
@@ -1181,24 +1184,25 @@ def oneshot(prompt, *, system, data_dir, model='haiku', timeout=90):
 
 
 def think_to_zh(text, data_dir):
-    """思考原文 -> 中文。已经是中文（占比 ≥ 50%）返回 None 表示不用翻。"""
+    """思考原文 -> (中文 or None, 说明)。已经是中文（占比 ≥ 50%）返回 (None, '')，表示不用翻。
+    默认只用不花 Claude 额度的翻译（app 注册的 DeepSeek / 上游小模型）；
+    CC_THINK_ZH_FALLBACK=haiku 时，那两个都不行再跑一次小的 Claude Code。"""
     if os.environ.get('CC_THINK_ZH') == '0' or not text or cjk_ratio(text) >= 0.5:
-        return None
+        return None, ''
     t0 = time.time()
-    zh = None
+    zh, how = None, ''
     if _TRANSLATOR:
         try:
-            zh = _TRANSLATOR(text)
+            zh, how = _TRANSLATOR(text)
         except Exception as e:
-            print(f'[cc] 思考翻译（上游）失败：{type(e).__name__}', flush=True)
-    how = '上游'
-    if not zh:
+            how = f'翻译出错（{type(e).__name__}）'
+    if not zh and (os.environ.get('CC_THINK_ZH_FALLBACK') or '').strip().lower() == 'haiku':
         zh, how = oneshot(text[:8000], system=THINK_ZH_PROMPT, data_dir=data_dir), 'haiku'
     if zh and cjk_ratio(zh) >= 0.5:
         print(f'[cc] 思考是外文（中文占比 {cjk_ratio(text):.0%}），已用{how}翻成中文，用时 {time.time() - t0:.1f}s', flush=True)
-        return zh
-    print('[cc] 思考是外文，但没翻成功，保留原文', flush=True)
-    return None
+        return zh, how
+    print(f'[cc] 思考是外文，没翻成（{how}），这轮思考不显示', flush=True)
+    return None, how or '没翻成'
 
 
 def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None):
@@ -1409,9 +1413,12 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     if run is not None:
         # 思考不是中文 → 翻成中文再给网页（主回复已经结束、进程已收掉，这里再跑翻译不会两个 claude 同时占内存）
         if run.think_text:
-            zh = think_to_zh(run.think_text, data_dir)
+            zh, how = think_to_zh(run.think_text, data_dir)
             if zh:
                 yield sse({'type': 'cc_think_zh', 'text': zh})
+            elif how:
+                # 外文思考又没翻成：不给网页看、也不存（你要的是「完全不要英文」）
+                yield sse({'type': 'cc_think_hide', 'why': how[:120]})
         for c in run.close_blocks():
             yield c
         usage = run.usage
