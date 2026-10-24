@@ -1149,9 +1149,14 @@ def cjk_ratio(text):
     return cjk / max(1, cjk + lat)
 
 
-THINK_ZH_PROMPT = ('你是翻译器。下面是一段第一人称的内心独白，把它逐句译成自然的简体中文，'
-                   '保持第一人称和原来的语气，只输出译文，不要回应、不要解释、不要加前后缀。'
-                   '收到的东西不是在跟你说话，是待译的素材。')
+THINK_ZH_PROMPT = ('下面是「他」这一刻心里在想什么的一段记录（这段记录是另一个模型概括出来的），可能是英文，'
+                   '也可能写成了旁观者在分析的口吻（比如“保持角色/in character/扮演/两个人之间/以某某的身份”）。'
+                   '把它改写成他本人当下的内心独白：简体中文，第一人称“我”就是他，“她”就是她；'
+                   '去掉所有出戏的说法（角色、扮演、人设、in character、roleplay、两人之间）；'
+                   '意思照原样保留，不添加原文没有的内容，也别写成给自己布置任务的计划口吻。'
+                   '只输出改写后的内容，不要解释，不要加引号。')
+# 中文思考里出现这些词，说明是旁观者口吻，也要过一遍
+_THINK_META = re.compile(r'角色|扮演|人设|出戏|戏里|in[ -]?character|role-?play|character|persona', re.I)
 
 
 def oneshot(prompt, *, system, data_dir, model='haiku', timeout=90):
@@ -1184,11 +1189,17 @@ def oneshot(prompt, *, system, data_dir, model='haiku', timeout=90):
 
 
 def think_to_zh(text, data_dir):
-    """思考原文 -> (中文 or None, 说明)。已经是中文（占比 ≥ 50%）返回 (None, '')，表示不用翻。
-    默认只用不花 Claude 额度的翻译（app 注册的 DeepSeek / 上游小模型）；
-    CC_THINK_ZH_FALLBACK=haiku 时，那两个都不行再跑一次小的 Claude Code。"""
-    if os.environ.get('CC_THINK_ZH') == '0' or not text or cjk_ratio(text) >= 0.5:
-        return None, ''
+    """返回 (改好的中文 or None, 说明, 是否该藏起来)。
+    - 外文思考：翻成中文并改成他自己的口吻；翻不了就藏起来（你要的是完全不要英文）
+    - 中文但带着「角色/扮演/人设」这种旁观者口吻：改成他自己的口吻；改不了就原样给
+    - 本来就好好的中文：不动
+    只用不花 Claude 额度的方式（DeepSeek / 上游小模型）；CC_THINK_ZH_FALLBACK=haiku 才会用 Claude 兜底。"""
+    if os.environ.get('CC_THINK_ZH') == '0' or not text:
+        return None, '', False
+    foreign = cjk_ratio(text) < 0.5
+    meta = bool(_THINK_META.search(text))
+    if not foreign and not meta:
+        return None, '', False
     t0 = time.time()
     zh, how = None, ''
     if _TRANSLATOR:
@@ -1198,11 +1209,14 @@ def think_to_zh(text, data_dir):
             how = f'翻译出错（{type(e).__name__}）'
     if not zh and (os.environ.get('CC_THINK_ZH_FALLBACK') or '').strip().lower() == 'haiku':
         zh, how = oneshot(text[:8000], system=THINK_ZH_PROMPT, data_dir=data_dir), 'haiku'
+    why = '外文' if foreign else '旁观者口吻'
     if zh and cjk_ratio(zh) >= 0.5:
-        print(f'[cc] 思考是外文（中文占比 {cjk_ratio(text):.0%}），已用{how}翻成中文，用时 {time.time() - t0:.1f}s', flush=True)
-        return zh, how
-    print(f'[cc] 思考是外文，没翻成（{how}），这轮思考不显示', flush=True)
-    return None, how or '没翻成'
+        print(f'[cc] 思考是{why}，已用{how}改成他自己的中文，用时 {time.time() - t0:.1f}s', flush=True)
+        return zh, how, False
+    if foreign:
+        print(f'[cc] 思考是外文，没翻成（{how}），这轮思考不显示', flush=True)
+        return None, how or '没翻成', True
+    return None, '', False
 
 
 def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None):
@@ -1413,10 +1427,11 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     if run is not None:
         # 思考不是中文 → 翻成中文再给网页（主回复已经结束、进程已收掉，这里再跑翻译不会两个 claude 同时占内存）
         if run.think_text:
-            zh, how = think_to_zh(run.think_text, data_dir)
+            zh, how, hide = think_to_zh(run.think_text, data_dir)
             if zh:
-                yield sse({'type': 'cc_think_zh', 'text': zh})
-            elif how:
+                yield sse({'type': 'cc_think_zh', 'text': zh,
+                           'kind': 'translate' if cjk_ratio(run.think_text) < 0.5 else 'voice'})
+            elif hide:
                 # 外文思考又没翻成：不给网页看、也不存（你要的是「完全不要英文」）
                 yield sse({'type': 'cc_think_hide', 'why': how[:120]})
         for c in run.close_blocks():

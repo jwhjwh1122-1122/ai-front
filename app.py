@@ -1954,7 +1954,7 @@ TRANS_CACHE = os.path.join(DATA_DIR, 'translations.json')
 def _think_translate(text):
     """cc 模式思考翻中文，不用 Claude 额度：先 DeepSeek（配了 DEEPSEEK_API_KEY），再「上游」小模型（配了 key）。
     都没有或都失败返回 (None, 原因)。"""
-    key = 'think:' + hashlib.md5(text.encode()).hexdigest()
+    key = 'think2:' + hashlib.md5(text.encode()).hexdigest()   # 2 = 连口吻一起改的版本
     cache = jread(TRANS_CACHE, {})
     if key in cache:
         return cache[key], '缓存'

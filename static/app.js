@@ -1069,7 +1069,7 @@ async function streamResponse(wrap, hist) {
           else if (d.type === 'cc_think_hide') { thinkHide = d.why || '没翻成'; }
           else if (d.type === 'cc_think_zh' && d.text) {
             // 思考原本不是中文：服务器翻好了，整段换成中文（存进记录的也是中文）
-            thinkingText = d.text; thinkZh = true;
+            thinkingText = d.text; thinkZh = d.kind === 'voice' ? '已换成他自己的口吻' : '已译成中文';
             if (currentThinkContent) currentThinkContent.textContent = thinkingText;
           }
           else if (d.type === 'content_block_start') {
@@ -1156,7 +1156,7 @@ async function streamResponse(wrap, hist) {
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
     const sp = currentThinkWrap.querySelector('.thinking-header span');
     if (sp) sp.textContent = thinkHide ? `已思考${thinkTok ? ' · 想了约 ' + (thinkTok < 1000 ? thinkTok + ' tok' : (thinkTok / 1000).toFixed(1) + 'k tok') : ''}（英文，没显示）`
-      : thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · 已译成中文' : '');
+      : thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · ' + thinkZh : '');
   }
   turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
