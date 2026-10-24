@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 
-from flask import jsonify, request, send_from_directory
+from flask import Response, abort, jsonify, request
 from werkzeug.utils import secure_filename
 
 IMG_EXTS = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'}
@@ -44,6 +44,40 @@ def sniff(raw):
     if raw[4:8] == b'ftyp' and raw[8:12] in (b'heic', b'heix', b'hevc', b'heim', b'heis', b'mif1', b'msf1'):
         return 'heic'
     return ''
+
+
+SERVE_MIME = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp', 'heic': 'image/heic'}
+STICKER_URL_VER = '2'   # 表情地址带版本号：手机里要是缓存过半截的旧图，换了地址就会重新下载
+
+
+def intact(raw):
+    """文件是不是完整的（看文件尾）。返回 (是否完整, 格式)。"""
+    kind = sniff(raw)
+    tail = raw.rstrip(b'\x00\r\n\t ')
+    if kind == 'jpg':
+        return tail.endswith(b'\xff\xd9'), kind
+    if kind == 'png':
+        return raw.rstrip(b'\x00').endswith(b'IEND\xaeB`\x82'), kind
+    if kind == 'gif':
+        return tail.endswith(b';'), kind
+    if kind == 'webp':
+        return len(raw) >= 12 and int.from_bytes(raw[4:8], 'little') + 8 <= len(raw), kind
+    return bool(kind), kind
+
+
+def serve_file(folder, filename):
+    """整个读出来再发，不走 sendfile：sendfile 在云盘挂载的 /data 上可能只发出半截文件，
+    手机上就会看到图片下半截变成灰块。文件名唯一、内容不会变，所以可以长缓存。"""
+    safe = secure_filename(filename)
+    fp = os.path.join(folder, safe)
+    try:
+        with open(fp, 'rb') as f:
+            raw = f.read()
+    except OSError:
+        abort(404)
+    return Response(raw, mimetype=SERVE_MIME.get(sniff(raw), 'application/octet-stream'),
+                    headers={'Cache-Control': 'public, max-age=2592000, immutable',
+                             'Content-Length': str(len(raw))}, direct_passthrough=True)
 
 
 def chatimg_dir(media_dir):
@@ -78,7 +112,7 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
 
     def _pub(x):
         return {'id': x['id'], 'name': x.get('name', ''), 'owner': x.get('owner', 'lin'),
-                'url': '/stickers/' + x['file']}
+                'url': '/stickers/' + x['file'] + '?v=' + STICKER_URL_VER}
 
     def _save_bytes(raw, ext):
         fn = _new_name('s', ext)
@@ -108,12 +142,12 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
 
     @app.route('/chatimg/<filename>')
     def chat_img_serve(filename):
-        return send_from_directory(img_dir, secure_filename(filename), max_age=86400 * 30)
+        return serve_file(img_dir, filename)
 
     # ---------------- 表情包 ----------------
     @app.route('/stickers/<filename>')
     def sticker_serve(filename):
-        return send_from_directory(stk_dir, secure_filename(filename), max_age=86400 * 30)
+        return serve_file(stk_dir, filename)
 
     @app.route('/api/stickers', methods=['GET'])
     def stickers_get():
@@ -173,6 +207,22 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
             if added:
                 jwrite(stk_file, items)
         return jsonify({'ok': True, 'added': added})
+
+    @app.route('/api/stickers/check', methods=['GET'])
+    def stickers_check():
+        """逐个检查表情文件在服务器上是不是完整的。"""
+        out = []
+        for x in _list():
+            try:
+                with open(os.path.join(stk_dir, secure_filename(x['file'])), 'rb') as f:
+                    raw = f.read()
+                ok, kind = intact(raw)
+                out.append({'id': x['id'], 'name': x.get('name', ''), 'owner': x.get('owner'),
+                            'ok': ok, 'kind': kind, 'size': len(raw)})
+            except OSError:
+                out.append({'id': x['id'], 'name': x.get('name', ''), 'owner': x.get('owner'),
+                            'ok': False, 'kind': '', 'size': 0, 'missing': True})
+        return jsonify({'ok': True, 'items': out, 'broken': sum(1 for x in out if not x['ok'])})
 
     @app.route('/api/stickers/<sid>', methods=['DELETE'])
     def stickers_delete(sid):

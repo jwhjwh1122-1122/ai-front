@@ -9,3 +9,4 @@ threads = 2            # 2GB 内存：一个线程跑 Claude Code，另一个应
 timeout = 180
 graceful_timeout = 30
 keepalive = 15
+sendfile = False       # /data 是云盘挂载，sendfile 可能只发出半截文件（图片下半截变灰）

@@ -31,4 +31,4 @@ COPY . .
 
 EXPOSE 8080
 # 与 zbpack.json / Procfile 的启动命令一致
-CMD ["sh", "-c", "exec gunicorn -w 1 -k gthread --threads 2 --timeout 180 --graceful-timeout 30 --keep-alive 15 --bind :${PORT:-8080} app:app"]
+CMD ["sh", "-c", "exec gunicorn -w 1 -k gthread --threads 2 --no-sendfile --timeout 180 --graceful-timeout 30 --keep-alive 15 --bind :${PORT:-8080} app:app"]

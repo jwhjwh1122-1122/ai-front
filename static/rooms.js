@@ -632,7 +632,7 @@ function renderSplit(which) {
       const sg = splitSay(t);
       if (sg.length > 1) sg.forEach(x => {
         const b = document.createElement('div');
-        b.className = 'bubble ai'; b.dataset.seg = '1';
+        b.className = 'bubble ai' + (isStickerOnly(x) ? ' sticker-only' : ''); b.dataset.seg = '1';
         b.innerHTML = renderBubble(x); w.appendChild(b); currentBubble = b;
       });
       updateBubble(w, t, true, t, currentAiRow); currentBubble = null; currentAiRow = null;
@@ -3041,8 +3041,22 @@ function renderDaysModal() {
     el.appendChild(box);
   });
 }
-let emojiOwner = 'lin', emojiActItem = null;
+let emojiOwner = 'lin', emojiActItem = null, stickerBroken = null;
+// 打开表情面板时检查一次：服务器上哪些表情文件不完整（下半截会变灰），标出来
+async function checkStickers() {
+  if (stickerBroken) return;
+  stickerBroken = new Set();
+  try {
+    const d = await jget('/api/stickers/check');
+    (d.items || []).forEach(x => { if (!x.ok) stickerBroken.add(x.id); });
+    if (stickerBroken.size) {
+      toast(`有 ${stickerBroken.size} 张表情文件不完整，长按删掉再重新上传`);
+      if ($('emoji-panel').classList.contains('open')) renderEmoji();
+    }
+  } catch (e) { stickerBroken = null; }
+}
 function renderEmoji() {
+  checkStickers();
   document.querySelectorAll('.emoji-tab').forEach(t => t.classList.toggle('active', t.dataset.owner === emojiOwner));
   const l = STICKERS[emojiOwner] || [];
   const g = $('emoji-grid');
@@ -3052,7 +3066,7 @@ function renderEmoji() {
   }
   g.innerHTML = '';
   l.forEach(item => {
-    const d = document.createElement('div'); d.className = 'emoji-item';
+    const d = document.createElement('div'); d.className = 'emoji-item' + (stickerBroken && stickerBroken.has(item.id) ? ' broken' : '');
     const im = document.createElement('img'); im.src = item.url; im.alt = item.name; im.loading = 'lazy';
     d.appendChild(im);
     const nm = document.createElement('div'); nm.className = 'emoji-name'; nm.textContent = item.name;

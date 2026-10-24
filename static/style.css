@@ -816,3 +816,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 #page-settings .btn-ghost,#page-settings .btn-solid{background:var(--accent);color:#fff;border:none;}
 #page-settings .btn-ghost:active,#page-settings .btn-solid:active{opacity:.85;}
 #page-settings .usage-refresh{border-color:var(--accent);color:var(--accent);}
+
+/* 表情文件在服务器上不完整 */
+.emoji-item.broken{outline:2px solid #e8506a;outline-offset:-2px;border-radius:10px;}
+.emoji-item.broken .emoji-name{color:#e8506a;}
+.emoji-item.broken .emoji-name::after{content:' · 坏了';}

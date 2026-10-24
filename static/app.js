@@ -798,8 +798,10 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   const rendered = renderBubble(text);
   if (!currentBubble.dataset.seg) currentBubble.innerHTML = rendered;
   currentBubble.classList.remove('typing-cursor');
-  if (!rendered.replace(/<img[^>]*>/g, '').replace(/\s/g, '').length)
+  if (!rendered.replace(/<img[^>]*>/g, '').replace(/\s/g, '').length) {
     currentBubble.style.cssText = 'background:transparent;border:none;box-shadow:none;padding:0';
+    currentBubble.classList.add('sticker-only');
+  }
   const foot = document.createElement('div'); foot.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const time = document.createElement('span'); time.className = 'msg-time'; time.textContent = nowStr();
   foot.appendChild(time);
@@ -1460,7 +1462,7 @@ function loadConv(id) {
         if (segs.length > 1) {
           segs.forEach(sg => {
             const b = document.createElement('div');
-            b.className = 'bubble ai'; b.dataset.seg = '1';
+            b.className = 'bubble ai' + (isStickerOnly(sg) ? ' sticker-only' : ''); b.dataset.seg = '1';
             b.innerHTML = renderBubble(sg);
             wrap.appendChild(b); currentBubble = b;
           });
