@@ -2212,11 +2212,20 @@ def chat_v2():
         if keepalive:
             return Response(cc_mode.keepalive_stream(), mimetype='text/event-stream', headers=sse_headers)
         cc_key = str(data.get('_conv_id') or sid)[:256]
-        return Response(cc_mode.stream_chat(messages=data.get('messages', []),
-                                            system_prompt=system_prompt, key=cc_key,
-                                            data_dir=DATA_DIR, upstream_cfg=up_cfg,
-                                            model=data.get('model')),
-                        mimetype='text/event-stream', headers=sse_headers)
+        # 全局只跑一个 claude：正在跑时短暂排队，等不到就回 429，不让请求无限堆积
+        slot = cc_mode.acquire_slot()
+        if slot is None:
+            return jsonify({'error': cc_mode.BUSY_TEXT, 'busy': True}), 429, {'Retry-After': '10'}
+        try:
+            gen = cc_mode.stream_chat(messages=data.get('messages', []),
+                                      system_prompt=system_prompt, key=cc_key,
+                                      data_dir=DATA_DIR, upstream_cfg=up_cfg,
+                                      model=data.get('model'))
+            return Response(cc_mode.GuardedStream(gen, slot),
+                            mimetype='text/event-stream', headers=sse_headers)
+        except Exception:
+            slot.release()
+            raise
 
     oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(data.get('messages', []))
     user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)

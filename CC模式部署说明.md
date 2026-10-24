@@ -106,6 +106,12 @@
 | `CC_CWD` | Claude Code 的工作目录，默认是数据目录下的 `cc_workspace` |
 | `CC_BIN` | claude 命令的位置，默认就是 `claude` |
 | `CC_KEEP_API_KEY` | 默认会把 `ANTHROPIC_API_KEY` 从 Claude Code 的环境里拿掉，**保证用订阅而不是 API 计费**。设成 `1` 才保留 |
+| `CC_MAX_CONCURRENT` | 同时最多跑几个 Claude Code，默认 `1`。2GB 内存的机器别调大 |
+| `CC_QUEUE_WAIT` | 上一条还没回完时，新消息最多排队等几秒，默认 `20`。等不到会提示「他还在回上一条消息」，不会无限堆积 |
+| `CC_LEAN_ENV` | 默认开：没设过的话自动补上 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`、`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`、`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1`（聊天用不到，省资源）。设成 `0` 关掉 |
+| `CC_NODE_MAX_OLD_SPACE_MB` | **默认不设**。设了才给 Claude Code 加 Node 堆上限（例如 `1024`）；删掉变量即恢复。太小会让长会话直接崩，不建议低于 `768` |
+
+**日志怎么看**：Zeabur 日志里搜 `[cc]`。`启动` 行有模型、是否续会话、会话记录大小、并发数、容器内存；`结束` 行有结果（done / timeout / client_gone）、耗时、Claude Code 进程组内存峰值 `peak_rss`、清理掉的残留进程数 `cleaned`。不记录聊天内容和令牌。
 
 **前端选模型在 cc 模式下也管用了**：聊天界面里选的模型（例如 `anthropic/claude-opus-4-7`）会去掉前面的 `anthropic/` 前缀，变成 `--model claude-opus-4-7` 传给 Claude Code，每条消息都带，续会话（`--resume`）时换模型也会生效。先后顺序是：前端选的模型 → 环境变量 `CC_MODEL` → upstream.json 里的 `cc_model` → 都没有就不传，用 Claude Code 默认模型。模型名里只能有字母、数字和 `. _ : -`，不像模型名的会被忽略。
 

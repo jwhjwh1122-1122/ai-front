@@ -19,9 +19,22 @@
   CC_KEEP_API_KEY=1    默认会把 ANTHROPIC_API_KEY 等从子进程环境里去掉，
                        保证走订阅登录；设为 1 则保留
 
+省内存相关（2GB 小机器，防止容器被 Evicted）：
+  CC_MAX_CONCURRENT    同时最多跑几个 claude，默认 1
+  CC_QUEUE_WAIT        正在跑的时候，新请求最多排队等几秒，默认 20；等不到就返回 429「他还在回上一条」
+  CC_LEAN_ENV=0        关掉下面这几个默认省资源开关（默认开）：
+                         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1（不自动更新/不上报/不拉实验开关）
+                         CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1（不留后台 shell，聊天用不到）
+                         CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1（不给文件改动做快照，聊天用不到）
+                       这些都是「没设才补上」，在 Zeabur 里显式设了别的值会以你的为准
+  CC_NODE_MAX_OLD_SPACE_MB  默认不设。设了才给 claude 加 --max-old-space-size=<值>；
+                       删掉这个变量就恢复原样。太小会让长会话直接崩，不建议低于 768
+
 输出：把 claude 的 stream-json 逐行翻译成前端已经在用的 Anthropic 风格 SSE
 （message_start / content_block_* / message_delta / [DONE]），前端不用改。
 """
+import glob
+import hashlib
 import json
 import os
 import queue
@@ -32,7 +45,8 @@ import threading
 import time
 
 THINK, TEXT = 0, 1
-PING_EVERY = 15          # 秒；没有输出时发 SSE 注释保活，也借此发现客户端断开
+PING_EVERY = 5           # 秒；没有输出时发 SSE 注释保活，也借此尽快发现客户端断开、早点收掉子进程
+MEM_SAMPLE_EVERY = 5     # 秒；跑的时候多久量一次 claude 进程组的内存
 HISTORY_MAX_MSGS = 30    # 第一次（没有 session）时带上的历史条数上限
 HISTORY_MAX_CHARS = 12000
 SYS_ARG_MAX = 100_000    # 系统提示超过这个字节数就改用 --append-system-prompt-file
@@ -64,6 +78,197 @@ def is_cc_mode(upstream_cfg):
     if (os.environ.get('CHAT_BACKEND') or '').strip().lower() == 'cc':
         return True
     return str((upstream_cfg or {}).get('mode') or '').strip().lower() == 'cc'
+
+
+# ------------------------------------------------------------
+# 全局并发限制：一台 2GB 的机器同时只跑一个 claude（Node 进程本身就要几百 MB）
+# ------------------------------------------------------------
+def _env_int(name, default, lo=None):
+    try:
+        v = int(float(os.environ.get(name) or default))
+    except Exception:
+        v = default
+    return max(lo, v) if lo is not None else v
+
+
+MAX_CONCURRENT = _env_int('CC_MAX_CONCURRENT', 1, lo=1)
+_slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+_stat_lock = threading.Lock()
+_stat = {'running': 0, 'waiting': 0}
+BUSY_TEXT = '他还在回上一条消息，等他说完再发一次吧'
+
+
+def concurrency():
+    with _stat_lock:
+        return dict(_stat, max=MAX_CONCURRENT)
+
+
+class Slot:
+    """拿到的一个运行名额。release() 可以重复调用，只会真正还一次。"""
+
+    def __init__(self, waited):
+        self.waited = waited
+        self._done = False
+        self._lock = threading.Lock()
+
+    def release(self):
+        with self._lock:
+            if self._done:
+                return
+            self._done = True
+        with _stat_lock:
+            _stat['running'] = max(0, _stat['running'] - 1)
+        _slots.release()
+
+    def __del__(self):
+        # 兜底：万一响应对象没被正常关闭，被回收时也把名额还回去
+        try:
+            self.release()
+        except Exception:
+            pass
+
+
+def acquire_slot(wait=None):
+    """排队拿名额。最多等 CC_QUEUE_WAIT 秒，拿不到返回 None（调用方回 429）。"""
+    if wait is None:
+        wait = _env_int('CC_QUEUE_WAIT', 20, lo=0)
+    t0 = time.time()
+    ok = False
+    with _stat_lock:
+        _stat['waiting'] += 1
+    try:
+        ok = _slots.acquire(timeout=wait) if wait > 0 else _slots.acquire(blocking=False)
+    finally:
+        with _stat_lock:
+            _stat['waiting'] -= 1
+            if ok:
+                _stat['running'] += 1
+    waited = time.time() - t0
+    st = concurrency()
+    if not ok:
+        print(f'[cc] 忙，排队 {waited:.1f}s 没等到，返回 429 '
+              f'(running={st["running"]}/{st["max"]} waiting={st["waiting"]})', flush=True)
+        return None
+    if waited >= 0.5:
+        print(f'[cc] 排队 {waited:.1f}s 后拿到名额 (running={st["running"]}/{st["max"]})', flush=True)
+    return Slot(waited)
+
+
+class GuardedStream:
+    """包住 stream_chat 生成器：流结束、出错或客户端断开（WSGI 调 close）时，
+    先关生成器（里面会收掉 claude 子进程），再把名额还回去。"""
+
+    def __init__(self, gen, slot):
+        self._gen, self._slot = gen, slot
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            return next(self._gen)
+        except BaseException:
+            self._slot.release()
+            raise
+
+    def close(self):
+        try:
+            self._gen.close()
+        finally:
+            self._slot.release()
+
+
+# ------------------------------------------------------------
+# 内存 / 进程组工具（只读 /proc 和 cgroup，不记任何聊天内容）
+# ------------------------------------------------------------
+def _read_int(path):
+    try:
+        with open(path) as f:
+            s = f.read().strip()
+        return None if s == 'max' else int(s)
+    except Exception:
+        return None
+
+
+def _mb(b):
+    return '?' if b is None else f'{b / 1048576:.0f}MB'
+
+
+def container_mem():
+    """容器（cgroup）已用/上限，读不到的写 ?。"""
+    used = _read_int('/sys/fs/cgroup/memory.current')
+    limit = _read_int('/sys/fs/cgroup/memory.max')
+    if used is None:   # cgroup v1
+        used = _read_int('/sys/fs/cgroup/memory/memory.usage_in_bytes')
+        limit = _read_int('/sys/fs/cgroup/memory/memory.limit_in_bytes')
+        if limit and limit > (1 << 60):
+            limit = None
+    avail = None
+    try:
+        with open('/proc/meminfo') as f:
+            for ln in f:
+                if ln.startswith('MemAvailable:'):
+                    avail = int(ln.split()[1]) * 1024
+                    break
+    except Exception:
+        pass
+    return used, limit, avail
+
+
+def _rss(pid):
+    try:
+        with open(f'/proc/{pid}/status') as f:
+            for ln in f:
+                if ln.startswith('VmRSS:'):
+                    return int(ln.split()[1]) * 1024
+    except Exception:
+        pass
+    return 0
+
+
+def group_pids(pgid):
+    """进程组 pgid 里还活着的进程（不含僵尸）。"""
+    out = []
+    for d in os.listdir('/proc'):
+        if not d.isdigit():
+            continue
+        try:
+            with open(f'/proc/{d}/stat') as f:
+                s = f.read()
+            rest = s[s.rindex(')') + 2:].split()
+            # rest[0]=state, rest[2]=pgrp
+            if int(rest[2]) == pgid and rest[0] != 'Z':
+                out.append(int(d))
+        except Exception:
+            continue
+    return out
+
+
+def group_rss(pgid):
+    return sum(_rss(p) for p in group_pids(pgid))
+
+
+def mem_line():
+    used, limit, avail = container_mem()
+    return (f'container={_mb(used)}/{_mb(limit)} gunicorn_rss={_mb(_rss(os.getpid()))} '
+            f'host_avail={_mb(avail)}')
+
+
+def _short(key):
+    return hashlib.sha1(str(key).encode('utf-8', 'ignore')).hexdigest()[:8]
+
+
+def _session_file_size(session_id):
+    """续会话时 claude 要把整份会话记录读进内存，记录越长越吃内存，记一下大小方便排查。"""
+    if not session_id or not re.match(r'^[A-Za-z0-9-]+$', session_id):
+        return None
+    base = (os.environ.get('CLAUDE_CONFIG_DIR') or '').strip() or os.path.expanduser('~/.claude')
+    try:
+        for p in glob.glob(os.path.join(base, 'projects', '*', session_id + '.jsonl')):
+            return os.path.getsize(p)
+    except Exception:
+        pass
+    return None
 
 
 # ------------------------------------------------------------
@@ -231,29 +436,66 @@ def child_env(data_dir=None):
         # 有这些变量时 claude 会改用 API 计费，而不是订阅登录
         for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'):
             env.pop(k, None)
+    if os.environ.get('CC_LEAN_ENV') != '0':
+        # 只在没设的时候补上；Zeabur 里显式设了的值优先
+        env.setdefault('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '1')
+        env.setdefault('CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', '1')
+        env.setdefault('CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING', '1')
+    heap = (os.environ.get('CC_NODE_MAX_OLD_SPACE_MB') or '').strip()
+    if heap.isdigit() and int(heap) > 0:
+        opts = env.get('NODE_OPTIONS') or ''
+        if '--max-old-space-size' not in opts:
+            env['NODE_OPTIONS'] = (opts + f' --max-old-space-size={int(heap)}').strip()
     return env
 
 
-def _kill(proc):
-    if proc.poll() is not None:
-        return
+def _signal_group(pgid, sig):
     try:
-        os.killpg(proc.pid, signal.SIGTERM)
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        pass
     except Exception:
+        pass
+
+
+def _kill(proc, graceful=False):
+    """收掉 claude 以及它在同一进程组里拉起的所有子进程（MCP、shell 等）。
+
+    graceful=True：claude 已经正常输出完（stdout 到头了），先给它最多 5 秒自己退出，
+    让它把会话记录写完，保证下次 --resume 能接上；超时才发信号。
+    返回清理时还残留的进程数（用于日志）。
+    """
+    pgid = proc.pid   # start_new_session=True，所以进程组号 = claude 的 pid
+    if graceful and proc.poll() is None:
         try:
-            proc.terminate()
+            proc.wait(timeout=5)
         except Exception:
             pass
-    try:
-        proc.wait(timeout=3)
-    except Exception:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except Exception:
+    # 组长退出了，组里也可能还有孙子进程占着内存，所以不管组长在不在都检查整组
+    left = group_pids(pgid)
+    if proc.poll() is None or left:
+        _signal_group(pgid, signal.SIGTERM)
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        end = time.time() + 3
+        while time.time() < end:
+            if proc.poll() is not None and not group_pids(pgid):
+                break
+            time.sleep(0.1)
+        if proc.poll() is None or group_pids(pgid):
+            _signal_group(pgid, signal.SIGKILL)
             try:
                 proc.kill()
             except Exception:
                 pass
+    try:
+        proc.wait(timeout=5)   # 回收，避免僵尸
+    except Exception:
+        pass
+    return len(left)
 
 
 _RESUME_MISS = ('no conversation found', 'session not found', 'no session found')
@@ -415,9 +657,27 @@ def _spawn(cmd, stdin_text, cwd, data_dir=None):
         except Exception:
             pass
 
+    threads = []
     for fn in (feed, read_out, read_err):
-        threading.Thread(target=fn, daemon=True).start()
+        th = threading.Thread(target=fn, daemon=True)
+        th.start()
+        threads.append(th)
+    proc._cc_threads = threads
     return proc, q, err_tail
+
+
+def _cleanup(proc, graceful=False):
+    """杀进程组 + 等读线程结束 + 关管道，避免残留进程和文件句柄。返回残留进程数。"""
+    left = _kill(proc, graceful=graceful)
+    for th in getattr(proc, '_cc_threads', []):
+        th.join(timeout=2)
+    for p in (proc.stdin, proc.stdout, proc.stderr):
+        try:
+            if p:
+                p.close()
+        except Exception:
+            pass
+    return left
 
 
 def _error_text(msg):
@@ -446,6 +706,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     resume_id = get_session(data_dir, key)
     attempt = 0
     run = None
+    tag = _short(key)
     try:
         while True:
             attempt += 1
@@ -458,22 +719,41 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model)
             run = _Run(data_dir, key)
+            sf =_session_file_size(resume_id)
+            st = concurrency()
+            # 只记元数据：不记提示词、聊天内容、令牌
+            print(f'[cc] 启动 #{tag} attempt={attempt} model={pick_model(model, upstream_cfg) or "default"} '
+                  f'resume={"yes" if resume_id else "no"}'
+                  + (f' session_file={_mb(sf)}' if sf is not None else '')
+                  + f' running={st["running"]}/{st["max"]} waiting={st["waiting"]} {mem_line()}',
+                  flush=True)
+            t_start = time.time()
             try:
                 proc, q, err_tail = _spawn(cmd, stdin_text, cwd, data_dir)
             except FileNotFoundError:
+                print(f'[cc] 启动失败 #{tag}：找不到 claude 命令', flush=True)
                 for c in run.text(_error_text('服务器上找不到 claude 命令，请确认镜像里装了 @anthropic-ai/claude-code')):
                     yield c
                 break
             except Exception as e:
+                print(f'[cc] 启动失败 #{tag}：{type(e).__name__}', flush=True)
                 for c in run.text(_error_text(f'启动 claude 失败：{e}')):
                     yield c
                 break
 
             deadline = time.time() + timeout
             timed_out = False
+            got_eof = False
+            outcome = 'client_gone'   # 没正常走完就是前端断开了（GeneratorExit）
+            peak = 0
+            next_sample = 0.0
             try:
                 while True:
-                    left = deadline - time.time()
+                    now = time.time()
+                    if now >= next_sample:
+                        next_sample = now + MEM_SAMPLE_EVERY
+                        peak = max(peak, group_rss(proc.pid))
+                    left = deadline - now
                     if left <= 0:
                         timed_out = True
                         break
@@ -483,6 +763,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                         yield ': ping\n\n'   # 前端只认 data: 行，注释会被忽略
                         continue
                     if kind == 'eof':
+                        got_eof = True
                         break
                     line = raw.decode('utf-8', 'ignore').strip()
                     if not line:
@@ -493,9 +774,20 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                         continue
                     for c in run.handle(d):
                         yield c
+                outcome = 'timeout' if timed_out else 'done'
+            except Exception:
+                outcome = 'error'
+                raise
             finally:
-                # 客户端断开时 Flask 会关闭这个生成器（GeneratorExit），这里把子进程杀掉
-                _kill(proc)
+                # 正常结束：给 claude 几秒自己退出、写完会话记录；
+                # 超时或客户端断开（Flask 关闭生成器 -> GeneratorExit）：直接收掉整个进程组
+                peak = max(peak, group_rss(proc.pid))
+                leftover = _cleanup(proc, graceful=got_eof)
+                res = run.result or {}
+                print(f'[cc] 结束 #{tag} outcome={outcome} exit={proc.returncode} '
+                      f'dur={time.time() - t_start:.1f}s api_ms={res.get("duration_api_ms", "?")} '
+                      f'turns={res.get("num_turns", "?")} peak_rss={_mb(peak)} '
+                      f'cleaned={leftover} {mem_line()}', flush=True)
 
             if timed_out:
                 print(f'[cc] 超时 {timeout:.0f}s，已结束子进程', flush=True)

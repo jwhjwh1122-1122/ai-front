@@ -1329,8 +1329,10 @@ async function callTurn(text, silentUser) {
   let reply = '';
   try {
     const hist = buildMsgs(messages);
+    // 挂电话时要能把这条请求掐掉，否则服务器上的 Claude Code 还会一直跑
+    CALL.ctrl = new AbortController();
     const r = await fetch('/api/chat-v2', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: CALL.ctrl.signal,
       body: JSON.stringify({
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
@@ -1338,6 +1340,7 @@ async function callTurn(text, silentUser) {
         _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300
       })
     });
+    if (r.status === 429) { csState('他还在忙上一句，等下再说'); return; }
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = '';
     while (true) {
@@ -1357,7 +1360,8 @@ async function callTurn(text, silentUser) {
         } catch (e) { }
       }
     }
-  } catch (e) { csState('断了'); }
+  } catch (e) { if (e.name !== 'AbortError') csState('断了'); }
+  finally { CALL.ctrl = null; }
 
   const hang = /\[\[挂了\]\]/.test(reply);
   reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
@@ -1417,6 +1421,7 @@ async function endCall(by) {
   if (CALL.timer) clearInterval(CALL.timer);
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
+  try { if (CALL.ctrl) CALL.ctrl.abort(); } catch (e) { }
   try { if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); } catch (e) { }
   try { if (CALL.ctx) CALL.ctx.close(); } catch (e) { }
   CALL.stream = null; CALL.ctx = null; CALL.analyser = null;

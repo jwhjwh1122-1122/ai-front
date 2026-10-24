@@ -861,12 +861,22 @@ async function attachVoiceReply(wrap, text) {
 // ============ 流式 ============
 let abortController = null;
 async function streamResponse(wrap, hist) {
-  abortController = new AbortController();
+  // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
+  const ac = new AbortController();
+  abortController = ac;
   const resp = await fetch('/api/chat-v2', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abortController.signal,
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
     body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId })
   });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  if (!resp.ok) {
+    // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试
+    let msg = '';
+    if (resp.status === 429) { try { msg = (await resp.json()).error || ''; } catch (e) { } }
+    if (abortController === ac) abortController = null;
+    const err = new Error('HTTP ' + resp.status);
+    if (resp.status === 429) err.friendly = msg || '他还在回上一条消息，等他说完再发一次吧';
+    throw err;
+  }
   const reader = resp.body.getReader(), dec = new TextDecoder();
   let buf = '', thinkingText = '', responseText = '', stopReason = null, outTok = 0, inTok = 0;
   const absorb = u => {
@@ -931,7 +941,7 @@ async function streamResponse(wrap, hist) {
       }
     }
   } catch (e) { if (e.name !== 'AbortError') throw e; }
-  abortController = null;
+  if (abortController === ac) abortController = null;
   totalTokens = inTok + outTok;
   drawTokens(inTok, outTok);
   // 记一笔，自己的账自己算
@@ -1056,21 +1066,33 @@ async function runToolLoop(wrap, origLen) {
 }
 
 // ============ 发送 ============
+// 每一轮一个编号。按「停」会直接结束当前轮并让编号作废，
+// 被停掉那轮稍后自己收尾时的 endTurn(旧编号) 就不会把新一轮的 isTyping 清掉，
+// 避免出现两条请求同时在跑、重复拉起 Claude Code。
+let turnSeq = 0;
 function beginTurn() {
   lastTalk = Date.now();
   isTyping = true;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '■');
+  return ++turnSeq;
 }
-function endTurn() {
+function endTurn(seq) {
+  if (seq !== undefined && seq !== turnSeq) return;
+  if (seq === undefined) turnSeq++;
   isTyping = false;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '↑');
+}
+function turnError(wrap, e) {
+  if (e && e.name === 'AbortError') return;   // 自己按了停，不算出错
+  console.error(e);
+  updateBubble(wrap, (e && e.friendly) || '连接出错，请重试。', true);
 }
 async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && !!pendingChatImg;
   if ((!text && !hasImg) || isTyping) return;
   inp.value = ''; inp.style.height = 'auto';
-  beginTurn();
+  const seq = beginTurn();
   if (editingMsgIdx !== null) {
     messages.splice(editingMsgIdx);
     [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= editingMsgIdx) r.remove(); });
@@ -1087,9 +1109,9 @@ async function sendMsg(fromCtx) {
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { console.error(e); updateBubble(wrap, '连接出错，请重试。', true); }
+  catch (e) { turnError(wrap, e); }
   await attachVoiceReply(wrap, reply);
-  endTurn();
+  endTurn(seq);
 }
 async function sendComposed(text, imgs, opts) {
   if (isTyping) return;
@@ -1099,7 +1121,7 @@ async function sendComposed(text, imgs, opts) {
     content = [{ type: 'text', text }];
     imgs.forEach(u => content.push({ type: 'image_url', image_url: { url: u } }));
   }
-  beginTurn();
+  const seq = beginTurn();
   const msg = { role: 'user', content };
   if (opts.audio) { msg._audio = opts.audio; msg._dur = opts.dur; }
   messages.push(msg);
@@ -1111,13 +1133,13 @@ async function sendComposed(text, imgs, opts) {
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { console.error(e); updateBubble(wrap, '连接出错，请重试。', true); }
+  catch (e) { turnError(wrap, e); }
   await attachVoiceReply(wrap, reply);
   if (imgs.length && Array.isArray(messages[myIdx]?.content)) {
     messages[myIdx].content = messages[myIdx].content.map(c => c && c.type === 'image_url' ? { type: 'text', text: '（一张看过的画面）' } : c);
     saveConv();
   }
-  endTurn();
+  endTurn(seq);
 }
 async function regenAt(row) {
   if (isTyping || !row) return;
@@ -1127,12 +1149,12 @@ async function regenAt(row) {
   if (!messages.length || messages[messages.length - 1].role !== 'user') return;
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
-  beginTurn();
+  const seq = beginTurn();
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { updateBubble(wrap, '连接出错，请重试。', true); }
+  catch (e) { turnError(wrap, e); }
   await attachVoiceReply(wrap, reply);
-  endTurn();
+  endTurn(seq);
 }
 
 // ============ 对话管理 ============
