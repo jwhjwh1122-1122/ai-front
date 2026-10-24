@@ -761,3 +761,35 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .tt-dots i:nth-child(2){animation-delay:.2s;}
 .tt-dots i:nth-child(3){animation-delay:.4s;}
 @keyframes ttd{0%,100%{opacity:.2}40%{opacity:1}}
+
+/* 设置卡片折叠 */
+.sc-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+.sc-head .settings-label{margin-bottom:0;flex:none;font-size:13px;}
+.sc-sum{flex:1;min-width:0;font-size:11px;color:var(--text-muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sc-chev{flex:none;width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;transition:transform .2s ease;}
+.settings-card.sc-open .sc-chev{transform:rotate(90deg);}
+.sc-body{margin-top:8px;}
+.settings-card:not(.sc-open) .sc-body{display:none;}
+/* 额度条（仿 Claude app 的 Usage 页） */
+.usage-row{padding:10px 0;border-bottom:1px solid var(--border);}
+.usage-row:last-child{border-bottom:none;}
+.usage-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.usage-name{font-size:15px;color:var(--text);font-weight:600;}
+.usage-pct{font-size:13px;color:var(--text-muted);white-space:nowrap;}
+.usage-bar{height:7px;border-radius:4px;background:var(--border);margin:8px 0 6px;overflow:hidden;}
+.usage-fill{height:100%;border-radius:4px;background:var(--accent);width:0;transition:width .5s ease;}
+.usage-fill.warn{background:#e0a23a;}
+.usage-fill.full{background:#e8506a;}
+.usage-fill.unknown{width:100%!important;opacity:.25;background:repeating-linear-gradient(45deg,var(--accent) 0 6px,transparent 6px 12px);}
+.usage-sub{font-size:12px;color:var(--text-muted);line-height:1.65;}
+.usage-sub b{color:var(--text);font-weight:600;}
+.usage-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:11px;color:var(--text-muted);}
+.usage-refresh{border:1px solid var(--border);background:transparent;color:var(--text-muted);border-radius:12px;width:30px;height:24px;font-size:14px;cursor:pointer;}
+/* 排查记录 */
+.run-item{border:1px solid var(--border);border-radius:10px;padding:7px 10px;margin-top:6px;font-size:12px;line-height:1.6;color:var(--text-muted);}
+.run-item .run-h{display:flex;justify-content:space-between;color:var(--text);}
+.run-ok{color:#3a9a5b;} .run-bad{color:#e8506a;}
+/* 聊天里：图片有没有送到他那边 */
+.img-status{font-size:11px;color:var(--text-muted);text-align:right;margin-top:2px;}
+.img-status.bad{color:#e8506a;}
+.mcp-warn{font-size:11px;color:#e8506a;margin-top:2px;}

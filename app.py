@@ -4099,6 +4099,13 @@ try:
 except Exception as e:
     print(f'[cc-login] 挂载失败（不影响其他功能）: {e}', flush=True)
 
+# cc 模式的额度条、排查记录
+try:
+    from cc_usage import register_cc_usage
+    register_cc_usage(app, data_dir=DATA_DIR)
+except Exception as e:
+    print(f'[cc-usage] 挂载失败（不影响其他功能）: {e}', flush=True)
+
 # 聊天图片、表情包存服务器（不再塞进浏览器 localStorage）
 try:
     from chat_media import register_chat_media

@@ -16,8 +16,127 @@ function showPage(name) {
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
+  if (name === 'settings') { loadCcUsage(); loadCcRuns(); }
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
+// ============ 设置：每张卡片都能折叠，默认收起，记住你的选择 ============
+function setupSettingsFold() {
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem('settings-fold') || '{}') || {}; } catch (e) { }
+  document.querySelectorAll('#page-settings .settings-card').forEach((card, i) => {
+    if (card.querySelector(':scope > .sc-head')) return;
+    const label = card.querySelector(':scope > .settings-label');
+    if (!label) return;
+    const key = card.dataset.fold || ('c' + i + ':' + label.textContent.trim());
+    const head = document.createElement('div'); head.className = 'sc-head';
+    const sum = document.createElement('span'); sum.className = 'sc-sum';
+    const chev = document.createElement('span'); chev.className = 'sc-chev'; chev.textContent = '▸';
+    const body = document.createElement('div'); body.className = 'sc-body';
+    while (label.nextSibling) body.appendChild(label.nextSibling);
+    card.insertBefore(head, label);
+    head.appendChild(label); head.appendChild(sum); head.appendChild(chev);
+    card.appendChild(body);
+    card.classList.toggle('sc-open', !!st[key]);
+    head.onclick = () => {
+      const open = !card.classList.contains('sc-open');
+      card.classList.toggle('sc-open', open);
+      st[key] = open;
+      try { localStorage.setItem('settings-fold', JSON.stringify(st)); } catch (e) { }
+      if (open && card.id === 'cc-usage-card') loadCcUsage(true);
+      if (open && card.id === 'cc-runs-card') loadCcRuns();
+    };
+  });
+}
+const foldSum = (cardId, text) => { const e = document.querySelector(`#${cardId} .sc-sum`); if (e) e.textContent = text || ''; };
+
+// ============ Claude 额度条 ============
+const fmtTok = n => { n = Number(n) || 0; return n < 1000 ? String(n) : n < 1e6 ? (n / 1000).toFixed(1) + 'k' : (n / 1e6).toFixed(2) + 'M'; };
+function resetText(ms) {
+  if (!ms) return '重置时间未知';
+  const left = ms - Date.now();
+  if (left <= 0) return '已到重置时间';
+  if (left < 24 * 3600e3) {
+    const h = Math.floor(left / 3600e3), m = Math.floor(left % 3600e3 / 60e3);
+    return (h ? `${h} 小时 ` : '') + `${m} 分后重置`;
+  }
+  const d = new Date(ms);
+  const wk = '日一二三四五六'[d.getDay()];
+  return `周${wk} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 重置`;
+}
+let ccUsageAt = 0;
+async function loadCcUsage(force) {
+  const body = $('cc-usage-body'); if (!body) return;
+  if (!force && Date.now() - ccUsageAt < 30000) return;
+  ccUsageAt = Date.now();
+  let d;
+  try { d = await jget('/api/cc/usage'); } catch (e) { body.innerHTML = '<div class="settings-sub">读不到额度</div>'; return; }
+  if (!d || !d.ok) { body.innerHTML = `<div class="settings-sub">${esc((d && d.error) || '读不到额度')}</div>`; return; }
+  const tk = d.tokens || {};
+  const tokLine = (w, word) => w && w.count
+    ? `${word} ${w.count} 次 · 耗 <b>${fmtTok(w.total)}</b> tok（新输入 ${fmtTok(w.in + w.cw)} · 读缓存 ${fmtTok(w.cr)} · 输出 ${fmtTok(w.out)}）`
+    : `${word}还没用过`;
+  let html = '';
+  for (const l of d.limits || []) {
+    const has = typeof l.pct === 'number';
+    const pct = has ? Math.round(l.pct) : null;
+    const cls = !has ? 'unknown' : pct >= 100 ? 'full' : pct >= 80 ? 'warn' : '';
+    let sub = resetText(l.resets_at);
+    if (l.key === 'five_hour') sub += ' · ' + tokLine(tk.five_hour, '这个窗口');
+    else if (l.key === 'seven_day') sub += ' · ' + tokLine(tk.seven_day, '这周');
+    if (l.status === 'allowed_warning') sub += ' · <span style="color:#e0a23a">快用完了</span>';
+    if (l.status === 'rejected') sub += ' · <span style="color:#e8506a">已用完</span>';
+    html += `<div class="usage-row"><div class="usage-top"><span class="usage-name">${esc(l.label)}</span>
+      <span class="usage-pct">${has ? pct + '% 已用' : '百分比未知'}</span></div>
+      <div class="usage-bar"><div class="usage-fill ${cls}" style="width:${has ? Math.min(100, pct) : 0}%"></div></div>
+      <div class="usage-sub">${sub}</div></div>`;
+  }
+  if (d.context) {
+    html += `<div class="usage-row"><div class="usage-top"><span class="usage-name">当前上下文</span>
+      <span class="usage-pct">${fmtTok(d.context.tokens)} tok</span></div>
+      <div class="usage-sub">上一条回复：读进 <b>${fmtTok(d.context.tokens)}</b> tok、写出 <b>${fmtTok(d.context.out)}</b> tok${d.context.model ? ' · ' + esc(d.context.model) : ''}</div></div>`;
+  }
+  body.innerHTML = html || '<div class="settings-sub">还没有数据，聊一句再来看</div>';
+  $('cc-usage-src').textContent = d.source === 'api'
+    ? '百分比来自 Claude 用量接口 · 刚刚更新'
+    : `百分比拿不到：${d.api_error || '未知原因'}。token 数是这边自己记的`;
+  const five = (d.limits || []).find(x => x.key === 'five_hour');
+  foldSum('cc-usage-card', five ? ((typeof five.pct === 'number' ? Math.round(five.pct) + '% · ' : '') + resetText(five.resets_at)) : '');
+}
+
+// ============ 排查记录 ============
+const RUN_OUT = { done: ['完成', 'run-ok'], timeout: ['超时', 'run-bad'], client_gone: ['网页那边断开了', 'run-bad'], error: ['出错', 'run-bad'] };
+async function loadCcRuns() {
+  const el = $('cc-runs-list'); if (!el) return;
+  let d;
+  try { d = await jget('/api/cc/runs'); } catch (e) { el.innerHTML = '<div class="settings-sub">读不到</div>'; return; }
+  const runs = (d && d.runs) || [];
+  if (!runs.length) { el.innerHTML = '<div class="settings-sub">还没有记录（cc 模式下他回一句就有）</div>'; foldSum('cc-runs-card', ''); return; }
+  el.innerHTML = '';
+  runs.slice(0, 12).forEach(r => {
+    const dt = new Date(r.ts);
+    const t = `${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    const [word, cls] = RUN_OUT[r.outcome] || [r.outcome, ''];
+    const bad = r.error || (r.image_problems || []).length || (r.mcp || []).some(m => m.status !== 'connected');
+    const lines = [`${esc(r.model || '')} · ${r.resume ? '续上次的会话' : '新会话'} · 峰值内存 ${r.peak_mb || 0}MB`];
+    if (r.images || (r.image_problems || []).length) {
+      let s2 = '图片：';
+      if (r.images) s2 += `<span class="run-ok">✓ 送进去 ${r.images} 张</span> `;
+      if ((r.image_problems || []).length) s2 += `<span class="run-bad">✗ ${r.image_problems.length} 张没送：${esc([...new Set(r.image_problems)].join('；'))}</span>`;
+      lines.push(s2);
+    }
+    if ((r.mcp || []).length) lines.push('MCP：' + r.mcp.map(m => m.status === 'connected'
+      ? `<span class="run-ok">${esc(m.name)} ✓</span>` : `<span class="run-bad">${esc(m.name)} ✗(${esc(m.status)})</span>`).join(' · '));
+    if (r.skipped_dup) lines.push(`跳过 ${r.skipped_dup} 条他已经收到过的消息（防重复）`);
+    if (r.tokens) lines.push(`token：新输入 ${fmtTok((r.tokens.in || 0) + (r.tokens.cw || 0))} · 读缓存 ${fmtTok(r.tokens.cr)} · 输出 ${fmtTok(r.tokens.out)}`);
+    if (r.error) lines.push(`<span class="run-bad">错误：${esc(r.error)}</span>`);
+    const box = document.createElement('div'); box.className = 'run-item';
+    box.innerHTML = `<div class="run-h"><span>${t} · <span class="${cls}">${word}</span>${bad && r.outcome === 'done' ? ' · <span class="run-bad">有问题</span>' : ''}</span><span>${r.dur}s</span></div>${lines.map(x => `<div>${x}</div>`).join('')}`;
+    el.appendChild(box);
+  });
+  const r0 = runs[0], bad0 = r0.error || (r0.image_problems || []).length || (r0.mcp || []).some(m => m.status !== 'connected') || r0.outcome !== 'done';
+  foldSum('cc-runs-card', bad0 ? '最近一次有问题' : '最近一次正常');
+}
+
 async function refreshTimeCounts() {
   try {
     const [tl, qu, ql, mem, nt, cal, ft] = await Promise.all([
@@ -2006,6 +2125,10 @@ async function boot() {
   { const nb = $('btn-netease'); if (nb && !neteaseUrl()) nb.style.display = 'none'; }
   bindSplit('reader'); bindSplit('stage'); bindSplit('coread'); bindSplit('netease');
   startKeepalive();
+  setupSettingsFold();
+  $('btn-cc-usage').onclick = e => { e.stopPropagation(); loadCcUsage(true); };
+  $('btn-cc-runs').onclick = () => loadCcRuns();
+  if (localStorage.getItem('cur-page') === 'settings') { loadCcUsage(); loadCcRuns(); }
   loadStickers().then(changed => { if (changed && !isTyping && currentConvId && localStorage.getItem('conv-' + currentConvId)) loadConv(currentConvId); });
 }
 async function loadUpstream() {

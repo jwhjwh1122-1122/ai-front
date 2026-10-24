@@ -274,6 +274,95 @@ def _session_file_size(session_id):
 
 
 # ------------------------------------------------------------
+# 排查和额度用的小记录（只有元数据：时间、数字、状态，没有聊天内容和令牌）
+#   cc_runs.json       最近 40 次运行：结果、耗时、图片送没送进去、各 MCP 连没连上
+#   cc_usage.json      每次回复的 token 用量（保留 8 天），算 5 小时窗口 / 一周用了多少
+#   cc_ratelimit.json  Claude Code 报出来的限额状态（什么时候重置、是否快到了）
+# ------------------------------------------------------------
+_rec_lock = threading.Lock()
+RUNS_MAX = 40
+USAGE_KEEP_SEC = 8 * 86400
+
+
+def _jload(path, default):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _jsave(path, obj):
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def _pick(d, *keys):
+    for k in keys:
+        if d.get(k) is not None:
+            return d.get(k)
+    return None
+
+
+def note_rate_limit(data_dir, info):
+    """stream-json 里的 rate_limit_event。字段名有驼峰也有下划线，两种都认。没有百分比。"""
+    kind = str(_pick(info, 'rateLimitType', 'rate_limit_type') or 'unknown')[:30]
+    resets = _pick(info, 'resetsAt', 'resets_at')
+    try:
+        resets = float(resets)
+        if resets < 1e12:      # 秒 -> 毫秒
+            resets *= 1000
+    except (TypeError, ValueError):
+        resets = None
+    util = _pick(info, 'utilization', 'used_percentage')
+    item = {'status': str(info.get('status') or '')[:30], 'resets_at': resets, 'ts': int(time.time() * 1000)}
+    if isinstance(util, (int, float)):
+        item['pct'] = float(util) * 100 if util <= 1 else float(util)
+    path = os.path.join(data_dir, 'cc_ratelimit.json')
+    with _rec_lock:
+        d = _jload(path, {})
+        d[kind] = item
+        _jsave(path, d)
+
+
+def record_usage(data_dir, usage, model, tag):
+    if not usage:
+        return
+    now = time.time()
+    path = os.path.join(data_dir, 'cc_usage.json')
+    item = {'ts': int(now * 1000), 'model': (model or '')[:60], 'conv': tag,
+            'in': int(usage.get('input_tokens') or 0), 'out': int(usage.get('output_tokens') or 0),
+            'cr': int(usage.get('cache_read_input_tokens') or 0),
+            'cw': int(usage.get('cache_creation_input_tokens') or 0)}
+    with _rec_lock:
+        items = [x for x in _jload(path, []) if x.get('ts', 0) >= (now - USAGE_KEEP_SEC) * 1000]
+        items.append(item)
+        _jsave(path, items[-5000:])
+
+
+def record_run(data_dir, run):
+    path = os.path.join(data_dir, 'cc_runs.json')
+    with _rec_lock:
+        items = _jload(path, [])
+        items.append(run)
+        _jsave(path, items[-RUNS_MAX:])
+
+
+def load_runs(data_dir):
+    return list(reversed(_jload(os.path.join(data_dir, 'cc_runs.json'), [])))
+
+
+def load_usage(data_dir):
+    return _jload(os.path.join(data_dir, 'cc_usage.json'), [])
+
+
+def load_rate_limits(data_dir):
+    return _jload(os.path.join(data_dir, 'cc_ratelimit.json'), {})
+
+
+# ------------------------------------------------------------
 # 前端会话 id  ->  claude session_id 的映射，存成 json 文件
 # ------------------------------------------------------------
 def _map_path(data_dir):
@@ -437,7 +526,7 @@ def load_local_image(url, data_dir):
 
 
 def turn_content(tail, data_dir):
-    """本轮要说的：(文字, [图片 block, ...])。图片用 Anthropic 的 image block 格式。"""
+    """本轮要说的：(文字, [图片 block, ...], [没送进去的原因, ...])。图片用 Anthropic 的 image block 格式。"""
     texts, images, problems = [], [], []
     for m in tail:
         c = m.get('content')
@@ -470,7 +559,7 @@ def turn_content(tail, data_dir):
         # 明确告诉他哪张没看到、为什么，免得他瞎猜图里是什么
         texts.append('（系统提示：她发的图里有 %d 张你这次看不到（%s）。如实告诉她看不到、请她换成截图或 JPG 再发，不要猜图片内容）'
                      % (len(problems), '；'.join(dict.fromkeys(problems))))
-    return '\n\n'.join(texts), images
+    return '\n\n'.join(texts), images, problems
 
 
 def history_transcript(history):
@@ -739,6 +828,7 @@ class _Run:
         self.usage = {}
         self.result = None
         self.session_id = None
+        self.mcp = []          # [{name, status}]，来自 init
 
     def _open_text(self):
         if self.text_open:
@@ -786,6 +876,16 @@ class _Run:
         if t == 'system':
             if d.get('subtype') == 'init':
                 self._sid(d)
+                self.mcp = [{'name': str(x.get('name', ''))[:40], 'status': str(x.get('status', ''))[:20]}
+                            for x in (d.get('mcp_servers') or []) if isinstance(x, dict)]
+                # 告诉网页各个 MCP 有没有连上（没连上的会在他回复下面提示）
+                return [sse({'type': 'cc_status', 'mcp': self.mcp})]
+            return []
+        if t == 'rate_limit_event':
+            try:
+                note_rate_limit(self.data_dir, d.get('rate_limit_info') or {})
+            except Exception:
+                pass
             return []
         if d.get('parent_tool_use_id'):
             return []   # 子代理的内部输出，不显示
@@ -939,7 +1039,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 dl = get_delivered(data_dir, key)
                 this_turn = [m for m in tail if not (_mid(m) and _mid(m) in dl)]
                 skipped = len(tail) - len(this_turn)
-            prompt, images = turn_content(this_turn, data_dir)
+            prompt, images, img_problems = turn_content(this_turn, data_dir)
             web = web_mcp_config(cwd, web_mcp)
             if not prompt and not images:
                 prompt = ('（她刚才那条你已经收到了，但你的回复没送到她那边。接着回她就行，不用提这件事）'
@@ -984,6 +1084,10 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     yield c
                 break
 
+            if images or img_problems:
+                # 网页据此在你那张图下面标「他收到了 / 没送到：原因」
+                yield sse({'type': 'cc_status', 'images': len(images), 'image_problems': img_problems})
+
             deadline = time.time() + timeout
             timed_out = False
             got_eof = False
@@ -1027,10 +1131,31 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 peak = max(peak, group_rss(proc.pid))
                 leftover = _cleanup(proc, graceful=got_eof)
                 res = run.result or {}
+                dur = time.time() - t_start
                 print(f'[cc] 结束 #{tag} outcome={outcome} exit={proc.returncode} '
-                      f'dur={time.time() - t_start:.1f}s api_ms={res.get("duration_api_ms", "?")} '
+                      f'dur={dur:.1f}s api_ms={res.get("duration_api_ms", "?")} '
                       f'turns={res.get("num_turns", "?")} peak_rss={_mb(peak)} '
                       f'cleaned={leftover} {mem_line()}', flush=True)
+                # 排查记录 + 用量记录（只有元数据）
+                err_short = ''
+                if res and (res.get('is_error') or res.get('subtype') not in (None, 'success')):
+                    err_short = str(res.get('result') or res.get('subtype') or '')[:160]
+                elif not res and outcome == 'done':
+                    err_short = (''.join(err_tail).strip()[-160:] or f'退出码 {proc.returncode}')
+                try:
+                    u = run.usage or {}
+                    record_run(data_dir, {
+                        'ts': int(t_start * 1000), 'conv': tag, 'outcome': outcome,
+                        'dur': round(dur, 1), 'model': pick_model(model, upstream_cfg) or 'default',
+                        'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
+                        'skipped_dup': skipped, 'mcp': run.mcp, 'error': err_short,
+                        'peak_mb': round(peak / 1048576), 'tokens': {
+                            'in': u.get('input_tokens', 0), 'out': u.get('output_tokens', 0),
+                            'cr': u.get('cache_read_input_tokens', 0),
+                            'cw': u.get('cache_creation_input_tokens', 0)}})
+                    record_usage(data_dir, u, pick_model(model, upstream_cfg), tag)
+                except Exception as e:
+                    print(f'[cc] 写排查记录失败: {e}', flush=True)
 
             if timed_out:
                 print(f'[cc] 超时 {timeout:.0f}s，已结束子进程', flush=True)

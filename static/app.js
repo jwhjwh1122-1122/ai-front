@@ -1015,6 +1015,7 @@ async function streamResponse(wrap, hist) {
         try {
           const d = JSON.parse(raw);
           if (d.type === 'message_start') absorb(d.message?.usage);
+          else if (d.type === 'cc_status') showCcStatus(wrap, d);
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
             if (b.type === 'tool_use') {
@@ -1181,6 +1182,31 @@ function endTurn(seq) {
   isTyping = false;
   document.querySelectorAll('.send-btn').forEach(b => b.textContent = '↑');
   showTypingTitle(false);
+}
+// cc 模式的小提示：图片有没有送到他那边、哪个 MCP 没连上。只显示，不存进记录
+function showCcStatus(wrap, d) {
+  if ('images' in d) {
+    const rows = [...msgBox().querySelectorAll('.msg-row.user')];
+    const row = rows.reverse().find(r => r.querySelector('.bubble-img')) || null;
+    const host = row && row.querySelector('.bubble-wrap');
+    if (host) {
+      const old = host.querySelector('.img-status'); if (old) old.remove();
+      const probs = d.image_problems || [];
+      const el = document.createElement('div');
+      el.className = 'img-status' + (probs.length ? ' bad' : '');
+      el.textContent = (d.images ? `✓ 他收到了 ${d.images} 张图` : '') + (d.images && probs.length ? '　' : '')
+        + (probs.length ? `✗ ${probs.length} 张没送到他那边：${[...new Set(probs)].join('；')}` : '');
+      host.appendChild(el);
+    }
+  }
+  if (Array.isArray(d.mcp)) {
+    const bad = d.mcp.filter(m => m.status && !['connected', 'pending'].includes(m.status));
+    if (bad.length) {
+      const el = document.createElement('div'); el.className = 'mcp-warn';
+      el.textContent = 'MCP 没连上：' + bad.map(m => `${m.name}（${m.status}）`).join('、') + '。这一条里他用不了它们';
+      wrap.appendChild(el);
+    }
+  }
 }
 // 顶栏正中的「对方正在输入…」：发出去到他说完都亮着
 function showTypingTitle(on) {
