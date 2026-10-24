@@ -100,7 +100,8 @@ async function loadCcUsage(force) {
     ? '百分比来自 Claude 用量接口 · 刚刚更新'
     : `百分比拿不到：${d.api_error || '未知原因'}。token 数是这边自己记的`;
   const five = (d.limits || []).find(x => x.key === 'five_hour');
-  foldSum('cc-usage-card', five ? ((typeof five.pct === 'number' ? Math.round(five.pct) + '% · ' : '') + resetText(five.resets_at)) : '');
+  foldSum('cc-usage-card', !five || (typeof five.pct !== 'number' && !five.resets_at) ? '还没有数据'
+    : ((typeof five.pct === 'number' ? Math.round(five.pct) + '% · ' : '') + resetText(five.resets_at)));
 }
 
 // ============ 排查记录 ============
@@ -2109,8 +2110,9 @@ async function boot() {
   $('auto-voice-toggle').checked = localStorage.getItem('auto-voice') === '1';
   $('wake-on').checked = !!CFG.wake_on;
   const wi = CFG.wake_interval || 120;
-  document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
-  { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
+  if (window.markWake) window.markWake(wi);
+  else document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
+  if (!window.markWake) { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
@@ -2141,6 +2143,8 @@ async function loadUpstream() {
     $('up-models').value = (u.models || []).join('\n');
     $('up-small').value = u.small_model || '';
     $('up-cache').checked = u.cache !== false;
+    window.CC_ACTIVE = !!u.cc_active;
+    if (window.wakeCost) window.wakeCost(CFG.wake_interval || 120);
     renderModels(u.models);
   } catch (e) { renderModels(null); }
 }
@@ -2701,17 +2705,45 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const wakeCost = m => {
     const e = $('wake-cost'); if (!e) return;
+    const every = m < 60 ? `${m} 分钟` : (m % 60 ? `${Math.floor(m / 60)} 小时 ${m % 60} 分` : `${m / 60} 小时`);
+    if (window.CC_ACTIVE) {
+      e.textContent = `每 ${every}最多醒一次（有话憋着才真叫他）。cc 模式下每次醒来用一次订阅额度，间隔越短越耗；你正在跟他聊的时候不会打扰。`;
+      return;
+    }
     e.textContent = m <= 55
-      ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。'
-      : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。';
+      ? `每 ${every}最多醒一次。这个间隔在缓存有效期（1 小时）内，每次醒来便宜。`
+      : `每 ${every}最多醒一次。超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。`;
   };
-  document.querySelectorAll('[data-wake]').forEach(o => o.onclick = async () => {
-    document.querySelectorAll('[data-wake]').forEach(x => x.classList.remove('active'));
-    o.classList.add('active');
-    const m = parseInt(o.dataset.wake);
+  window.wakeCost = wakeCost;
+  const markWake = m => {
+    let hit = false;
+    document.querySelectorAll('[data-wake]').forEach(x => { const on = parseInt(x.dataset.wake) === m; x.classList.toggle('active', on); hit = hit || on; });
+    $('wake-custom-chip').classList.toggle('active', !hit);
+    $('wake-custom-chip').textContent = hit ? '自定义' : `自定义 · ${m} 分`;
+    if (!hit) $('wake-custom-min').value = m;
     wakeCost(m);
+  };
+  window.markWake = markWake;
+  if (typeof CFG !== 'undefined' && CFG.wake_interval) markWake(CFG.wake_interval);
+  document.querySelectorAll('[data-wake]').forEach(o => o.onclick = async () => {
+    const m = parseInt(o.dataset.wake);
+    markWake(m); $('wake-custom-row').style.display = 'none';
+    CFG.wake_interval = m;
     await jpost('/api/persona', { wake_interval: m });
   });
+  $('wake-custom-chip').onclick = () => {
+    const r = $('wake-custom-row');
+    r.style.display = r.style.display === 'none' ? 'flex' : 'none';
+    if (r.style.display === 'flex') $('wake-custom-min').focus();
+  };
+  $('wake-custom-save').onclick = async () => {
+    const m = Math.round(Number($('wake-custom-min').value));
+    if (!m || m < 5 || m > 1440) { toast('填 5 到 1440 之间的分钟数'); return; }
+    markWake(m); $('wake-custom-row').style.display = 'none';
+    CFG.wake_interval = m;
+    await jpost('/api/persona', { wake_interval: m });
+    toast('改好了');
+  };
   $('wake-prompt').addEventListener('blur', () => jpost('/api/persona', { wake_prompt: $('wake-prompt').value }));
   $('btn-wake-log').onclick = renderWakeLog;
   $('btn-wake-now').onclick = async () => {

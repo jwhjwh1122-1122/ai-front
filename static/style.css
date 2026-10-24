@@ -808,3 +808,11 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .ct-label{font-size:10.5px;color:var(--text-muted);margin:6px 0 3px;opacity:.8;}
 .ct-pre{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;background:var(--input-bg);border-radius:8px;padding:7px 9px;}
 .thinking-header > span:not(.thinking-arrow){flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* 设置页统一配色：卡片边框、标题、按钮都用主题里深的那个色（--accent），跟「凛」「上游」「保存」一样 */
+#page-settings .settings-card{border-color:var(--accent);}
+#page-settings .sc-head .settings-label{color:var(--accent);}
+#page-settings .sc-chev{color:var(--accent);}
+#page-settings .btn-ghost,#page-settings .btn-solid{background:var(--accent);color:#fff;border:none;}
+#page-settings .btn-ghost:active,#page-settings .btn-solid:active{opacity:.85;}
+#page-settings .usage-refresh{border-color:var(--accent);color:var(--accent);}

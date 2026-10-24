@@ -322,6 +322,12 @@ window.addEventListener('error', function (e) {
         <div class="ctx-option" data-wake="60">1 小时</div>
         <div class="ctx-option" data-wake="120">2 小时</div>
         <div class="ctx-option" data-wake="240">4 小时</div>
+        <div class="ctx-option" id="wake-custom-chip">自定义</div>
+      </div>
+      <div id="wake-custom-row" style="display:none;align-items:center;gap:8px;margin-top:8px;">
+        <input class="mini-input" id="wake-custom-min" type="number" inputmode="numeric" min="5" max="1440" step="5" placeholder="分钟，5～1440" style="flex:1;margin:0;">
+        <span style="font-size:13px;color:var(--text-muted);">分钟</span>
+        <button class="btn-solid" id="wake-custom-save" style="flex:none;font-size:13px;padding:8px 16px;">保存</button>
       </div>
       <div class="settings-sub" id="wake-cost" style="margin-top:7px;"></div>
       <div class="settings-label" style="margin-top:12px;">叫他的时候说什么</div>

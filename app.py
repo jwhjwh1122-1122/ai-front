@@ -3934,8 +3934,91 @@ cc_mode.register_local_mcp('lin', 'http://127.0.0.1:%s/api/lin-mcp' % (os.enviro
                            {'Authorization': 'Bearer ' + LIN_MCP_TOKEN})
 
 
+def _wake_cc_key():
+    """cc 模式醒来时接着最近一次聊天的 Claude Code 会话，这样他记得你们刚聊过什么，
+    醒来做的事你下次聊天时他也记得。一次都没聊过就用单独的「wake」会话。"""
+    m = cc_mode._map_load(DATA_DIR)
+    best, best_ts = None, -1
+    for k, v in (m or {}).items():
+        if k in ('music_listen', 'wake') or not isinstance(v, dict):
+            continue
+        if (v.get('ts') or 0) > best_ts:
+            best, best_ts = k, v.get('ts') or 0
+    return best or 'wake'
+
+
+def _wake_cc_model(p):
+    """用你最近聊天时选的模型；没有记录就用人设里的 wake_model。"""
+    for r in cc_mode.load_runs(DATA_DIR):
+        if r.get('model') and r.get('model') != 'default':
+            return r['model']
+    return p.get('wake_model') or ''
+
+
+def do_wake_cc(manual=False, reason=''):
+    """cc 模式的自己醒来：不走付费 API，跑一次 Claude Code（和聊天同一个会话、同一套工具）。"""
+    p = load_persona()
+    # 你正在跟他聊：自动醒来这次先跳过（下一分钟再看）；你手动叫的就排队等一会儿
+    slot = cc_mode.acquire_slot(wait=60 if manual else 0)
+    if slot is None:
+        return {'error': '他正在回你的消息，等会儿再叫他', 'busy': True}
+    note = p.get('wake_prompt') or DEFAULT_PERSONA['wake_prompt']
+    if reason:
+        note = f'（叫你起来是因为：{reason}）' + note
+    try:
+        note = desire_line() + ' ' + note
+    except Exception:
+        pass
+    note += (' 这是你自己醒过来的时候，她现在没在跟你说话。家里的东西（朋友圈、碎碎念、犯错本、日历、时间线……）'
+             '和记忆库都在你手边，想做什么直接用。想跟她说话就直接写出来，她下次打开会看到；'
+             '什么都不想说也可以只回一个「（睡了）」。')
+    system_prompt = build_system(p, now_context(p, note))
+    said, did, err = '', [], ''
+    try:
+        gen = cc_mode.stream_chat(messages=[{'role': 'user', 'content': '（没有人说话）'}],
+                                  system_prompt=system_prompt, key=_wake_cc_key(), data_dir=DATA_DIR,
+                                  upstream_cfg=load_upstream(), model=_wake_cc_model(p))
+        try:
+            for chunk in gen:
+                if not chunk.startswith('data: {'):
+                    continue
+                try:
+                    ev = json.loads(chunk[6:])
+                except Exception:
+                    continue
+                if ev.get('type') == 'content_block_delta' and (ev.get('delta') or {}).get('type') == 'text_delta':
+                    said += ev['delta'].get('text', '')
+                elif ev.get('type') == 'cc_tool' and ev.get('phase') == 'start':
+                    did.append(ev.get('name') or '')
+        finally:
+            gen.close()
+    except Exception as e:
+        err = f'{type(e).__name__}: {e}'
+    finally:
+        slot.release()
+    said = said.strip()
+    if said.startswith('（出错了'):
+        err, said = said.strip('（）'), ''
+    if said in ('（睡了）', '(睡了)', '睡了'):
+        said = ''
+    st = load_state()
+    st['last_wake'] = time.time()
+    save_state(st)
+    if err:
+        print(f'[wake] cc 模式醒来出错：{err[:200]}', flush=True)
+        return {'error': err[:300]}
+    entry = {'ts': int(time.time() * 1000), 'said': said[:2000],
+             'did': [n.split('__')[-1] for n in did], 'manual': manual, 'read': False, 'via': 'cc'}
+    log = jread(WAKE_LOG, [])
+    log.insert(0, entry)
+    jwrite(WAKE_LOG, log[:60])
+    return entry
+
+
 def do_wake(manual=False, reason=''):
     p = load_persona()
+    if cc_mode.is_cc_mode(load_upstream()):
+        return do_wake_cc(manual=manual, reason=reason)
     if not OR_KEY:
         return {'error': '没有 API key'}
     mcp_tools = _mcp_tools_for_wake()
