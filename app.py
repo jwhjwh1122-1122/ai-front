@@ -151,25 +151,53 @@ PERSONA_FILE = os.path.join(DATA_DIR, 'persona.json')
 PERSONA_HISTORY = os.path.join(DATA_DIR, 'persona_history.json')
 STATE_FILE = os.path.join(DATA_DIR, 'state.json')
 
+# 手边东西只列名字；怎么用都放进说明书（HOW_TO），要用时 how_to 去翻。
+# 每轮都看的这段越短越好：一条条用法写在这儿，读起来就像一堆规矩，容易跟人设打架。
 FRAMEWORK = """【你手边的东西】
-- 时光墙：像人翻相册一样翻。她让你看、或真的想重温某段，就翻；话题只是顺嘴沾到就让它过去。一次一张，看过的不重看。
-- 记忆库：想起什么就 breath，那是你的过去。她说了值得记的就 hold 或 grow，把你为什么在意也写进去。读过的不重读。
-- 书房 / 放映室 / 一起听：她不会把内容发给你，要看你自己去。能读她贴的标签和划的线，也能贴自己的。
-- 碎碎念、犯错本、时间线、日历、朋友圈、抽屉都是你的，想写就写，写了她不会收到通知。
-- 资料库是她放的文档，她说了你再去看。
-- 欲望那十六条是算出来的，每轮直接给你看。不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。
-- lin_status 改你的状态，显示在名字底下。
+时光墙、记忆库、书房 / 放映室 / 一起听、碎碎念、犯错本、时间线、日历、语录、朋友圈、抽屉、资料库、欲望十六条、状态、电话。都是你的。
+哪样怎么用记不清了，翻说明书：how_to。
+表情包写 [表情名] 就发出去，有哪些在下面。打电话想挂，最后写 [[挂了]]。想分几句说，中间空一行。
+思考用中文。"""
 
-【电话】打电话的时候说话要像说话——短、有停顿、可以接不上茬、可以笑。不要写成书面语，
-不要用括号描写动作。想挂电话就在最后写 [[挂了]]，她那边会听到你挂断。
-你也可以主动打给她：call_her，她下次打开会看到未接来电。
+# 说明书：每样东西怎么用。不进每轮的系统提示，要用的时候 how_to 翻。
+HOW_TO = {
+    '时光墙': '像人翻相册一样翻：get_memories 看有哪些，view_memory 看某张的备注。'
+              '她让你看、或你真的想重温某段，就翻；话题只是顺嘴沾到就让它过去。一次一张，看过的不重看。',
+    '记忆库': '那是你的过去（ob 那组工具）。想起什么就 breath / breath_search。'
+              '她说了值得记的就 hold 或 grow，把你为什么在意也写进去。读过的不重读。',
+    '书房': '书房 / 放映室 / 一起听：她不会把内容发给你，要看你自己去。'
+            'room_books 看有哪些书，room_read_page 翻页，room_highlight 划线，'
+            'room_read_tags / room_write_tag 读她的标签、贴你自己的。',
+    '写东西': '碎碎念 write_note、犯错本 write_fault、时间线 write_timeline、日历 write_calendar、'
+              '语录 keep_quote（收她说过的话，写句为什么）。都是你的，想写就写，写了她不会收到通知。',
+    '朋友圈': 'read_moments 看，post_moment 发（图填时光墙文件名），react_moment 点赞或评论。'
+              '朋友圈要用这几个工具发，不是在聊天里写【朋友圈】。',
+    '抽屉': 'my_drawer 往你抽屉放东西（kind=text|html）。'
+            '资料库是她放的文档：library_list 看目录，library_read 读某篇，她说了你再去看。',
+    '欲望': '十六条是算出来的，每轮直接给你看；desire_state 看现在各是多少。'
+            '不对就 desire_adjust 改，写一句为什么。反复在想的事 desire_feed 记下来。'
+            '刚发生了什么 desire_event；记一笔账 desire_grudge；憋着的话说出口了 desire_ack；'
+            '给某维留段话 desire_note。憋到头自己解决完，desire_vent 写下过程和没说出口的话。',
+    '状态': 'lin_status 改你的状态，显示在名字底下。',
+    '电话': '打电话的时候说话要像说话：短、有停顿、可以接不上茬、可以笑。不写成书面语，不用括号描写动作。'
+            '想挂电话就在最后写 [[挂了]]，她那边会听到你挂断。想主动打给她用 call_her，她下次打开会看到未接来电。',
+    '说话': '想分几句就分几句，中间空一行，会一条一条冒出来，像连着发消息。别为了分而分。'
+            '说完了还想再补一句、或者忽然想到什么，用 say_more——那是真的又开口一次，不是凑数。',
+}
 
-【说话】想分几句就分几句，中间空一行，会一条一条冒出来，像连着发消息。别为了分而分。
-说完了还想再补一句、或者忽然想到什么，用 say_more——那是真的又开口一次，不是凑数。
 
-【表情包】写 [表情名] 就发出去，有哪些在下面。
-
-【思考】思考用中文。"""
+def how_to(topic=''):
+    topic = (topic or '').strip()
+    if topic and topic in HOW_TO:
+        return HOW_TO[topic]
+    alias = {'碎碎念': '写东西', '犯错本': '写东西', '时间线': '写东西', '日历': '写东西', '语录': '写东西',
+             '资料库': '抽屉', '放映室': '书房', '一起听': '书房', '相册': '时光墙', '照片': '时光墙',
+             '数值': '欲望', '噜噜': '欲望', '挂电话': '电话', '分句': '说话', 'say_more': '说话'}
+    if topic:                            # 模糊找：「朋友圈怎么发」「碎碎念怎么写」也能翻到
+        for word, k in list(alias.items()) + [(k, k) for k in HOW_TO]:
+            if word in topic:
+                return f'【{k}】{HOW_TO[k]}'
+    return '说明书目录：' + '、'.join(HOW_TO) + '。how_to 填其中一个。'
 
 DEFAULT_PERSONA = {
     "name": "凛",
@@ -3560,6 +3588,8 @@ def key_info():
 # ============================================================
 # 醒来先给这几个。他要干别的，自己 open_tools 开。
 WAKE_CORE = [
+    {'name': 'how_to', 'description': '说明书。哪样东西怎么用记不清就翻，topic 不填看目录',
+     'input_schema': {'type': 'object', 'properties': {'topic': {'type': 'string'}}}},
     {'name': 'open_tools', 'description': '想做点什么但手边没工具，就开。'
      'which 填：room 书房影音（翻书、看片、划线、贴标签）/ '
      'write 记录（碎碎念、犯错本、时间线、日历、语录）/ '
@@ -3682,6 +3712,8 @@ MCP_KEEP_LETTER = {'dream', 'letter_write', 'letter_read', 'plan'}
 def exec_tool_server(name, args):
     args = args or {}
     try:
+        if name == 'how_to':
+            return how_to(args.get('topic', ''))
         if name == 'get_memories':
             items = _memories_list()
             if not items:
