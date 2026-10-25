@@ -1564,6 +1564,7 @@ async function callTurn(text, silentUser) {
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
+        extra_stable: emojiNames(), _ctx: ctxWindow,   // 跟聊天发一样的，system 才一字不差、缓存不断
         _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking()
       })
     });
