@@ -2139,16 +2139,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 输入
   const inp = $('input');
   inp.addEventListener('input', () => autoResize(inp));
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+  bindEnterSend(inp, () => sendMsg());
   $('send-btn').onclick = () => { if (isTyping && abortController) { abortController.abort(); endTurn(); } else sendMsg(); };
   document.querySelectorAll('.split-input').forEach(el => {
     el.addEventListener('input', () => autoResize(el));
-    el.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (el.dataset.ctx === 'stage' && el.value.trim()) markMoment(el.value.trim());
-        sendMsg(el.dataset.ctx);
-      }
+    bindEnterSend(el, () => {
+      if (el.dataset.ctx === 'stage' && el.value.trim()) markMoment(el.value.trim());
+      sendMsg(el.dataset.ctx);
     });
   });
   document.querySelectorAll('[data-splitsend]').forEach(b => b.onclick = () => {
@@ -2920,5 +2917,38 @@ function drawToolRows(box, s, card) {
       refresh();
     };
     box.appendChild(row);
+  });
+}
+
+// 回车就发，Shift+回车换行。
+// 中文输入法、手机键盘有时 keydown 拿不到 Enter（keyCode 229），回车就变成插了个换行，
+// 所以 keydown、beforeinput、input 三道都接一下，哪道先接到就在哪发，并且只发一次。
+function bindEnterSend(el, send) {
+  let shift = false, last = 0;
+  const fire = () => {
+    const now = Date.now();
+    if (now - last < 300) return;
+    last = now; send();
+  };
+  const isBreak = t => t === 'insertLineBreak' || t === 'insertParagraph';
+  el.addEventListener('keydown', e => {
+    shift = e.shiftKey;
+    if (e.isComposing || e.keyCode === 229) return;   // 正在选字，这下回车是上屏，不是发送
+    if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) { e.preventDefault(); fire(); }
+  });
+  el.addEventListener('keyup', e => { if (e.key === 'Shift') shift = false; });
+  el.addEventListener('beforeinput', e => {
+    if (!isBreak(e.inputType) || shift || e.isComposing) return;
+    e.preventDefault(); fire();
+  });
+  el.addEventListener('input', e => {
+    // 有的浏览器 beforeinput 拦不住，换行已经插进去了：删掉那个换行再发
+    if (!isBreak(e.inputType) || shift) return;
+    const pos = el.selectionStart;
+    if (pos > 0 && el.value[pos - 1] === '\n') {
+      el.value = el.value.slice(0, pos - 1) + el.value.slice(pos);
+      el.selectionStart = el.selectionEnd = pos - 1;
+    }
+    fire();
   });
 }
