@@ -698,7 +698,7 @@ const MAX_MORE = 3;
 // 他写了空行就当分句，一条一条冒，像真的连着发
 function splitSay(text) {
   const parts = String(text || '').split(/\n\s*\n+/).map(x => x.trim()).filter(Boolean);
-  if (parts.length <= 1) return parts.length ? parts : [String(text || '')];
+  if (!parts.length) return [String(text || '')];
   const out = [];
   for (const p of parts) {
     // 只有真的碎成一两个字才合回去
