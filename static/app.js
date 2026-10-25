@@ -809,7 +809,8 @@ function addUserBubble(text, imgData, idx, audio) {
   let c = '';
   if (imgData) c += `<div class="bubble-img"><img src="${imgData}"></div>`;
   // 她的也按空行拆成几条（只是显示，发给他的还是原样一整句）
-  if (text && !(audio && audio.url)) splitSay(text).filter(Boolean).forEach(sg => {
+  // 她的：换一行就拆一个气泡（手机上回车就是换行）
+  if (text && !(audio && audio.url)) String(text).split(/\n+/).flatMap(l => l.trim() ? splitSay(l) : []).filter(Boolean).forEach(sg => {
     c += `<div class="bubble user${isStickerOnly(sg) ? ' sticker-only' : ''}">${stickerize(esc(sg))}</div>`;
   });
   row.innerHTML = `${av}<div class="bubble-wrap">${c}<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
