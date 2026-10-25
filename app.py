@@ -2374,7 +2374,7 @@ def chat_v2():
         save_state(st)
     if is_cc and not keepalive:
         try:
-            show_new_stickers(msgs_in)
+            show_stickers(msgs_in)
         except Exception as e:
             print(f'[sticker] 附图失败: {e}', flush=True)
         for m in reversed(msgs_in):
@@ -4576,27 +4576,54 @@ def _sticker_patch(name, **kw):
     return hit
 
 
-def show_new_stickers(msgs):
-    """她这句里的表情包，他第一次见的那张附上图让他看一眼（一张只附一次，之后靠他记的那句意思，省额度）。"""
-    m = next((x for x in reversed(msgs) if isinstance(x, dict) and x.get('role') == 'user' and not x.get('_internal')), None)
-    if not m:
+def _sticker_thumb(it):
+    """表情的小图（200 像素，动图取第一帧），一张大约 50 token。做过就复用。"""
+    from chat_media import stickers_dir
+    d = stickers_dir(MEDIA_DIR)
+    src = os.path.join(d, secure_filename(it['file']))
+    name = 'th_' + secure_filename(it['file']).rsplit('.', 1)[0] + '.png'
+    dst = os.path.join(d, name)
+    if not os.path.exists(dst):
+        try:
+            from PIL import Image
+            im = Image.open(src)
+            im.seek(0)
+            im = im.convert('RGBA')
+            im.thumbnail((200, 200))
+            im.save(dst, 'PNG')
+        except Exception:
+            return '/stickers/' + it['file']   # 没装 Pillow 或者打不开：用原图
+    return '/stickers/' + name
+
+
+def show_stickers(msgs):
+    """这一句里她发的表情、他上一句发的表情，附小图让他当下看见。
+    回完以后会话记录里的图会换成「〔表情[名字]〕」几个字（cc_mode.strip_sticker_images），之后不再背着图。"""
+    users = [i for i, x in enumerate(msgs) if isinstance(x, dict) and x.get('role') == 'user' and not x.get('_internal')]
+    if not users:
+        return
+    m = msgs[users[-1]]
+    names = {x.get('name'): x for x in _stickers_all()}
+    pat = r'\[([^\[\]]{1,20})\]'
+    txt = lambda c: c if isinstance(c, str) else '\n'.join(
+        b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
+    hers = [names[n] for n in dict.fromkeys(re.findall(pat, txt(m.get('content')) or '')) if n in names][:3]
+    prev = next((x for x in reversed(msgs[:users[-1]]) if isinstance(x, dict) and x.get('role') == 'assistant'), None)
+    his = [names[n] for n in dict.fromkeys(re.findall(pat, txt((prev or {}).get('content')) or '')) if n in names][:3]
+    if not hers and not his:
         return
     c = m.get('content')
-    text = c if isinstance(c, str) else '\n'.join(b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
-    names = {x.get('name'): x for x in _stickers_all()}
-    new = []
-    for nm in dict.fromkeys(re.findall(r'\[([^\[\]]{1,20})\]', text or '')):
-        it = names.get(nm)
-        if it and not it.get('seen') and len(new) < 2:
-            new.append(it)
-    if not new:
-        return
     blocks = c if isinstance(c, list) else [{'type': 'text', 'text': c or ''}]
-    for it in new:
-        blocks.append({'type': 'image_url', 'image_url': {'url': '/stickers/' + it['file']}})
-        _sticker_patch(it['name'], seen=True)
-    blocks.append({'type': 'text', 'text': '（她发的表情' + '、'.join(f"[{it['name']}]" for it in new)
-                   + ' 你是第一次见，图附在上面了。看完用 sticker_note 记一句它是什么意思，以后就不再发图）'})
+    for who, items in (('她发的表情', hers), ('你刚才发的表情', his)):
+        for it in items:
+            blocks.append({'type': 'text', 'text': f"〔{who}[{it['name']}]〕"})
+            blocks.append({'type': 'image_url', 'image_url': {'url': _sticker_thumb(it)}})
+    unseen = [it['name'] for it in hers + his if not it.get('seen')]
+    if unseen:
+        blocks.append({'type': 'text', 'text': '（' + '、'.join(f'[{n}]' for n in unseen)
+                       + ' 你是第一次见，看完可以用 sticker_note 记一句它是什么意思）'})
+        for n in unseen:
+            _sticker_patch(n, seen=True)
     m['content'] = blocks
 
 

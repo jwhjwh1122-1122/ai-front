@@ -801,12 +801,55 @@ _NOTE_HEAD = re.compile(r'^\s*〔[^〕]*〕\s*')
 
 
 def _entry_text(entry):
+    """她那句话本身（第一段文字，去掉开头盖的〔当下〕；后面附的表情说明不算）。"""
     c = (entry.get('message') or {}).get('content')
     if isinstance(c, str):
         t = c
     else:
-        t = '\n'.join(b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
-    return _NOTE_HEAD.sub('', t or '').strip()
+        t = next((b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text'), '')
+    t = re.split(r'\n\n〔(?:她发的|你刚才发的)表情\[', t or '', maxsplit=1)[0]
+    return _NOTE_HEAD.sub('', t).strip()
+
+
+def strip_sticker_images(session_id):
+    """他看过的表情图，在会话记录里换成「〔表情[名字]〕」几个字：当下看见，之后不再每句背着图。"""
+    p = _session_path(session_id)
+    if not p:
+        return 0
+    try:
+        with open(p, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+    except Exception:
+        return 0
+    n = 0
+    for i, l in enumerate(lines):
+        if '〔' not in l or '"image"' not in l:
+            continue
+        try:
+            d = json.loads(l)
+        except Exception:
+            continue
+        c = (d.get('message') or {}).get('content')
+        if d.get('type') != 'user' or not isinstance(c, list):
+            continue
+        # 发给 claude 时图片在前、文字合成一段在后；表情图是附在最后的那几张，按说明的个数从后往前去掉
+        alltext = ''.join(str(b.get('text', '')) for b in c if isinstance(b, dict) and b.get('type') == 'text')
+        k = alltext.count('〔她发的表情[') + alltext.count('〔你刚才发的表情[')
+        if not k:
+            continue
+        img_idx = [j for j, b in enumerate(c) if isinstance(b, dict) and b.get('type') == 'image']
+        gone = set(img_idx[-k:])
+        out = [b for j, b in enumerate(c) if j not in gone]
+        n += len(gone)
+        if len(out) != len(c):
+            d['message']['content'] = out
+            lines[i] = json.dumps(d, ensure_ascii=False)
+    if n:
+        tmp = p + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+        os.replace(tmp, p)
+    return n
 
 
 def regen_fork(session_id, target_text):
@@ -1467,6 +1510,7 @@ def _finish_detached(proc, q, run, deadline, t_start, tag, meta, holder, data_di
         if outcome == 'detached_done' and run.session_id:
             try:
                 bump_turns(data_dir, run.key, run.session_id)
+                strip_sticker_images(run.session_id)
             except Exception:
                 pass
         if text and outcome == 'detached_done':
@@ -1740,6 +1784,10 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     yield c
             if not failed and run.session_id:
                 bump_turns(data_dir, key, run.session_id)
+                try:
+                    strip_sticker_images(run.session_id)
+                except Exception as e:
+                    print(f'[cc] 表情图换成字失败: {e}', flush=True)
             break
     finally:
         if sys_file and not (holder or {}).get('detached'):
