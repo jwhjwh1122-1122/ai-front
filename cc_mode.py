@@ -882,6 +882,12 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
             allowed.append(f'mcp__{n}__*')
     if allowed:
         cmd.append('--allowedTools=' + ','.join(allowed))
+    # 记忆库只留常用的：读、搜、存、整理、改、信、约定。不常用的说明书很长，每句都背着太费。
+    # CC_OB_OFF 可以改（逗号分隔工具名；填 none 全留）。
+    ob_off = (os.environ.get('CC_OB_OFF') or 'I,anchor,breath_advanced,feel,letter_lock_update,pulse,release').strip()
+    if auto_mcp and not user_mcp and ob_off.lower() != 'none':
+        web_off = list(web_off) + [f'mcp__ob__{t}' for t in _split_list(ob_off)
+                                   if re.match(r'^[A-Za-z0-9_.-]{1,80}$', t)]
     if web_off:
         # 网页里关掉的那几个工具，Claude Code 这边也不给用
         cmd.append('--disallowedTools=' + ','.join(web_off))
