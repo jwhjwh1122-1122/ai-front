@@ -4629,10 +4629,15 @@ def show_stickers(msgs):
         return
     c = m.get('content')
     blocks = c if isinstance(c, list) else [{'type': 'text', 'text': c or ''}]
-    for who, items in (('她发的表情', hers), ('你刚才发的表情', his)):
+    # 图片发过去时都排在最前面、文字在后面，所以按顺序写清楚哪张是谁的，免得他把自己发的当成她发的
+    n = sum(1 for b in blocks if isinstance(b, dict) and b.get('type') in ('image', 'image_url'))
+    say = []
+    for who, items in (('她这句发的表情', hers), ('你自己上一句发的表情（是你发的，不是她）', his)):
         for it in items:
-            blocks.append({'type': 'text', 'text': f"〔{who}[{it['name']}]〕"})
+            n += 1
             blocks.append({'type': 'image_url', 'image_url': {'url': _sticker_thumb(it)}})
+            say.append(f"第{n}张图={who}[{it['name']}]")
+    blocks.append({'type': 'text', 'text': '〔附图：' + '；'.join(say) + '〕'})
     unseen = [it['name'] for it in hers + his if not it.get('seen')]
     if unseen:
         blocks.append({'type': 'text', 'text': '（' + '、'.join(f'[{n}]' for n in unseen)

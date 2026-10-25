@@ -807,7 +807,7 @@ def _entry_text(entry):
         t = c
     else:
         t = next((b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text'), '')
-    t = re.split(r'\n\n〔(?:她发的|你刚才发的)表情\[', t or '', maxsplit=1)[0]
+    t = re.split(r'\n\n〔(?:附图：|她发的表情\[|你刚才发的表情\[)', t or '', maxsplit=1)[0]
     return _NOTE_HEAD.sub('', t).strip()
 
 
