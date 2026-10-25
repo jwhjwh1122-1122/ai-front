@@ -819,6 +819,7 @@ def regen_anchor(session_id):
 
 
 _FORK_FLAG_BROKEN = False
+_TOOLS_FLAG_BROKEN = False   # 这个版本不认 --tools 就记住，以后不加
 
 
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
@@ -834,6 +835,11 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     td = thinking_display() if thinking else ''
     if td:
         cmd.append('--thinking-display=' + td)
+    # Claude Code 自带的写代码工具（Bash、读写文件、Task……）说明书很长，每句都要背着，
+    # 他是陪你的不是写代码的，默认只留查网页的两个。CC_BUILTIN_TOOLS 可以改（填 none 全关）。
+    bt = (os.environ.get('CC_BUILTIN_TOOLS') or 'WebSearch,WebFetch').strip()
+    if not _TOOLS_FLAG_BROKEN:
+        cmd += ['--tools', '' if bt.lower() == 'none' else bt]
     if image_input:
         # 这一轮有图片：stdin 改喂一行 stream-json（带图片 block），他就能真的看到图
         cmd += ['--input-format', 'stream-json']
@@ -1660,6 +1666,12 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     global _THINK_FLAG_BROKEN
                     _THINK_FLAG_BROKEN = True
                     print('[cc] 这个版本不支持 --thinking-display，去掉后重试', flush=True)
+                    continue
+                # 这个版本不认 --tools：记住，去掉马上重试
+                if not run.text_emitted and '--tools' in low and ('unknown' in low or 'invalid' in low):
+                    global _TOOLS_FLAG_BROKEN
+                    _TOOLS_FLAG_BROKEN = True
+                    print('[cc] 这个版本不支持 --tools，去掉后重试', flush=True)
                     continue
                 # 重新生成的分叉参数这个版本不认，或者分叉失败：记住，改成开新会话（只带剩下的历史）再来一次
                 if resume_at and not run.text_emitted and attempt <= 3 and (

@@ -224,6 +224,9 @@ DEFAULT_PERSONA = {
 }
 
 
+LAST_CC_SYS = os.path.join(DATA_DIR, 'cc_last_system.json')
+
+
 def persona_patch(d):
     """改几项设置，不进人设历史（唤醒/闹钟/钥匙这种小改动）。"""
     p = jread(PERSONA_FILE, {}) or {}
@@ -2379,6 +2382,11 @@ def chat_v2():
         notebook = nb_current(prev_talk)
         system_prompt = build_system(persona, "\n".join(x for x in stable if x),
                                      conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook)
+        try:
+            if jread(LAST_CC_SYS, {}).get('text') != system_prompt:
+                jwrite(LAST_CC_SYS, {'text': system_prompt})   # 醒来时用同一份
+        except Exception:
+            pass
     else:
         system_prompt = build_system(persona, "\n".join(x for x in volatile + stable if x),
                                      conv_id=data.get('_conv_id'))
@@ -4384,10 +4392,12 @@ def do_wake_cc(manual=False, reason=''):
     note += (' 这是你自己醒过来的时候，她现在没在跟你说话。家里的东西（朋友圈、碎碎念、犯错本、日历、时间线……）'
              '和记忆库都在你手边，想做什么直接用。想跟她说话就直接写出来，她下次打开会看到；'
              '什么都不想说也可以只回一个「（睡了）」。')
-    system_prompt = build_system(p, now_context(p, note))
+    # 醒来接着的是聊天那个会话：system 用跟聊天一模一样的那份（不然整段会话的缓存会断、全价重算），
+    # 醒来的说明盖在这一句前面
+    system_prompt = jread(LAST_CC_SYS, {}).get('text') or build_system(p, '')
     said, did, err = '', [], ''
     try:
-        gen = cc_mode.stream_chat(messages=[{'role': 'user', 'content': '（没有人说话）'}],
+        gen = cc_mode.stream_chat(messages=[{'role': 'user', 'content': '（没有人说话）', '_note': now_context(p, note)}],
                                   system_prompt=system_prompt, key=_wake_cc_key(), data_dir=DATA_DIR,
                                   upstream_cfg=load_upstream(), model=_wake_cc_model(p))
         try:
