@@ -109,9 +109,9 @@ const GROUP_LABEL = {
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
   self: '唤醒闹钟电话',
 };
-// 家里哪都能去，工具全给，不分房间、不用她开
-function groupOn(g) { return true; }
-function setGroup(g, on) { toast('工具都给他开着'); }
+// 钥匙在她手里：她开了哪组，他就能随时用哪组，在哪个房间都行，用的时候不用再问
+function groupOn(g) { return localStorage.getItem('tg-' + g) !== '0'; }
+function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); }
 function groupTokens(g) {
   const s = JSON.stringify(T[g] || []);
   const cn = (s.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -158,6 +158,7 @@ function buildTools() {
   const seen = new Set(), out = [];
   const push = t => { if (t && t.name && !seen.has(t.name)) { seen.add(t.name); out.push(t); } };
   for (const g of Object.keys(T)) {
+    if (!groupOn(g)) continue;
     T[g].forEach(push);
   }
   const ob = mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url));
