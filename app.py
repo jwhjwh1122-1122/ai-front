@@ -4591,23 +4591,36 @@ def _sticker_patch(name, **kw):
     return hit
 
 
-def _sticker_thumb(it):
-    """表情的小图（200 像素，动图取第一帧），一张大约 50 token。做过就复用。"""
+def _sticker_thumb(it, who='her'):
+    """表情的小图（200 像素，动图取第一帧），顶上打一条横幅标清楚是谁发的：
+    他自己发的 YOU SENT（蓝），她发的 SHE SENT（粉）。做过就复用。"""
     from chat_media import stickers_dir
     d = stickers_dir(MEDIA_DIR)
     src = os.path.join(d, secure_filename(it['file']))
-    name = 'th_' + secure_filename(it['file']).rsplit('.', 1)[0] + '.png'
+    name = f"th_{who}_" + secure_filename(it['file']).rsplit('.', 1)[0] + '.png'
     dst = os.path.join(d, name)
     if not os.path.exists(dst):
         try:
-            from PIL import Image
+            from PIL import Image, ImageDraw, ImageFont
             im = Image.open(src)
             im.seek(0)
             im = im.convert('RGBA')
             im.thumbnail((200, 200))
-            im.save(dst, 'PNG')
-        except Exception:
-            return '/stickers/' + it['file']   # 没装 Pillow 或者打不开：用原图
+            bar = 26
+            out = Image.new('RGBA', (max(im.width, 120), im.height + bar), (255, 255, 255, 255))
+            out.paste(im, (0, bar), im)
+            dr = ImageDraw.Draw(out)
+            color = (60, 110, 220, 255) if who == 'lin' else (230, 90, 140, 255)
+            dr.rectangle([0, 0, out.width, bar], fill=color)
+            try:
+                font = ImageFont.load_default(size=18)
+            except TypeError:
+                font = ImageFont.load_default()
+            dr.text((6, 3), 'YOU SENT' if who == 'lin' else 'SHE SENT', fill=(255, 255, 255, 255), font=font)
+            out.convert('RGB').save(dst, 'PNG')
+        except Exception as e:
+            print(f'[sticker] 做小图失败: {e}', flush=True)
+            return '/stickers/' + it['file']
     return '/stickers/' + name
 
 
@@ -4632,10 +4645,11 @@ def show_stickers(msgs):
     # 图片发过去时都排在最前面、文字在后面，所以按顺序写清楚哪张是谁的，免得他把自己发的当成她发的
     n = sum(1 for b in blocks if isinstance(b, dict) and b.get('type') in ('image', 'image_url'))
     say = []
-    for who, items in (('她这句发的表情', hers), ('你自己上一句发的表情（是你发的，不是她）', his)):
+    for who, items, tag in (('她这句发的表情（图上标 SHE SENT）', hers, 'her'),
+                            ('你自己上一句发的表情（图上标 YOU SENT，是你发的，不是她）', his, 'lin')):
         for it in items:
             n += 1
-            blocks.append({'type': 'image_url', 'image_url': {'url': _sticker_thumb(it)}})
+            blocks.append({'type': 'image_url', 'image_url': {'url': _sticker_thumb(it, tag)}})
             say.append(f"第{n}张图={who}[{it['name']}]")
     blocks.append({'type': 'text', 'text': '〔附图：' + '；'.join(say) + '〕'})
     unseen = [it['name'] for it in hers + his if not it.get('seen')]
