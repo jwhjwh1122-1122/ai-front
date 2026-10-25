@@ -2610,8 +2610,8 @@ def emoji_upload():
     if not ext:
         return jsonify({'error': '只收 png/jpg/gif/webp'}), 400
     raw = base64.b64decode(b64)
-    if len(raw) > 8 * 1024 * 1024:
-        return jsonify({'error': '太大了（超过 8MB）'}), 400
+    if len(raw) > 10 * 1024 * 1024:
+        return jsonify({'error': '太大了（超过 10MB）'}), 400
     fn = hashlib.md5(raw).hexdigest()[:16] + '.' + ext
     fp = os.path.join(EMOJI_DIR, fn)
     if not os.path.exists(fp):

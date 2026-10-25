@@ -1920,6 +1920,24 @@ function showStorage() {
   el.innerHTML = `这段对话占 ${fmtKB(cur)} · 表情 ${fmtKB(emo)} · 手机里一共用了 ${fmtKB(total)}（上限约 5 MB，已用 ${pct}%）`
     + (pct >= 80 ? '<br><span style="color:var(--accent)">快满了，点「+ 新建」换个窗口会接着聊，旧的可以删掉</span>' : '');
 }
+function shrinkImage(src, max) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      try {
+        // webp 能留透明背景又小；手机不支持就退回 png
+        const w = c.toDataURL('image/webp', 0.9);
+        res(w.startsWith('data:image/webp') ? w : c.toDataURL('image/png'));
+      } catch (e) { res(null); }
+    };
+    im.onerror = () => res(null);
+    im.src = src;
+  });
+}
 // 以前的表情是整张图塞在手机里的，挪到服务器上，手机只留个地址
 async function migrateEmoji() {
   let l; try { l = JSON.parse(localStorage.getItem('custom-emoji') || '[]'); } catch (e) { return; }
@@ -2875,9 +2893,16 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingEmoji = null;
   $('emoji-input').onchange = e => {
     const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    if (f.size > 10 * 1024 * 1024 && /gif/i.test(f.type)) { toast('动图超过 10MB 了，存不下'); return; }
     const r = new FileReader();
-    r.onload = ev => { pendingEmoji = ev.target.result; $('emoji-name-input').value = ''; $('emoji-name-modal').classList.add('open'); };
-    r.readAsDataURL(f); e.target.value = '';
+    r.onload = async ev => {
+      let data = ev.target.result;
+      // 静态图大于 1MB 就缩到 800 像素宽，聊天里只显示 120 像素，看不出差别；动图不动，免得不会动了
+      if (!/gif/i.test(f.type) && f.size > 1024 * 1024) data = await shrinkImage(data, 800) || data;
+      pendingEmoji = data; $('emoji-name-input').value = ''; $('emoji-name-modal').classList.add('open');
+    };
+    r.readAsDataURL(f);
   };
   $('emoji-name-cancel').onclick = () => { pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); };
   $('emoji-name-ok').onclick = async () => {
