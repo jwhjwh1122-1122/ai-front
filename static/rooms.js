@@ -16,7 +16,7 @@ function showPage(name) {
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
-  if (name === 'settings') renderWakeSettings();
+  if (name === 'settings') { renderWakeSettings(); renderNotebook(); }
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
 async function refreshTimeCounts() {
@@ -1905,6 +1905,17 @@ async function renderFaults() {
       ${x.how ? `<div class="fault-h">以 后</div><div class="fault-b">${esc(x.how)}</div>` : ''}
       <div class="mumble-date">${d.toLocaleDateString('zh-CN')}</div></div>`;
   }).join('');
+}
+
+// ============ 小本子 ============
+async function renderNotebook() {
+  const el = $('nb-text'); if (!el) return;
+  try {
+    const d = await jget('/api/notebook');
+    el.textContent = d.text || '还是空的';
+    el.style.color = d.text ? 'var(--text)' : 'var(--text-muted)';
+    $('nb-count').textContent = d.text ? `${d.text.length} / ${d.max} 字` : '';
+  } catch (e) { el.textContent = '—'; }
 }
 
 // ============ 唤醒 ============

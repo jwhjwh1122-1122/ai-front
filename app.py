@@ -238,7 +238,28 @@ THINK_NOTE = ('思考用中文，第一人称流露当下的念头——「我�
               '不复述规则，不出现指向设定的句子。思考就是内心独白。')
 
 
-def build_system(persona, extra='', conv_id=None, recap_upto=None, extra_title='当下'):
+NOTEBOOK_MAX = 800
+
+
+def _nb_file():
+    return os.path.join(DATA_DIR, 'notebook.json')
+
+
+def load_nb():
+    return jread(_nb_file(), {'text': '', 'pending': None})
+
+
+def nb_promote_if(should):
+    """他写的先挂着；等本来就要重算缓存的时候（窗口挪动、隔太久缓存已过期）才换进 system。"""
+    nb = load_nb()
+    if should and nb.get('pending') is not None:
+        nb['text'] = nb['pending']
+        nb['pending'] = None
+        jwrite(_nb_file(), nb)
+    return nb
+
+
+def build_system(persona, extra='', conv_id=None, recap_upto=None, extra_title='当下', notebook=None):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -266,6 +287,11 @@ def build_system(persona, extra='', conv_id=None, recap_upto=None, extra_title='
         if (rec.get('text') or '').strip():
             seg2 += ("\n\n【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                      "记不清细节就问她。\n" + rec['text'].strip())
+    if notebook is None:
+        nb = load_nb()
+        notebook = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    if (notebook or '').strip():
+        seg2 += "\n\n【我的小本子】\n我自己写给自己的，必须记住的事。\n" + notebook.strip()
     parts = [FRAMEWORK, seg2]
     if extra:
         parts.append(f"【{extra_title}】\n{extra}")
@@ -2277,12 +2303,27 @@ def chat_v2():
                 break
 
     st = load_state()
+    prev_talk = st.get('last_chat_req')
+    if not keepalive:
+        st['last_chat_req'] = time.time()
+        save_state(st)
     if str(sid) != 'default' and st.get('session_id') != str(sid)[:256]:
         st['session_id'] = str(sid)[:256]
         save_state(st)
     if not keepalive and new_note:
         st['last_user_msg'] = time.time()
         save_state(st)
+
+    # 小本子换上的时机：窗口正好在挪（摘要要换，system 本来就变）或者隔了快一小时（缓存早过期了）
+    nb_go = False
+    if not keepalive:
+        cid, ru = data.get('_conv_id'), data.get('_recap_upto')
+        if cid and ru is not None:
+            pend = load_recap(cid).get('pending') or {}
+            nb_go = bool(pend.get('text')) and int(pend.get('upto', 0)) <= int(ru)
+        if prev_talk is None or time.time() - prev_talk > 55 * 60:
+            nb_go = True
+    notebook = nb_promote_if(nb_go).get('text', '')
 
     stable = []
     if data.get('extra_stable'):
@@ -2292,7 +2333,8 @@ def chat_v2():
         stable.append(mem)
     system_prompt = build_system(persona, "\n".join(x for x in stable if x),
                                  conv_id=data.get('_conv_id'),
-                                 recap_upto=data.get('_recap_upto'), extra_title='手边')
+                                 recap_upto=data.get('_recap_upto'), extra_title='手边',
+                                 notebook=notebook)
 
     oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(msgs_in)
     user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)
@@ -3566,6 +3608,11 @@ WAKE_CORE = [
                       'properties': {'action': {'type': 'string'}, 'time': {'type': 'string'},
                                      'note': {'type': 'string'}, 'date': {'type': 'string'},
                                      'id': {'type': 'string'}}}},
+    {'name': 'notebook', 'description': '你的小本子，永远在你眼前，不会被压缩、换对话、重新生成也不丢。'
+     '只写必须记住的事。action=read|add|rewrite：add 加一行，rewrite 整本重写（太长了就精简）。'
+     f'最多 {NOTEBOOK_MAX} 字。写完下次再翻开才看得到新的',
+     'input_schema': {'type': 'object', 'required': ['action'],
+                      'properties': {'action': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'sleep_again', 'description': '这次不说话，或说完了。可以说下次隔多久再叫你（分钟）',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
@@ -3673,11 +3720,12 @@ KEY_GROUPS = {
                'room_read_tags', 'room_write_tag'],
     'stage': ['room_media', 'room_music_shape', 'room_read_tags', 'room_write_tag'],
     'self': ['call_her', 'wake_settings', 'alarm'],
+    'notebook': ['notebook'],
 }
 KEY_LABEL = {'memory': '照片墙', 'status': '状态', 'note': '碎碎念', 'fault': '犯错本',
              'timeline': '时间线', 'quote': '语录', 'calendar': '日历', 'moments': '朋友圈',
              'drawer': '抽屉', 'letter': '信箱', 'library': '资料库', 'desire': '欲望',
-             'reader': '书房', 'stage': '影音', 'self': '唤醒闹钟电话'}
+             'reader': '书房', 'stage': '影音', 'self': '唤醒闹钟电话', 'notebook': '小本子'}
 
 
 def _tool_defs():
@@ -3917,6 +3965,8 @@ def exec_tool_server(name, args):
         if name == 'desire_feed':
             desire_feed(args.get('text'), args.get('drive'), float(args.get('strength') or 0.5))
             return '记下了'
+        if name == 'notebook':
+            return notebook_tool(args)
         if name == 'wake_settings':
             return wake_settings_tool(args)
         if name == 'alarm':
@@ -4142,6 +4192,35 @@ def wake_log_clear():
 
 
 WAKE_LOCK = threading.Lock()
+
+
+def notebook_tool(args):
+    nb = load_nb()
+    cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    act = (args.get('action') or 'read').strip()
+    t = (args.get('text') or '').strip()
+    if act == 'read':
+        return cur or '（小本子还是空的）'
+    if act == 'add':
+        if not t:
+            return '要写什么？'
+        new = (cur + '\n' + t).strip() if cur else t
+    elif act == 'rewrite':
+        new = t
+    else:
+        return 'action 只有 read / add / rewrite'
+    if len(new) > NOTEBOOK_MAX:
+        return f'写不下了（{len(new)}/{NOTEBOOK_MAX} 字）。先 read 看看，再 rewrite 精简一下。'
+    nb['pending'] = new
+    jwrite(_nb_file(), nb)
+    return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
+
+
+@app.route('/api/notebook', methods=['GET'])
+def notebook_get():
+    nb = load_nb()
+    cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    return jsonify({'text': cur, 'max': NOTEBOOK_MAX})
 
 
 def wake_settings_tool(args):

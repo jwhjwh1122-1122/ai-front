@@ -78,6 +78,9 @@ const T = {
     { name: 'desire_feed', description: '反复在想的事记下来，会沉成执念', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, drive: { type: 'string' }, strength: { type: 'number' } } } },
     { name: 'desire_vent', description: '憋到头了自己解决完，写下过程（text）和当时想对她说没说出口的话（said）', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' }, said: { type: 'string' } } } },
   ],
+  notebook: [
+    { name: 'notebook', description: '你的小本子，永远在你眼前，不会被压缩、换对话、重新生成也不丢。只写必须记住的事。action=read|add|rewrite：add 加一行，rewrite 整本重写（太长就精简）。最多 800 字', input_schema: { type: 'object', required: ['action'], properties: { action: { type: 'string' }, text: { type: 'string' } } } },
+  ],
   self: [
     { name: 'call_her', description: '想听她声音就打给她，她会看到未接来电', input_schema: { type: 'object', properties: { why: { type: 'string' } } } },
     { name: 'wake_settings', description: '管你自己什么时候醒：on 开关自主唤醒，every_minutes 每隔多久醒，next_in_minutes 只改下一次。不填就是看现在的设置', input_schema: { type: 'object', properties: { on: { type: 'boolean' }, every_minutes: { type: 'number' }, next_in_minutes: { type: 'number' } } } },
@@ -102,12 +105,12 @@ const T = {
   ],
 };
 // 只有后端能做的，聊天里调也转给后端
-const SERVER_TOOLS = new Set(['call_her', 'desire_vent', 'wake_settings', 'alarm']);
+const SERVER_TOOLS = new Set(['call_her', 'desire_vent', 'wake_settings', 'alarm', 'notebook']);
 const GROUP_LABEL = {
   more: '再说一句', memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
-  self: '唤醒闹钟电话',
+  self: '唤醒闹钟电话', notebook: '小本子',
 };
 // ============ 钥匙 ============
 // 钥匙在她手里（设置页开关）。给了钥匙的，他想用就自己 open_tools 开门，这一轮结束门自动关；

@@ -373,6 +373,13 @@ window.addEventListener('error', function (e) {
     </div>
 
     <div class="settings-card">
+      <div class="settings-label">他的小本子</div>
+      <div class="settings-sub">他自己写给自己、必须记住的事。一直放在他眼前，不会被压缩，换对话、重新生成都不丢。</div>
+      <div id="nb-text" style="margin-top:9px;font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text);"></div>
+      <div class="settings-sub" id="nb-count" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="settings-card">
       <div class="settings-label">语音</div>
       <div style="display:flex;gap:8px;margin-top:8px;">
         <div class="ctx-option" data-voice="calm">沉静</div>
@@ -1248,7 +1255,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=28"></script>
-<script src="/static/rooms.js?v=28"></script>
+<script src="/static/app.js?v=29"></script>
+<script src="/static/rooms.js?v=29"></script>
 </body>
 </html>
