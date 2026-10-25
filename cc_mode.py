@@ -812,7 +812,9 @@ def _entry_text(entry):
 
 
 def strip_sticker_images(session_id):
-    """他看过的表情图，在会话记录里换成「〔表情[名字]〕」几个字：当下看见，之后不再每句背着图。"""
+    """（停用：改了旧记录会让 Claude Code 的缓存每句都断，整段会话按全价重算，反而更费。
+    小图本身只有约 50 token、走缓存，留着更省；换新会话时自然就没了。）
+    他看过的表情图，在会话记录里换成「〔表情[名字]〕」几个字：当下看见，之后不再每句背着图。"""
     p = _session_path(session_id)
     if not p:
         return 0
@@ -1510,7 +1512,6 @@ def _finish_detached(proc, q, run, deadline, t_start, tag, meta, holder, data_di
         if outcome == 'detached_done' and run.session_id:
             try:
                 bump_turns(data_dir, run.key, run.session_id)
-                strip_sticker_images(run.session_id)
             except Exception:
                 pass
         if text and outcome == 'detached_done':
@@ -1784,10 +1785,6 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     yield c
             if not failed and run.session_id:
                 bump_turns(data_dir, key, run.session_id)
-                try:
-                    strip_sticker_images(run.session_id)
-                except Exception as e:
-                    print(f'[cc] 表情图换成字失败: {e}', flush=True)
             break
     finally:
         if sys_file and not (holder or {}).get('detached'):
