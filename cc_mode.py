@@ -436,10 +436,22 @@ def set_session(data_dir, key, session_id, add_mids=None):
             for mid in add_mids or []:
                 if mid and mid not in dl:
                     dl.append(mid)
+            # seen：这个对话里送进过 claude 的所有消息 id，换会话也不清（用来认出「重新生成」）
+            seen = list(old.get('seen') or old.get('delivered') or [])
+            for mid in add_mids or []:
+                if mid and mid not in seen:
+                    seen.append(mid)
             m[key] = {'session_id': session_id, 'ts': int(time.time()),
-                      'delivered': dl[-DELIVERED_MAX:], 'turns': int(old.get('turns') or 0) if same else 0}
+                      'delivered': dl[-DELIVERED_MAX:], 'turns': int(old.get('turns') or 0) if same else 0,
+                      'seen': seen[-400:]}
         else:
-            m.pop(key, None)
+            # 换新会话：会话号清掉，但 seen 留着
+            old = m.get(key) or {}
+            seen = old.get('seen') or old.get('delivered') or []
+            if seen:
+                m[key] = {'seen': seen[-400:], 'ts': int(time.time())}
+            else:
+                m.pop(key, None)
         tmp = _map_path(data_dir) + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(m, f, ensure_ascii=False, indent=1)
@@ -1507,8 +1519,9 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     if not regen and resume_id and tail:
         # 这一轮她的话全都已经送进过会话（网页把他那条回复删了又发一遍 = 重新生成，
         # 或者上次没收到回复又发了一遍）：都当重新生成，从这一轮之前重来，不让他看到之前的版本
-        dl = get_delivered(data_dir, key)
-        if all(_mid(m) and _mid(m) in dl for m in tail):
+        m0 = _map_load(data_dir).get(key) or {}
+        seen = set(m0.get('seen') or []) | set(m0.get('delivered') or [])
+        if all(_mid(m) and _mid(m) in seen for m in tail):
             regen = True
     if regen and resume_id:
         target = '\n\n'.join(t for t in (_text_of(m.get('content')).strip() for m in tail) if t)
