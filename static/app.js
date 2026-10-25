@@ -105,7 +105,7 @@ const GROUP_LABEL = {
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
 };
 // ============ 钥匙 ============
-// 她给了哪把钥匙，他想用就自己开门（open_tools），这一轮说完自动关；没给的进不去。
+// 开着的钥匙：他随时能用。关着的：平时进不去，他想进可以自己开（open_tools），这一轮说完自动关。
 // 开关存在手机里，同步到服务器，cc 模式和他自己醒来都按这个来。
 const KEY_EXTRA = { self: '唤醒闹钟电话', notebook: '小本子', emoji: '表情包' };   // 只在服务器上用的
 const keyGroups = () => [...Object.keys(T), ...Object.keys(KEY_EXTRA)];

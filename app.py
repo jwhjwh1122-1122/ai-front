@@ -4190,22 +4190,30 @@ def _tool_defs():
     return out
 
 
-def _open_tools_desc(given):
-    names = ' / '.join(f'{g} {KEY_LABEL[g]}' for g in given) or '（她一把都没给）'
-    return ('你手里有这几把钥匙：' + names + '。想用哪间就自己开，不用问谁；这一轮说完自动关。'
-            'which 填组名，一次能开好几间，all 全开')
+def _locked(given=None):
+    given = keys_given() if given is None else given
+    return [g for g in KEY_GROUPS if g not in given]
 
 
 def _lin_mcp_tools():
-    """列出来的：门（open_tools）、说明书、她给了钥匙的那几组。没钥匙的那组根本不列。"""
+    """她给了钥匙的：直接列出来，随时用。没给的：不列（省额度），
+    他想进可以 open_tools 自己开，开了用 use_locked 调里面的东西，这一轮说完 / 这次醒完自动关。"""
     given = keys_given()
+    locked = _locked(given)
     defs = _tool_defs()
-    out = [{'name': 'open_tools', 'description': _open_tools_desc(given),
-            'inputSchema': {'type': 'object', 'required': ['which'],
-                            'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}}]
-    seen = {'open_tools'}
-    names = list(DOOR_FREE) + [n for g in given for n in KEY_GROUPS[g]]
-    for n in names:
+    out, seen = [], set()
+    if locked:
+        out.append({'name': 'open_tools',
+                    'description': '这几间她没给你钥匙：' + ' / '.join(f'{g} {KEY_LABEL[g]}' for g in locked)
+                                   + '。想进可以自己开（which 填组名），开了会告诉你里面有什么，'
+                                     '用 use_locked 调；这一轮说完自动关上',
+                    'inputSchema': {'type': 'object', 'required': ['which'],
+                                    'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}})
+        out.append({'name': 'use_locked', 'description': '用你自己开了的那间里的东西：name 填工具名，arguments 填参数',
+                    'inputSchema': {'type': 'object', 'required': ['name'],
+                                    'properties': {'name': {'type': 'string'}, 'arguments': {'type': 'object'}}}})
+        seen |= {'open_tools', 'use_locked'}
+    for n in list(DOOR_FREE) + [n for g in given for n in KEY_GROUPS[g]]:
         t = defs.get(n)
         if not t or n in seen or n in LIN_MCP_SKIP:
             continue
@@ -4220,36 +4228,46 @@ def _lin_open(which):
         which = [which]
     which = [str(x).strip() for x in which or []]
     given = keys_given()
+    locked = _locked(given)
     if 'all' in which:
-        which = list(given)
-    got, nokey = [], []
+        which = list(locked)
+    defs = _tool_defs()
+    opened, already = [], []
     with _lin_doors_lock:
         for w in which:
             if w not in KEY_GROUPS:
                 continue
-            if w not in given:
-                nokey.append(KEY_LABEL[w])
-            elif w not in _lin_doors:
-                _lin_doors.add(w)
-                got.append(KEY_LABEL[w])
-    out = (f"开好了：{'、'.join(got)}，这一轮能用。" if got else '') + \
-          (f"「{'」「'.join(nokey)}」她没给你钥匙，进不去。" if nokey else '')
-    return out or '这几间已经开着，或者没有这间'
+            if w in given:
+                already.append(KEY_LABEL[w])
+                continue
+            _lin_doors.add(w)
+            lines = []
+            for n in KEY_GROUPS[w]:
+                t = defs.get(n)
+                if t:
+                    props = list(((t.get('input_schema') or {}).get('properties') or {}).keys())
+                    lines.append(f"  {n}({', '.join(props)})：{t.get('description', '')}")
+            opened.append(f"「{KEY_LABEL[w]}」开了，里面有：\n" + '\n'.join(lines))
+    out = '\n'.join(opened)
+    if opened:
+        out += '\n用 use_locked(name, arguments) 调。这一轮说完自动关上。'
+    if already:
+        out += ('\n' if out else '') + f"「{'」「'.join(already)}」本来就开着，直接用。"
+    return out or '没有这间'
 
 
 def _lin_gate(name):
-    """能用返回 None，不能用返回原因。"""
+    """use_locked 调的东西：那间要么她给了钥匙，要么他这一轮自己开了。"""
     gs = _groups_of(name)
-    if not gs or name in DOOR_FREE:
-        return None
+    if not gs:
+        return '没有这个东西'
     given = keys_given()
-    if not any(g in given for g in gs):
-        return f'「{KEY_LABEL[gs[0]]}」她没给你钥匙，用不了。'
+    if any(g in given for g in gs):
+        return None
     with _lin_doors_lock:
-        if not any(g in _lin_doors for g in gs):
-            g = next(g for g in gs if g in given)
-            return f'「{KEY_LABEL[g]}」的门关着，先 open_tools 开 {g}。'
-    return None
+        if any(g in _lin_doors for g in gs):
+            return None
+    return f'「{KEY_LABEL[gs[0]]}」关着，先 open_tools 开 {gs[0]}。'
 
 
 def _lin_mcp_handle(method, params):
@@ -4271,9 +4289,18 @@ def _lin_mcp_handle(method, params):
         if name == 'open_tools':
             print('[lin-mcp] 开门', flush=True)
             return {'content': [{'type': 'text', 'text': _lin_open(args.get('which'))}]}
-        why = _lin_gate(name)
-        if why:
-            return {'content': [{'type': 'text', 'text': why}], 'isError': True}
+        if name == 'use_locked':
+            name, args = str(args.get('name') or ''), args.get('arguments') or {}
+            if not isinstance(args, dict):
+                args = {}
+            why = _lin_gate(name)
+            if why:
+                return {'content': [{'type': 'text', 'text': why}], 'isError': True}
+        elif name not in DOOR_FREE:
+            # 直接调的只能是她给了钥匙的（没钥匙的根本没列出来，防一手）
+            gs = _groups_of(name)
+            if gs and not any(g in keys_given() for g in gs):
+                return {'content': [{'type': 'text', 'text': f'「{KEY_LABEL[gs[0]]}」关着，先 open_tools 开 {gs[0]}。'}], 'isError': True}
         if name == 'sticker_look':
             r = sticker_look(args.get('name'))
             if isinstance(r, str):
