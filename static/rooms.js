@@ -17,7 +17,7 @@ function showPage(name) {
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
   if (name === 'settings') { loadCcUsage(); loadCcRuns(); renderWakeExtra(); renderNotebook(); }
-  if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
+  if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); pinBottom(); }
 }
 // ============ 设置：每张卡片都能折叠，默认收起，记住你的选择 ============
 function setupSettingsFold() {

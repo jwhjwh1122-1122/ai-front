@@ -741,6 +741,20 @@ function msgBox() {
   return $('messages');
 }
 function scrollBottom() { const m = msgBox(); if (m) m.scrollTop = m.scrollHeight; }
+// 打开聊天：图片、表情是后加载的，加载完内容会变高，只滚一次会停在半截。
+// 这几秒里一直贴着最底下；她自己一动手指就不再管
+let pinUntil = 0;
+function pinBottom(ms = 3000) {
+  pinUntil = Date.now() + ms;
+  const tick = () => { if (Date.now() > pinUntil) return; scrollBottom(); requestAnimationFrame(tick); };
+  tick();
+}
+['touchstart', 'wheel'].forEach(ev => document.addEventListener(ev, e => {
+  const m = msgBox(); if (m && m.contains(e.target)) pinUntil = 0;
+}, { passive: true }));
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && localStorage.getItem('cur-page') === 'chat') pinBottom(1500);
+});
 function copyText(t) {
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(t).then(() => toast('已复制')).catch(() => fallbackCopy(t));
   else fallbackCopy(t);
