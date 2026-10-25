@@ -1495,7 +1495,7 @@ def _finish_detached(proc, q, run, deadline, t_start, tag, meta, holder, data_di
 
 
 def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None,
-                thinking=True, holder=None, regen=False):
+                thinking=True, holder=None, regen=False, regen_target=''):
     """生成器：产出前端格式的 SSE。
     holder：传了的话，客户端断开时 claude 不掐死，交给后台说完（见 _finish_detached）。
     regen：重新生成——从被 roll 的那一轮之前分叉，被 roll 掉的回复他看不到。"""
@@ -1524,7 +1524,8 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
         if all(_mid(m) and _mid(m) in seen for m in tail):
             regen = True
     if regen and resume_id:
-        target = '\n\n'.join(t for t in (_text_of(m.get('content')).strip() for m in tail) if t)
+        # 编辑重发：按原来那句找；普通重新生成：按这一轮的话找
+        target = regen_target.strip() or '\n\n'.join(t for t in (_text_of(m.get('content')).strip() for m in tail) if t)
         new_id, why = regen_fork(resume_id, target)
         # 切好了就接新那份；切不了（第一轮、找不到）：开新会话，只带网页里剩下的历史（已经去掉 roll 的那些）
         resume_id = new_id

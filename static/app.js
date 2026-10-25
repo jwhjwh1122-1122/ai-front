@@ -1065,7 +1065,7 @@ async function streamResponse(wrap, hist) {
   abortController = ac;
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), extra_stable: emojiNames(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking(), _ctx: ctxWindow, _regen: takeRegen() })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), extra_stable: emojiNames(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking(), _ctx: ctxWindow, _regen_target: takeRegenTarget(), _regen: takeRegen() })
   });
   if (!resp.ok) {
     // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试
@@ -1437,6 +1437,13 @@ async function sendMsg(fromCtx) {
   inp.value = ''; inp.style.height = 'auto';
   const seq = beginTurn();
   if (editingMsgIdx !== null) {
+    // 编辑自己那句再发 = 从那句开始重来：告诉服务器原来那句是什么，它从那里切开
+    const orig = messages[editingMsgIdx];
+    if (orig) {
+      const c = orig.content;
+      regenTarget = typeof c === 'string' ? c : (Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('\n') : '');
+      regenNext = true;
+    }
     messages.splice(editingMsgIdx);
     [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= editingMsgIdx) r.remove(); });
     editingMsgIdx = null;
@@ -1485,8 +1492,9 @@ async function sendComposed(text, imgs, opts) {
   endTurn(seq);
 }
 // 重新生成：告诉服务器这一句是 roll 的，Claude Code 那边从这一轮之前分叉，被 roll 掉的他看不到
-let regenNext = false;
+let regenNext = false, regenTarget = '';
 const takeRegen = () => { const v = regenNext; regenNext = false; return v; };
+const takeRegenTarget = () => { const v = regenTarget; regenTarget = ''; return v; };
 async function regenAt(row) {
   if (isTyping || !row) return;
   regenNext = true;

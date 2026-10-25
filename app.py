@@ -2424,7 +2424,8 @@ def chat_v2():
                                       model=data.get('model'), web_mcp=data.get('_mcp'),
                                       effort=data.get('_effort'),
                                       thinking=data.get('_thinking') is not False,
-                                      holder=holder, regen=bool(data.get('_regen')))
+                                      holder=holder, regen=bool(data.get('_regen')),
+                                      regen_target=str(data.get('_regen_target') or '')[:4000])
             return Response(cc_mode.GuardedStream(gen, slot, holder),
                             mimetype='text/event-stream', headers=sse_headers)
         except Exception:
