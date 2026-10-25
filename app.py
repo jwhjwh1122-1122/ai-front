@@ -225,6 +225,8 @@ DEFAULT_PERSONA = {
 
 
 LAST_CC_SYS = os.path.join(DATA_DIR, 'cc_last_system.json')
+LAST_CC_REQ = os.path.join(DATA_DIR, 'cc_last_req.json')
+RECAP_FROZEN = os.path.join(DATA_DIR, 'cc_recap_frozen.json')
 
 
 def persona_patch(d):
@@ -312,7 +314,7 @@ def notebook_tool(args):
     return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
 
 
-def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None):
+def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -332,7 +334,7 @@ def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook
         who.append(persona['always'].strip())
     parts = ["\n\n".join(who), FRAMEWORK]
     if conv_id:
-        rec = load_recap(conv_id)
+        rec = load_recap(conv_id) if recap_text is None else {'text': recap_text}
         if (rec.get('text') or '').strip():
             parts.append("【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                          "记不清细节就问她。\n" + rec['text'].strip())
@@ -2383,9 +2385,33 @@ def chat_v2():
                 if not (isinstance(c, list) and any(isinstance(b, dict) and b.get('type') == 'tool_result' for b in c)):
                     m['_note'] = ' '.join(x for x in volatile if x)
                     break
+        cc_key = str(data.get('_conv_id') or sid)[:256]
+        # 上下文窗口在 cc 模式下真正生效：这个 Claude Code 会话聊满你设的轮数，就换个新会话。
+        # 新会话只带网页那边窗口里的几轮原话，更早的已经压成「更早的事」在 system 里，
+        # 他不用每句话都背着从开聊到现在的全部记录。（0 = 全部，不换）
+        try:
+            win = int(data.get('_ctx') if data.get('_ctx') is not None else 15)
+        except Exception:
+            win = 15
+        sf = cc_mode._session_file_size(cc_mode.get_session(DATA_DIR, cc_key)) or 0
+        max_mb = float(os.environ.get('CC_ROTATE_MB') or 2)
+        if win > 0 and not data.get('_regen') and (
+                cc_mode.session_turns(DATA_DIR, cc_key) >= win or sf > max_mb * 1048576):
+            print(f'[cc] 会话聊满（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮 / {sf // 1048576}MB），'
+                  f'换新会话 #{cc_mode._short(cc_key)}', flush=True)
+            cc_mode.set_session(DATA_DIR, cc_key, None)
+        # 「更早的事」在同一个 Claude Code 会话里一字不动（变了整段缓存就断）；只在开新会话时换成最新的
+        frozen = jread(RECAP_FROZEN, {})
+        if cc_mode.get_session(DATA_DIR, cc_key) is None or cc_key not in frozen:
+            frozen[cc_key] = (load_recap(data.get('_conv_id')).get('text') or '') if data.get('_conv_id') else ''
+            jwrite(RECAP_FROZEN, frozen)
+        # 醒来时用跟这次聊天一样的设置（思考、深度、MCP、模型不一样，整段缓存也会断）
+        jwrite(LAST_CC_REQ, {'effort': data.get('_effort'), 'thinking': data.get('_thinking') is not False,
+                             'mcp': data.get('_mcp'), 'model': data.get('model')})
         notebook = nb_current(prev_talk)
         system_prompt = build_system(persona, "\n".join(x for x in stable if x),
-                                     conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook)
+                                     conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook,
+                                     recap_text=frozen.get(cc_key, ''))
         try:
             if jread(LAST_CC_SYS, {}).get('text') != system_prompt:
                 jwrite(LAST_CC_SYS, {'text': system_prompt})   # 醒来时用同一份
@@ -2407,20 +2433,6 @@ def chat_v2():
             return jsonify({'error': cc_mode.BUSY_TEXT, 'busy': True}), 429, {'Retry-After': '10'}
         try:
             lin_doors_reset()   # 新的一轮，钥匙开的门都关上
-            # 上下文窗口在 cc 模式下真正生效：这个 Claude Code 会话聊满你设的轮数，就换个新会话。
-            # 新会话只带网页那边窗口里的几轮原话，更早的已经压成「更早的事」在 system 里，
-            # 他不用每句话都背着从开聊到现在的全部记录。（0 = 全部，不换）
-            try:
-                win = int(data.get('_ctx') if data.get('_ctx') is not None else 15)
-            except Exception:
-                win = 15
-            sf = cc_mode._session_file_size(cc_mode.get_session(DATA_DIR, cc_key)) or 0
-            max_mb = float(os.environ.get('CC_ROTATE_MB') or 2)
-            if win > 0 and not data.get('_regen') and (
-                    cc_mode.session_turns(DATA_DIR, cc_key) >= win or sf > max_mb * 1048576):
-                print(f'[cc] 会话聊满（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮 / {sf // 1048576}MB），'
-                      f'换新会话 #{cc_mode._short(cc_key)}', flush=True)
-                cc_mode.set_session(DATA_DIR, cc_key, None)
             holder = {}
             gen = cc_mode.stream_chat(messages=msgs_in,
                                       system_prompt=system_prompt, key=cc_key,
@@ -4402,9 +4414,12 @@ def do_wake_cc(manual=False, reason=''):
     system_prompt = jread(LAST_CC_SYS, {}).get('text') or build_system(p, '')
     said, did, err = '', [], ''
     try:
+        lr = jread(LAST_CC_REQ, {})
         gen = cc_mode.stream_chat(messages=[{'role': 'user', 'content': '（没有人说话）', '_note': now_context(p, note)}],
                                   system_prompt=system_prompt, key=_wake_cc_key(), data_dir=DATA_DIR,
-                                  upstream_cfg=load_upstream(), model=_wake_cc_model(p))
+                                  upstream_cfg=load_upstream(), model=lr.get('model') or _wake_cc_model(p),
+                                  web_mcp=lr.get('mcp'), effort=lr.get('effort'),
+                                  thinking=lr.get('thinking', True))
         try:
             for chunk in gen:
                 if not chunk.startswith('data: {'):

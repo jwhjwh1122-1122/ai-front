@@ -618,7 +618,7 @@ function emojiNames() {
   const hers = STICKERS.user.filter(x => x && x.name).map(x => x.note ? `${x.name}（${x.note}）` : x.name);
   const unseen = STICKERS.lin.filter(x => x && x.name && !x.seen).map(x => x.name);
   let s = his.length ? `你能用的表情：${his.join('、')}。` : '';
-  if (unseen.length) s += `还没看过长什么样的：${unseen.join('、')}（有「表情包」钥匙就能自己看、自己记它什么时候用）。`;
+
   if (hers.length) s += `她的表情包：${hers.join('、')}（她发 [名字] 就是发了那张表情）。`;
   return s;
 }
