@@ -16,7 +16,7 @@ function showPage(name) {
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
-  if (name === 'settings') { loadCcUsage(); loadCcRuns(); }
+  if (name === 'settings') { loadCcUsage(); loadCcRuns(); renderWakeExtra(); renderNotebook(); }
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
 // ============ 设置：每张卡片都能折叠，默认收起，记住你的选择 ============
@@ -1648,7 +1648,7 @@ async function endCall(by) {
   if (CALL.timer) clearInterval(CALL.timer);
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
-  try { if (CALL.ctrl) CALL.ctrl.abort(); } catch (e) { }
+  try { if (CALL.ctrl) { ccStop(); CALL.ctrl.abort(); } } catch (e) { }
   try { if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); } catch (e) { }
   try { if (CALL.ctx) CALL.ctx.close(); } catch (e) { }
   CALL.stream = null; CALL.ctx = null; CALL.analyser = null;
@@ -2208,10 +2208,10 @@ async function boot() {
   showUserStatus(localStorage.getItem('user-status'));
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
-  loadMcp(); updateMcpSub(); renderToolGroups();
+  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys(); syncObUrl();
   syncMcpTools(false).then(r => { if (r) { updateMcpSub(); renderToolGroups(); } });
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
-  $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
+  $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
   document.querySelectorAll('[data-voice]').forEach(o => o.classList.toggle('active', o.dataset.voice === voice));
   $('auto-voice-toggle').checked = localStorage.getItem('auto-voice') === '1';
@@ -2221,6 +2221,7 @@ async function boot() {
   else document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
   if (!window.markWake) { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
+  renderWakeExtra();
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
@@ -2373,16 +2374,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 输入
   const inp = $('input');
   inp.addEventListener('input', () => autoResize(inp));
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
-  $('send-btn').onclick = () => { if (isTyping && abortController) { abortController.abort(); endTurn(); } else sendMsg(); };
+  bindEnterSend(inp, () => sendMsg());
+  $('send-btn').onclick = () => { if (isTyping && abortController) { ccStop(); abortController.abort(); endTurn(); } else sendMsg(); };
   document.querySelectorAll('.split-input').forEach(el => {
     el.addEventListener('input', () => autoResize(el));
-    el.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (el.dataset.ctx === 'stage' && el.value.trim()) markMoment(el.value.trim());
-        sendMsg(el.dataset.ctx);
-      }
+    bindEnterSend(el, () => {
+      if (el.dataset.ctx === 'stage' && el.value.trim()) markMoment(el.value.trim());
+      sendMsg(el.dataset.ctx);
     });
   });
   document.querySelectorAll('[data-splitsend]').forEach(b => b.onclick = () => {
@@ -2853,6 +2851,15 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('wake-prompt').addEventListener('blur', () => jpost('/api/persona', { wake_prompt: $('wake-prompt').value }));
   $('btn-wake-log').onclick = renderWakeLog;
+  $('btn-alarm-add').onclick = async () => {
+    const t = $('alarm-time').value;
+    if (!t) { toast('先选个时间'); return; }
+    const p = await jget('/api/persona');
+    const al = (p.wake_alarms || []).concat([{ id: 'a' + Date.now().toString(36), time: t, note: $('alarm-note').value.trim(), on: true, by: 'user' }]);
+    await jpost('/api/persona', { wake_alarms: al });
+    $('alarm-time').value = ''; $('alarm-note').value = '';
+    renderWakeExtra(); toast(`${t} 会叫他`);
+  };
   $('btn-wake-now').onclick = async () => {
     $('wake-sub').textContent = '正在叫他…';
     const d = await jpost('/api/wake/now', {});
@@ -2936,14 +2943,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); ctxWindow = parseInt(o.dataset.val);
     localStorage.setItem('ctx-window', ctxWindow);
-    $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
+    $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
   });
   document.querySelectorAll('[data-voice]').forEach(o => o.onclick = () => {
     document.querySelectorAll('[data-voice]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); localStorage.setItem('tts-voice', o.dataset.voice);
   });
   $('auto-voice-toggle').onchange = e => localStorage.setItem('auto-voice', e.target.checked ? '1' : '0');
-  $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(); };
+  $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(true); };
   $('btn-new-conv').onclick = newConv;
   $('btn-up-save').onclick = async () => {
     const r = await jpost('/api/upstream', upstreamBody());
@@ -3297,4 +3304,73 @@ function drawToolRows(box, s, card) {
     };
     box.appendChild(row);
   });
+}
+
+// 回车就发，Shift+回车换行。
+// 中文输入法、手机键盘有时 keydown 拿不到 Enter（keyCode 229），回车就变成插了个换行，
+// 所以 keydown、beforeinput、input 三道都接一下，哪道先接到就在哪发，并且只发一次。
+function bindEnterSend(el, send) {
+  let shift = false, last = 0;
+  const fire = () => { const now = Date.now(); if (now - last < 300) return; last = now; send(); };
+  const isBreak = t => t === 'insertLineBreak' || t === 'insertParagraph';
+  el.addEventListener('keydown', e => {
+    shift = e.shiftKey;
+    if (e.isComposing || e.keyCode === 229) return;   // 正在选字，这下回车是上屏
+    if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) { e.preventDefault(); fire(); }
+  });
+  el.addEventListener('keyup', e => { if (e.key === 'Shift') shift = false; });
+  el.addEventListener('beforeinput', e => {
+    if (!isBreak(e.inputType) || shift || e.isComposing) return;
+    e.preventDefault(); fire();
+  });
+  el.addEventListener('input', e => {
+    if (!isBreak(e.inputType) || shift) return;
+    const pos = el.selectionStart;
+    if (pos > 0 && el.value[pos - 1] === '\n') {
+      el.value = el.value.slice(0, pos - 1) + el.value.slice(pos);
+      el.selectionStart = el.selectionEnd = pos - 1;
+    }
+    fire();
+  });
+}
+
+// ============ 唤醒：下次什么时候醒 + 闹钟 ============
+async function renderWakeExtra() {
+  let p, st;
+  try { [p, st] = await Promise.all([jget('/api/persona'), jget('/api/wake/log')]); } catch (e) { return; }
+  const nx = $('wake-next');
+  if (nx) {
+    const wi = parseInt(p.wake_interval) || 120;
+    if (!p.wake_on) nx.textContent = '';
+    else {
+      const left = Math.max(0, Math.round(((st.next_wake_in || wi) * 60 - (Date.now() / 1000 - (st.wake_anchor || st.last_wake || 0))) / 60));
+      nx.textContent = `每 ${wi} 分钟醒一次，下次大约 ${left} 分钟后${st.next_wake_in ? '（他自己定的）' : ''}`;
+    }
+  }
+  const box = $('alarm-list'); if (!box) return;
+  const al = p.wake_alarms || [];
+  box.innerHTML = al.length ? '' : '<div class="settings-sub">还没有闹钟</div>';
+  al.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(a => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;';
+    row.innerHTML = `<input type="checkbox" ${a.on === false ? '' : 'checked'}>
+      <b style="font-variant-numeric:tabular-nums;">${esc(a.time)}</b>
+      <span style="flex:1;min-width:0;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.date ? '只响 ' + esc(a.date) + ' · ' : '每天 · '}${a.by === 'lin' ? '他定的' : '你定的'}${a.note ? ' · ' + esc(a.note) : ''}</span>
+      <span style="cursor:pointer;color:var(--text-muted);padding:0 4px;">✕</span>`;
+    const save = async list => { await jpost('/api/persona', { wake_alarms: list }); renderWakeExtra(); };
+    row.querySelector('input').onchange = ev => save(al.map(x => x.id === a.id ? { ...x, on: ev.target.checked } : x));
+    row.lastElementChild.onclick = () => { if (confirm(`删掉 ${a.time} 的闹钟？`)) save(al.filter(x => x.id !== a.id)); };
+    box.appendChild(row);
+  });
+}
+
+// ============ 小本子 ============
+async function renderNotebook() {
+  const el = $('nb-text'); if (!el) return;
+  try {
+    const d = await jget('/api/notebook');
+    el.textContent = d.text || '还是空的';
+    el.style.color = d.text ? 'var(--text)' : 'var(--text-muted)';
+    $('nb-count').textContent = d.text ? `${d.text.length} / ${d.max} 字` : '';
+  } catch (e) { el.textContent = '—'; }
 }

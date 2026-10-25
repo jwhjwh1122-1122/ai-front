@@ -112,7 +112,8 @@ def register_chat_media(app, data_dir, media_dir, jread, jwrite):
 
     def _pub(x):
         return {'id': x['id'], 'name': x.get('name', ''), 'owner': x.get('owner', 'lin'),
-                'url': '/stickers/' + x['file'] + '?v=' + STICKER_URL_VER}
+                'url': '/stickers/' + x['file'] + '?v=' + STICKER_URL_VER,
+                'note': x.get('note', ''), 'seen': bool(x.get('seen'))}
 
     def _save_bytes(raw, ext):
         fn = _new_name('s', ext)

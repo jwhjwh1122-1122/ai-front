@@ -23,7 +23,7 @@ from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, base64, hashlib, hmac, io, re, threading, uuid
 import cc_mode
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -217,7 +217,27 @@ DEFAULT_PERSONA = {
     "wake_interval": 120,
     "wake_prompt": "现在没人在跟你说话。你想做点什么吗？也可以什么都不做。",
     "wake_model": "anthropic/claude-sonnet-4-6",
+    # 闹钟：[{id, time:'07:30', note, on, date(只响一次时填 YYYY-MM-DD), by}]
+    "wake_alarms": [],
+    # 钥匙：她给了哪组（网页设置「钥匙」同步过来）。没写的当给了
+    "tool_keys": {},
 }
+
+
+def persona_patch(d):
+    """改几项设置，不进人设历史（唤醒/闹钟/钥匙这种小改动）。"""
+    p = jread(PERSONA_FILE, {}) or {}
+    p.update(d)
+    jwrite(PERSONA_FILE, p)
+    return load_persona()
+
+
+def wake_restart():
+    """刚打开唤醒或改了间隔：从现在开始算。"""
+    st = load_state()
+    st['wake_anchor'] = time.time()
+    st['next_wake_in'] = 0
+    save_state(st)
 
 
 def load_persona():
@@ -247,7 +267,49 @@ def save_state(s):
     jwrite(STATE_FILE, s)
 
 
-def build_system(persona, extra='', conv_id=None):
+NOTEBOOK_MAX = 800
+
+
+def _nb_file():
+    return os.path.join(DATA_DIR, 'notebook.json')
+
+
+def load_nb():
+    return jread(_nb_file(), {'text': '', 'pending': None})
+
+
+def nb_current(prev_talk=None):
+    """他写的先挂着；隔了快一小时（缓存早过期了）才换进 system，平时不为它断缓存。"""
+    nb = load_nb()
+    if nb.get('pending') is not None and (prev_talk is None or time.time() - prev_talk > 55 * 60):
+        nb['text'], nb['pending'] = nb['pending'], None
+        jwrite(_nb_file(), nb)
+    return nb.get('text', '')
+
+
+def notebook_tool(args):
+    nb = load_nb()
+    cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    act = (args.get('action') or 'read').strip()
+    t = (args.get('text') or '').strip()
+    if act == 'read':
+        return cur or '（小本子还是空的）'
+    if act == 'add':
+        if not t:
+            return '要写什么？'
+        new = (cur + '\n' + t).strip() if cur else t
+    elif act == 'rewrite':
+        new = t
+    else:
+        return 'action 只有 read / add / rewrite'
+    if len(new) > NOTEBOOK_MAX:
+        return f'写不下了（{len(new)}/{NOTEBOOK_MAX} 字）。先 read 看看，再 rewrite 精简一下。'
+    nb['pending'] = new
+    jwrite(_nb_file(), nb)
+    return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
+
+
+def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -271,8 +333,13 @@ def build_system(persona, extra='', conv_id=None):
         if (rec.get('text') or '').strip():
             parts.append("【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                          "记不清细节就问她。\n" + rec['text'].strip())
+    if notebook is None:
+        nb = load_nb()
+        notebook = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    if (notebook or '').strip():
+        parts.append("【我的小本子】\n我自己写给自己的，必须记住的事。\n" + notebook.strip())
     if extra:
-        parts.append(f"【当下】\n{extra}")
+        parts.append(f"【{extra_title}】\n{extra}")
     return "\n\n---\n\n".join(parts)
 
 
@@ -324,10 +391,17 @@ def get_persona():
 def post_persona():
     data = request.json or {}
     p = load_persona()
+    restart = (('wake_on' in data and bool(data['wake_on']) and not p.get('wake_on')) or
+               ('wake_interval' in data and data['wake_interval'] != p.get('wake_interval')))
     for k in DEFAULT_PERSONA:
         if k in data:
             p[k] = data[k]
-    save_persona(p)
+    if set(data) <= {'wake_on', 'wake_interval', 'wake_alarms', 'wake_prompt', 'tool_keys'}:
+        jwrite(PERSONA_FILE, p)   # 小设置不进人设历史
+    else:
+        save_persona(p)
+    if restart:
+        wake_restart()
     return jsonify({'ok': True, 'persona': p})
 
 
@@ -2263,32 +2337,53 @@ def chat_v2():
     persona = load_persona()
 
     st = load_state()
+    prev_talk = st.get('last_user_msg')
     if str(sid) != 'default' and st.get('session_id') != str(sid)[:256]:
         st['session_id'] = str(sid)[:256]
         save_state(st)
-    if not keepalive:
-        st['last_user_msg'] = time.time()
-        save_state(st)
-
     try:
         if not keepalive:
             desire_event('talk')
         dline = desire_line()
     except Exception:
         dline = ''
-    extra = [now_context(persona)]
+    up_cfg = load_upstream()
+    is_cc = cc_mode.is_cc_mode(up_cfg)
+    # 会变的（几点了、隔多久、数值、在哪个房间）：
+    #   cc 模式盖在她这句话前面（system 每轮一字不变，Claude Code 的缓存一直接得上，省订阅额度）；
+    #   API 模式照旧放 system 末尾。
+    volatile = [now_context(persona)]
     if dline:
-        extra.append(dline)
+        volatile.append(dline)
     if data.get('extra'):
-        extra.append(data['extra'])
+        volatile.append(data['extra'])
+    stable = []
+    if data.get('extra_stable'):
+        stable.append(data['extra_stable'])
     mem = memory_summary_text(sid)
     if mem:
-        extra.append(mem)
-    system_prompt = build_system(persona, "\n".join(x for x in extra if x),
-                                 conv_id=data.get('_conv_id'))
+        stable.append(mem)
+    msgs_in = data.get('messages', []) or []
+    if not keepalive:
+        # 「隔了多久」上面已经按上一次算好了，这里才记这一次
+        st = load_state()
+        st['last_user_msg'] = time.time()
+        save_state(st)
+    if is_cc and not keepalive:
+        for m in reversed(msgs_in):
+            if isinstance(m, dict) and m.get('role') == 'user' and not m.get('_internal'):
+                c = m.get('content')
+                if not (isinstance(c, list) and any(isinstance(b, dict) and b.get('type') == 'tool_result' for b in c)):
+                    m['_note'] = ' '.join(x for x in volatile if x)
+                    break
+        notebook = nb_current(prev_talk)
+        system_prompt = build_system(persona, "\n".join(x for x in stable if x),
+                                     conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook)
+    else:
+        system_prompt = build_system(persona, "\n".join(x for x in volatile + stable if x),
+                                     conv_id=data.get('_conv_id'))
 
-    up_cfg = load_upstream()
-    if cc_mode.is_cc_mode(up_cfg):
+    if is_cc:
         # cc 模式：不走上游 API，在服务器上跑 claude -p（用订阅登录），输出格式和下面一样
         sse_headers = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
         if keepalive:
@@ -2299,19 +2394,32 @@ def chat_v2():
         if slot is None:
             return jsonify({'error': cc_mode.BUSY_TEXT, 'busy': True}), 429, {'Retry-After': '10'}
         try:
-            gen = cc_mode.stream_chat(messages=data.get('messages', []),
+            lin_doors_reset()   # 新的一轮，钥匙开的门都关上
+            # 上下文窗口在 cc 模式下真正生效：这个 Claude Code 会话聊满你设的轮数，就换个新会话。
+            # 新会话只带网页那边窗口里的几轮原话，更早的已经压成「更早的事」在 system 里，
+            # 他不用每句话都背着从开聊到现在的全部记录。（0 = 全部，不换）
+            try:
+                win = int(data.get('_ctx') if data.get('_ctx') is not None else 15)
+            except Exception:
+                win = 15
+            if win > 0 and not data.get('_regen') and cc_mode.session_turns(DATA_DIR, cc_key) >= win:
+                print(f'[cc] 会话聊满 {win} 轮，换新会话 #{cc_mode._short(cc_key)}', flush=True)
+                cc_mode.set_session(DATA_DIR, cc_key, None)
+            holder = {}
+            gen = cc_mode.stream_chat(messages=msgs_in,
                                       system_prompt=system_prompt, key=cc_key,
                                       data_dir=DATA_DIR, upstream_cfg=up_cfg,
                                       model=data.get('model'), web_mcp=data.get('_mcp'),
                                       effort=data.get('_effort'),
-                                      thinking=data.get('_thinking') is not False)
-            return Response(cc_mode.GuardedStream(gen, slot),
+                                      thinking=data.get('_thinking') is not False,
+                                      holder=holder, regen=bool(data.get('_regen')))
+            return Response(cc_mode.GuardedStream(gen, slot, holder),
                             mimetype='text/event-stream', headers=sse_headers)
         except Exception:
             slot.release()
             raise
 
-    oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(data.get('messages', []))
+    oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(msgs_in)
     user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)
 
     payload = {'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
@@ -2465,7 +2573,7 @@ def mcp_connect():
 def mcp():
     data = request.json
     sid = request.headers.get('Mcp-Session-Id') or data.pop('_sid', None)
-    target = data.pop('_server', None) or MCP_URL
+    target = data.pop('_server', None) or cc_mode.ob_url()
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
     if sid:
         headers['Mcp-Session-Id'] = sid
@@ -3632,6 +3740,25 @@ WAKE_CORE = [
     {'name': 'desire_event', 'description': '刚发生了什么，让相关几维一起动。kind 见 desire_state',
      'input_schema': {'type': 'object', 'required': ['kind'],
                       'properties': {'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
+    {'name': 'wake_settings', 'description': '管你自己什么时候醒：on 开关自主唤醒，every_minutes 每隔多久醒一次，next_in_minutes 只改下一次。不填就是看现在的设置',
+     'input_schema': {'type': 'object',
+                      'properties': {'on': {'type': 'boolean'}, 'every_minutes': {'type': 'number'},
+                                     'next_in_minutes': {'type': 'number'}}}},
+    {'name': 'alarm', 'description': '你的闹钟，到点叫你醒。action=list|add|remove|on|off。'
+     'add 填 time(HH:MM)，note 写到时候要干嘛；只响一次再填 date(YYYY-MM-DD)，不填就是每天。remove/on/off 填 id',
+     'input_schema': {'type': 'object', 'required': ['action'],
+                      'properties': {'action': {'type': 'string'}, 'time': {'type': 'string'},
+                                     'note': {'type': 'string'}, 'date': {'type': 'string'},
+                                     'id': {'type': 'string'}}}},
+    {'name': 'notebook', 'description': '你的小本子，永远在你眼前，不会被压缩、换对话、重新生成也不丢。'
+     '只写必须记住的事。action=read|add|rewrite：add 加一行，rewrite 整本重写（太长了就精简）。最多 800 字',
+     'input_schema': {'type': 'object', 'required': ['action'],
+                      'properties': {'action': {'type': 'string'}, 'text': {'type': 'string'}}}},
+    {'name': 'sticker_look', 'description': '看某张表情包长什么样（name 填表情名字）。看完用 sticker_note 记一句它是什么、什么时候用',
+     'input_schema': {'type': 'object', 'required': ['name'], 'properties': {'name': {'type': 'string'}}}},
+    {'name': 'sticker_note', 'description': '给表情记一句：它是什么、你什么时候想用（20 字内）',
+     'input_schema': {'type': 'object', 'required': ['name', 'note'],
+                      'properties': {'name': {'type': 'string'}, 'note': {'type': 'string'}}}},
     {'name': 'sleep_again', 'description': '这次不说话，或说完了。可以说下次隔多久再叫你（分钟）',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
@@ -3924,11 +4051,23 @@ def exec_tool_server(name, args):
         if name == 'desire_feed':
             desire_feed(args.get('text'), args.get('drive'), float(args.get('strength') or 0.5))
             return '记下了'
+        if name == 'wake_settings':
+            return wake_settings_tool(args)
+        if name == 'alarm':
+            return alarm_tool(args)
+        if name == 'notebook':
+            return notebook_tool(args)
+        if name == 'sticker_note':
+            return sticker_note_tool(args)
+        if name == 'sticker_look':
+            r = sticker_look(args.get('name'))
+            return r if isinstance(r, str) else f"表情「{r['name']}」（图片在这个工具里看不了，在聊天里用就行）"
         if name == 'sleep_again':
             n = args.get('next_in_minutes')
             if n:
                 st = load_state()
                 st['next_wake_in'] = max(5, int(n))
+                st['wake_anchor'] = time.time()
                 save_state(st)
             return '好'
     except Exception as e:
@@ -3938,7 +4077,7 @@ def exec_tool_server(name, args):
 
 def _mcp_tools_for_wake(names=None):
     try:
-        result, _ = _mcp_once(MCP_URL, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
+        result, _ = _mcp_once(cc_mode.ob_url(), {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
         tools = result.get('tools') if isinstance(result, dict) else None
         if not tools:
             return []
@@ -3952,7 +4091,7 @@ def _mcp_tools_for_wake(names=None):
 
 def _call_mcp_tool(name, args):
     try:
-        result, _ = _mcp_once(MCP_URL, {'jsonrpc': '2.0', 'method': 'tools/call',
+        result, _ = _mcp_once(cc_mode.ob_url(), {'jsonrpc': '2.0', 'method': 'tools/call',
                                         'params': {'name': name, 'arguments': args or {}},
                                         'id': int(time.time())}, timeout=120)
         if isinstance(result, dict):
@@ -3972,7 +4111,7 @@ WAKE_LOG = os.path.join(DATA_DIR, 'wake_log.json')
 # 这里把服务器端已有的 exec_tool_server 包成一个 MCP，自动挂给 Claude Code。
 # 只接受本机（127.0.0.1）+ 正确令牌的请求，外网访问一律 403。
 # ============================================================
-LIN_MCP_SKIP = {'open_tools', 'sleep_again'}   # 这两个是自主唤醒专用的
+LIN_MCP_SKIP = {'sleep_again'}   # 自主唤醒专用的
 LIN_MCP_TOKEN_FILE = os.path.join(DATA_DIR, '.lin_mcp_token')
 
 
@@ -3999,15 +4138,118 @@ def _lin_mcp_token():
 LIN_MCP_TOKEN = _lin_mcp_token()
 
 
-def _lin_mcp_tools():
-    seen, out = set(), []
+# 钥匙：跟网页设置「钥匙」一组对一组。她给了哪把，他才开得了哪扇门；
+# 门他自己开（open_tools），这一轮说完 / 这次醒完自动关。
+KEY_GROUPS = {
+    'memory': ['get_memories', 'view_memory'],
+    'status': ['lin_status'],
+    'note': ['write_note'],
+    'fault': ['write_fault'],
+    'timeline': ['write_timeline'],
+    'quote': ['keep_quote'],
+    'calendar': ['write_calendar'],
+    'moments': ['read_moments', 'post_moment', 'react_moment'],
+    'drawer': ['my_drawer'],
+    'library': ['library_list', 'library_read'],
+    'desire': ['desire_state', 'desire_adjust', 'desire_event', 'desire_grudge', 'desire_soothe',
+               'desire_ack', 'desire_note', 'desire_feed', 'desire_vent'],
+    'reader': ['room_books', 'room_read_page', 'room_search_book', 'room_highlight',
+               'room_read_tags', 'room_write_tag'],
+    'stage': ['room_media', 'room_music_shape', 'room_read_tags', 'room_write_tag'],
+    'self': ['call_her', 'wake_settings', 'alarm'],
+    'notebook': ['notebook'],
+    'emoji': ['sticker_look', 'sticker_note'],
+}
+KEY_LABEL = {'memory': '照片墙', 'status': '状态', 'note': '碎碎念', 'fault': '犯错本',
+             'timeline': '时间线', 'quote': '语录', 'calendar': '日历', 'moments': '朋友圈',
+             'drawer': '抽屉', 'library': '资料库', 'desire': '欲望', 'reader': '书房', 'stage': '影音',
+             'self': '唤醒闹钟电话', 'notebook': '小本子', 'emoji': '表情包'}
+DOOR_FREE = {'how_to'}   # 说明书不算门
+_lin_doors = set()
+_lin_doors_lock = threading.Lock()
+
+
+def lin_doors_reset():
+    with _lin_doors_lock:
+        _lin_doors.clear()
+
+
+def keys_given(p=None):
+    k = (p or load_persona()).get('tool_keys') or {}
+    return [g for g in KEY_GROUPS if k.get(g, True) is not False]
+
+
+def _groups_of(name):
+    return [g for g, ns in KEY_GROUPS.items() if name in ns]
+
+
+def _tool_defs():
+    out = {}
     for t in list(WAKE_CORE) + [x for g in WAKE_GROUPS.values() for x in g]:
-        if t['name'] in LIN_MCP_SKIP or t['name'] in seen:
+        out.setdefault(t['name'], t)
+    return out
+
+
+def _open_tools_desc(given):
+    names = ' / '.join(f'{g} {KEY_LABEL[g]}' for g in given) or '（她一把都没给）'
+    return ('你手里有这几把钥匙：' + names + '。想用哪间就自己开，不用问谁；这一轮说完自动关。'
+            'which 填组名，一次能开好几间，all 全开')
+
+
+def _lin_mcp_tools():
+    """列出来的：门（open_tools）、说明书、她给了钥匙的那几组。没钥匙的那组根本不列。"""
+    given = keys_given()
+    defs = _tool_defs()
+    out = [{'name': 'open_tools', 'description': _open_tools_desc(given),
+            'inputSchema': {'type': 'object', 'required': ['which'],
+                            'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}}]
+    seen = {'open_tools'}
+    names = list(DOOR_FREE) + [n for g in given for n in KEY_GROUPS[g]]
+    for n in names:
+        t = defs.get(n)
+        if not t or n in seen or n in LIN_MCP_SKIP:
             continue
-        seen.add(t['name'])
-        out.append({'name': t['name'], 'description': t.get('description', ''),
+        seen.add(n)
+        out.append({'name': n, 'description': t.get('description', ''),
                     'inputSchema': t.get('input_schema') or {'type': 'object', 'properties': {}}})
     return out
+
+
+def _lin_open(which):
+    if isinstance(which, str):
+        which = [which]
+    which = [str(x).strip() for x in which or []]
+    given = keys_given()
+    if 'all' in which:
+        which = list(given)
+    got, nokey = [], []
+    with _lin_doors_lock:
+        for w in which:
+            if w not in KEY_GROUPS:
+                continue
+            if w not in given:
+                nokey.append(KEY_LABEL[w])
+            elif w not in _lin_doors:
+                _lin_doors.add(w)
+                got.append(KEY_LABEL[w])
+    out = (f"开好了：{'、'.join(got)}，这一轮能用。" if got else '') + \
+          (f"「{'」「'.join(nokey)}」她没给你钥匙，进不去。" if nokey else '')
+    return out or '这几间已经开着，或者没有这间'
+
+
+def _lin_gate(name):
+    """能用返回 None，不能用返回原因。"""
+    gs = _groups_of(name)
+    if not gs or name in DOOR_FREE:
+        return None
+    given = keys_given()
+    if not any(g in given for g in gs):
+        return f'「{KEY_LABEL[gs[0]]}」她没给你钥匙，用不了。'
+    with _lin_doors_lock:
+        if not any(g in _lin_doors for g in gs):
+            g = next(g for g in gs if g in given)
+            return f'「{KEY_LABEL[g]}」的门关着，先 open_tools 开 {g}。'
+    return None
 
 
 def _lin_mcp_handle(method, params):
@@ -4023,9 +4265,22 @@ def _lin_mcp_handle(method, params):
         return {'tools': _lin_mcp_tools()}
     if method == 'tools/call':
         name = (params or {}).get('name') or ''
+        args = (params or {}).get('arguments') or {}
         if name in LIN_MCP_SKIP:
             return {'content': [{'type': 'text', 'text': '这个工具在这里用不了'}], 'isError': True}
-        res = exec_tool_server(name, (params or {}).get('arguments') or {})
+        if name == 'open_tools':
+            print('[lin-mcp] 开门', flush=True)
+            return {'content': [{'type': 'text', 'text': _lin_open(args.get('which'))}]}
+        why = _lin_gate(name)
+        if why:
+            return {'content': [{'type': 'text', 'text': why}], 'isError': True}
+        if name == 'sticker_look':
+            r = sticker_look(args.get('name'))
+            if isinstance(r, str):
+                return {'content': [{'type': 'text', 'text': r}], 'isError': True}
+            return {'content': [{'type': 'text', 'text': f"表情「{r['name']}」" + (f"，你之前记的：{r['note']}" if r.get('note') else '')},
+                                {'type': 'image', 'data': r['data'], 'mimeType': r['mime']}]}
+        res = exec_tool_server(name, args)
         print(f'[lin-mcp] 调用 {name}', flush=True)   # 只记工具名，不记内容
         return {'content': [{'type': 'text', 'text': str(res)[:12000]}],
                 'isError': str(res).startswith(('出错了', '没有这个工具'))}
@@ -4087,6 +4342,7 @@ def do_wake_cc(manual=False, reason=''):
     slot = cc_mode.acquire_slot(wait=60 if manual else 0)
     if slot is None:
         return {'error': '他正在回你的消息，等会儿再叫他', 'busy': True}
+    lin_doors_reset()   # 醒来时门都是关的，要用自己开
     note = p.get('wake_prompt') or DEFAULT_PERSONA['wake_prompt']
     if reason:
         note = f'（叫你起来是因为：{reason}）' + note
@@ -4237,9 +4493,117 @@ def do_wake(manual=False, reason=''):
     return entry
 
 
+# ---------- 表情包：他自己看、自己记它是什么 ----------
+def _stickers_all():
+    return [x for x in jread(os.path.join(DATA_DIR, 'stickers.json'), []) if isinstance(x, dict) and x.get('file')]
+
+
+def sticker_look(name):
+    from chat_media import stickers_dir, sniff
+    it = next((x for x in _stickers_all() if x.get('name') == (name or '').strip()), None)
+    if not it:
+        return '没有这个表情'
+    try:
+        with open(os.path.join(stickers_dir(MEDIA_DIR), secure_filename(it['file'])), 'rb') as f:
+            raw = f.read()
+    except OSError:
+        return '这张表情的文件不在了'
+    ext = sniff(raw)
+    mime = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp'}.get(ext)
+    if not mime:
+        return '这个格式看不了'
+    _sticker_patch(it['name'], seen=True)
+    return {'name': it['name'], 'note': it.get('note', ''), 'mime': mime,
+            'data': base64.b64encode(raw).decode()}
+
+
+def _sticker_patch(name, **kw):
+    p = os.path.join(DATA_DIR, 'stickers.json')
+    items = jread(p, [])
+    hit = False
+    for x in items:
+        if isinstance(x, dict) and x.get('name') == name:
+            x.update(kw)
+            hit = True
+    if hit:
+        jwrite(p, items)
+    return hit
+
+
+def sticker_note_tool(args):
+    n = (args.get('name') or '').strip()
+    if not _sticker_patch(n, note=(args.get('note') or '').strip()[:40], seen=True):
+        return '没有这个表情'
+    return '记下了，下次就知道什么时候用它'
+
+
+# ---------- 记忆库地址：跟着网页设置走 ----------
+cc_mode._OB_URL_FILE = os.path.join(DATA_DIR, 'ob_url.json')
+
+
+@app.route('/api/ob-url', methods=['GET', 'POST'])
+def ob_url_api():
+    if request.method == 'POST':
+        u = ((request.json or {}).get('url') or '').strip()
+        if re.match(r'^https?://[^\s]+$', u) and len(u) < 500:
+            jwrite(cc_mode._OB_URL_FILE, {'url': u})
+    return jsonify({'url': cc_mode.ob_url()})
+
+
+# ---------- 断线后他在后台说完的那段，网页回来取 ----------
+@app.route('/api/cc/stop', methods=['POST'])
+def cc_stop():
+    key = str((request.json or {}).get('conv') or '')[:256]
+    return jsonify({'ok': True, 'stopped': bool(key) and cc_mode.stop_detached(key)})
+
+
+@app.route('/api/cc/pending', methods=['GET'])
+def cc_pending():
+    key = (request.args.get('conv') or '')[:256]
+    v = cc_mode.take_pending(DATA_DIR, key) if key else None
+    return jsonify(v or {})
+
+
+# ---------- 小本子 ----------
+@app.route('/api/notebook', methods=['GET'])
+def notebook_get():
+    nb = load_nb()
+    cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
+    return jsonify({'text': cur, 'max': NOTEBOOK_MAX})
+
+
+# ---------- 换窗口 / 会话换新：旧的压成「更早的事」 ----------
+def recap_merge_into(dst, base, msgs, upto_mid=''):
+    text = _flatten(msgs or [])
+    merged = base
+    if len(text) >= 80:
+        new, err = _ds_call(RECAP_SYS, text)
+        if not err and new:
+            merged = new
+            if base:
+                m2, err2 = _ds_call(MERGE_SYS, '【早】\n' + base + '\n\n【近】\n' + new)
+                merged = m2 if (not err2 and m2) else (base + '\n\n' + new)[-RECAP_MAX * 2:]
+    rec = load_recap(dst)
+    rec.update({'text': (merged or '').strip()[:RECAP_MAX * 3], 'ts': int(time.time() * 1000)})
+    if upto_mid:
+        rec['upto_mid'] = upto_mid
+    jwrite(_recap_file(dst), rec)
+    return rec
+
+
+@app.route('/api/recap/handoff', methods=['POST'])
+def recap_handoff():
+    d = request.json or {}
+    src, dst = d.get('from'), d.get('to')
+    if not dst:
+        return jsonify({'error': 'no target'}), 400
+    base = (load_recap(src).get('text') or '').strip() if src else ''
+    return jsonify({'ok': True, 'recap': recap_merge_into(dst, base, d.get('messages') or [])})
+
+
 @app.route('/api/wake/now', methods=['POST'])
 def wake_now():
-    return jsonify(do_wake(manual=True))
+    return jsonify(run_wake('', manual=True))
 
 
 @app.route('/api/wake/log', methods=['GET'])
@@ -4247,7 +4611,8 @@ def wake_log_get():
     st = load_state()
     log = jread(WAKE_LOG, [])
     return jsonify({'log': log[:30], 'unread': sum(1 for x in log if x.get('said') and not x.get('read')),
-                    'last_wake': st.get('last_wake', 0), 'next_wake_in': st.get('next_wake_in', 0)})
+                    'last_wake': st.get('last_wake', 0), 'next_wake_in': st.get('next_wake_in', 0),
+                    'wake_anchor': st.get('wake_anchor') or st.get('last_wake', 0)})
 
 
 @app.route('/api/wake/read', methods=['POST'])
@@ -4265,39 +4630,163 @@ def wake_log_clear():
     return jsonify({'ok': True})
 
 
+# ============================================================
+# 唤醒：设多久就多久醒（有自己的钟，不被闹钟/手动叫醒打乱）＋ 闹钟 ＋ 他自己管
+# ============================================================
+WAKE_LOCK = threading.Lock()
+
+
+def _norm_hhmm(t):
+    t = str(t or '').strip().replace('：', ':')
+    try:
+        h, m = t.split(':')[:2]
+        h, m = int(h), int(m)
+        if 0 <= h < 24 and 0 <= m < 60:
+            return f'{h:02d}:{m:02d}'
+    except Exception:
+        pass
+    return None
+
+
+def _alarm_list_text(p):
+    al = p.get('wake_alarms') or []
+    if not al:
+        return '（没有）'
+    return '\n'.join(f"[{a['id']}] {a['time']} {'只响 ' + a['date'] if a.get('date') else '每天'}"
+                     f"{'' if a.get('on', True) else '（关着）'} {a.get('note') or ''}" for a in al)
+
+
+def wake_settings_tool(args):
+    p = load_persona()
+    ch = {}
+    if args.get('on') is not None:
+        ch['wake_on'] = bool(args['on'])
+    if args.get('every_minutes'):
+        ch['wake_interval'] = max(5, int(float(args['every_minutes'])))
+    if ch:
+        p = persona_patch(ch)
+        wake_restart()
+    if args.get('next_in_minutes'):
+        st = load_state()
+        st['next_wake_in'] = max(5, int(float(args['next_in_minutes'])))
+        st['wake_anchor'] = time.time()
+        save_state(st)
+    st = load_state()
+    nxt = ''
+    if p.get('wake_on'):
+        base = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
+        anchor = st.get('wake_anchor') or st.get('last_wake', 0)
+        nxt = f'，下次大约 {max(0, int(base * 60 - (time.time() - anchor)) // 60)} 分钟后'
+    return (f"自主唤醒{'开着' if p.get('wake_on') else '关着'}，每 {p.get('wake_interval')} 分钟一次{nxt}。"
+            f"\n闹钟：\n{_alarm_list_text(p)}")
+
+
+def alarm_tool(args):
+    p = load_persona()
+    al = list(p.get('wake_alarms') or [])
+    act = (args.get('action') or 'list').strip()
+    if act == 'add':
+        t = _norm_hhmm(args.get('time'))
+        if not t:
+            return '时间要写成 HH:MM，比如 07:30'
+        a = {'id': 'a' + uuid.uuid4().hex[:6], 'time': t, 'note': (args.get('note') or '')[:200],
+             'on': True, 'by': 'lin'}
+        if args.get('date'):
+            a['date'] = str(args['date'])[:10]
+        al.append(a)
+    elif act in ('remove', 'on', 'off'):
+        aid = args.get('id')
+        if not any(a.get('id') == aid for a in al):
+            return '没有这个闹钟。\n' + _alarm_list_text(p)
+        if act == 'remove':
+            al = [a for a in al if a.get('id') != aid]
+        else:
+            for a in al:
+                if a.get('id') == aid:
+                    a['on'] = act == 'on'
+    if act != 'list':
+        p = persona_patch({'wake_alarms': al})
+    return '闹钟：\n' + _alarm_list_text(p)
+
+
+def run_wake(reason, manual=False):
+    if not WAKE_LOCK.acquire(blocking=False):
+        return {'error': '他正醒着', 'busy': True}
+    try:
+        return do_wake(manual=manual, reason=reason)
+    finally:
+        WAKE_LOCK.release()
+
+
+def _due_alarms(p, st):
+    """到点、今天还没响过、没过去超过一小时（服务器重启错过太久的就不补了）。"""
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')
+    fired = st.get('alarm_fired') or {}
+    out = []
+    for a in p.get('wake_alarms') or []:
+        if not a.get('on', True):
+            continue
+        t = _norm_hhmm(a.get('time'))
+        if not t or (a.get('date') and a['date'] != today) or fired.get(a.get('id')) == today:
+            continue
+        at = now.replace(hour=int(t[:2]), minute=int(t[3:]), second=0, microsecond=0)
+        if at <= now <= at + timedelta(hours=1):
+            out.append(a)
+    return out, today
+
+
 def wake_loop():
-    """不再是定点闹钟。到了最短间隔，看他有没有话憋着——有才叫醒。"""
-    time.sleep(60)
+    """设多久醒就多久醒；闹钟到点就醒。她正在跟他聊、他正忙的时候，等他闲下来马上补上。"""
+    time.sleep(30)
     while True:
         try:
             p = load_persona()
+            st = load_state()
+            due, today = _due_alarms(p, st)
+            woke = False
+            for a in due:
+                why = f"闹钟 {a['time']} 响了" + (f"：{a['note']}" if a.get('note') else '')
+                r = run_wake(why)
+                if (r or {}).get('busy'):
+                    break   # 他正忙，下一圈再响
+                woke = True
+                st = load_state()
+                st.setdefault('alarm_fired', {})[a['id']] = today
+                save_state(st)
+                print(f'[wake] {why}', flush=True)
+                if a.get('date'):
+                    persona_patch({'wake_alarms': [x for x in (load_persona().get('wake_alarms') or [])
+                                                   if x.get('id') != a['id']]})
             if p.get('wake_on'):
                 st = load_state()
                 base = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
-                waited = time.time() - st.get('last_wake', 0)
-                if waited >= base * 60:
-                    d = tick_desire()
-                    live = [i for i in d.get('impulses', []) if not i.get('acked')]
-                    og = [g for g in d.get('grudges', []) if not g.get('resolved_at')]
+                anchor = st.get('wake_anchor') or st.get('last_wake', 0)
+                if woke and time.time() - anchor >= base * 60:
+                    # 闹钟刚叫醒过他，这一次间隔就算醒过了，不连着叫两遍（省额度）
+                    st['next_wake_in'] = 0
+                    st['wake_anchor'] = time.time()
+                    save_state(st)
+                elif time.time() - anchor >= base * 60:
                     why = ''
-                    if live:
-                        top = max(live, key=lambda x: x['value'])
-                        why = f"{top['name']} 到 {top['value']:.0f} 了"
-                    elif og and d['drive']['jeal'] >= 40:
-                        why = '有笔账挂着'
-                    elif waited >= base * 60 * 3:
-                        why = '很久没动静了'
-                    if why:
+                    try:
+                        d = tick_desire()
+                        live = [i for i in d.get('impulses', []) if not i.get('acked')]
+                        if live:
+                            top = max(live, key=lambda x: x['value'])
+                            why = f"{top['name']} 到 {top['value']:.0f} 了"
+                    except Exception:
+                        pass
+                    r = run_wake(why)
+                    if not (r or {}).get('busy'):
+                        st = load_state()
                         st['next_wake_in'] = 0
+                        st['wake_anchor'] = time.time()
                         save_state(st)
-                        print(f'[wake] {why}，叫他一次', flush=True)
-                        do_wake(reason=why)
-                    else:
-                        st['last_wake'] = time.time() - base * 60 * 0.6
-                        save_state(st)
+                        print(f'[wake] 到点了 {why}', flush=True)
         except Exception as e:
             print(f'[wake] 出错: {e}', flush=True)
-        time.sleep(60)
+        time.sleep(30)
 
 
 threading.Thread(target=wake_loop, daemon=True).start()

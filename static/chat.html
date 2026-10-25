@@ -332,6 +332,15 @@ window.addEventListener('error', function (e) {
       <div class="settings-sub" id="wake-cost" style="margin-top:7px;"></div>
       <div class="settings-label" style="margin-top:12px;">叫他的时候说什么</div>
       <textarea class="persona-area" id="wake-prompt" style="min-height:70px;font-size:13px;"></textarea>
+      <div class="settings-sub" id="wake-next" style="margin-top:7px;"></div>
+      <div class="settings-label" style="margin-top:14px;">闹钟</div>
+      <div class="settings-sub">到这个点叫他醒一次，不管上面开没开。他自己也能加、能删。</div>
+      <div id="alarm-list" style="margin-top:8px;"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+        <input class="mini-input" id="alarm-time" type="time" style="width:118px;flex:none;margin:0;">
+        <input class="mini-input" id="alarm-note" placeholder="到点让他干嘛（可不填）" style="flex:1;min-width:0;margin:0;">
+        <button class="btn-ghost" id="btn-alarm-add" style="font-size:13px;padding:8px 14px;white-space:nowrap;">加</button>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn-ghost" id="btn-wake-log" style="font-size:13px;padding:9px;">看记录</button>
         <button class="btn-solid" id="btn-wake-now" style="font-size:13px;padding:9px;">现在叫他一次</button>
@@ -382,10 +391,17 @@ window.addEventListener('error', function (e) {
     </div>
 
     <div class="settings-card">
-      <div class="settings-label">工具</div>
-      <div class="settings-sub">一个功能一个开关，关掉的这一轮就不发给他。后面的数字是它占多少 token。书房和影音只在你进那个房间时才发。</div>
+      <div class="settings-label">钥匙</div>
+      <div class="settings-sub">给了哪把钥匙，他想去就自己开门，这一轮说完门自动关；没给的他进不去，连说明书都不发给他（省额度）。聊天和他自己醒来都一样。</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;" id="tool-groups"></div>
       <div class="settings-sub" id="tool-sub" style="margin-top:9px;"></div>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-label">他的小本子</div>
+      <div class="settings-sub">他自己写给自己、必须记住的事。一直放在他眼前，不会被压缩，换会话、重新生成都不丢。</div>
+      <div id="nb-text" style="margin-top:9px;font-size:13px;line-height:1.75;white-space:pre-wrap;"></div>
+      <div class="settings-sub" id="nb-count" style="margin-top:6px;"></div>
     </div>
 
     <div class="settings-card">
@@ -1285,7 +1301,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=27"></script>
-<script src="/static/rooms.js?v=28"></script>
+<script src="/static/app.js?v=28"></script>
+<script src="/static/rooms.js?v=29"></script>
 </body>
 </html>

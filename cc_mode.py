@@ -166,26 +166,34 @@ def acquire_slot(wait=None):
 
 class GuardedStream:
     """包住 stream_chat 生成器：流结束、出错或客户端断开（WSGI 调 close）时，
-    先关生成器（里面会收掉 claude 子进程），再把名额还回去。"""
+    先关生成器，再把名额还回去。
+    客户端断开时如果 claude 还在说，生成器会把它交给后台把话说完（holder['detached']），
+    这时名额由后台说完再还，免得同时跑两个 claude。"""
 
-    def __init__(self, gen, slot):
+    def __init__(self, gen, slot, holder=None):
         self._gen, self._slot = gen, slot
+        self._holder = holder if holder is not None else {}
+        self._holder['slot'] = slot
 
     def __iter__(self):
         return self
+
+    def _release(self):
+        if not self._holder.get('detached'):
+            self._slot.release()
 
     def __next__(self):
         try:
             return next(self._gen)
         except BaseException:
-            self._slot.release()
+            self._release()
             raise
 
     def close(self):
         try:
             self._gen.close()
         finally:
-            self._slot.release()
+            self._release()
 
 
 # ------------------------------------------------------------
@@ -397,18 +405,38 @@ def get_delivered(data_dir, key):
     return set((_map_load(data_dir).get(key) or {}).get('delivered') or [])
 
 
+def session_turns(data_dir, key):
+    """这个对话当前的 Claude Code 会话里已经聊了几轮。"""
+    return int((_map_load(data_dir).get(key) or {}).get('turns') or 0)
+
+
+def bump_turns(data_dir, key, session_id):
+    with _map_lock:
+        m = _map_load(data_dir)
+        v = m.get(key) or {}
+        if v.get('session_id') != session_id:
+            return
+        v['turns'] = int(v.get('turns') or 0) + 1
+        m[key] = v
+        tmp = _map_path(data_dir) + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(m, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _map_path(data_dir))
+
+
 def set_session(data_dir, key, session_id, add_mids=None):
     with _map_lock:
         m = _map_load(data_dir)
         if session_id:
             old = m.get(key) or {}
             # 换了新会话，旧会话里送过什么就不作数了
-            dl = list(old.get('delivered') or []) if old.get('session_id') == session_id else []
+            same = old.get('session_id') == session_id
+            dl = list(old.get('delivered') or []) if same else []
             for mid in add_mids or []:
                 if mid and mid not in dl:
                     dl.append(mid)
             m[key] = {'session_id': session_id, 'ts': int(time.time()),
-                      'delivered': dl[-DELIVERED_MAX:]}
+                      'delivered': dl[-DELIVERED_MAX:], 'turns': int(old.get('turns') or 0) if same else 0}
         else:
             m.pop(key, None)
         tmp = _map_path(data_dir) + '.tmp'
@@ -561,6 +589,8 @@ def turn_content(tail, data_dir):
                         problems.append(why)
                         print(f'[cc] 有一张图没送进去：{why}', flush=True)
         t = _text_of(c).strip()
+        if m.get('_note'):
+            t = f"〔{m['_note']}〕" + ('\n' + t if t else '')
         if t:
             texts.append(t)
     if problems:
@@ -592,6 +622,24 @@ def _split_list(s):
 
 
 DEFAULT_OB_URL = 'https://jwhjwh.zeabur.app/mcp'
+_OB_URL_FILE = None   # app.py 启动时设成 数据目录/ob_url.json（网页设置里的记忆库地址会同步进来）
+
+
+def ob_url():
+    """记忆库地址：环境变量 CC_OB_URL / OB_MCP_URL 优先，其次网页设置里同步过来的，最后才是老地址。"""
+    for k in ('CC_OB_URL', 'OB_MCP_URL'):
+        v = (os.environ.get(k) or '').strip()
+        if v:
+            return v
+    if _OB_URL_FILE:
+        try:
+            with open(_OB_URL_FILE, encoding='utf-8') as f:
+                v = (json.load(f) or {}).get('url') or ''
+            if v.startswith('http'):
+                return v
+        except Exception:
+            pass
+    return DEFAULT_OB_URL
 
 
 def _write_if_changed(path, text, private=False):
@@ -615,7 +663,7 @@ def auto_mcp_config(cwd):
     """没设 CC_MCP_CONFIG 时，自动写一份只挂记忆库的 MCP 配置，返回路径；关掉了返回空。"""
     if os.environ.get('CC_AUTO_MCP') == '0':
         return ''
-    url = (os.environ.get('CC_OB_URL') or DEFAULT_OB_URL).strip()
+    url = ob_url().strip()
     if not url:
         return ''
     path = os.path.join(cwd, '.mcp_auto.json')
@@ -654,7 +702,7 @@ def web_mcp_config(cwd, servers):
     skip = set()
     ob_url = ''
     if os.environ.get('CC_AUTO_MCP') != '0':
-        ob_url = _norm_url(os.environ.get('CC_OB_URL') or DEFAULT_OB_URL)
+        ob_url = _norm_url(globals()['ob_url']())
     cfg, names, off = {}, [], []
     taken = {'ob'} | set(_LOCAL_MCP)
     tool_ok = lambda t: isinstance(t, str) and re.match(r'^[A-Za-z0-9_.-]{1,80}$', t)
@@ -714,8 +762,68 @@ def pick_effort(req_effort):
     return ''
 
 
+def _session_path(session_id):
+    if not session_id or not re.match(r'^[A-Za-z0-9-]+$', session_id):
+        return None
+    base = (os.environ.get('CLAUDE_CONFIG_DIR') or '').strip() or os.path.expanduser('~/.claude')
+    for p in glob.glob(os.path.join(base, 'projects', '*', session_id + '.jsonl')):
+        return p
+    return None
+
+
+def _is_real_user(entry):
+    """会话记录里「她说的一句话」（不是工具结果、不是系统塞的）。"""
+    if entry.get('type') != 'user' or entry.get('isMeta') or entry.get('isSidechain'):
+        return False
+    c = (entry.get('message') or {}).get('content')
+    if isinstance(c, str):
+        return bool(c.strip())
+    if isinstance(c, list):
+        return any(isinstance(b, dict) and b.get('type') in ('text', 'image') for b in c) and \
+            not any(isinstance(b, dict) and b.get('type') == 'tool_result' for b in c)
+    return False
+
+
+def regen_anchor(session_id):
+    """重新生成：找到被 roll 的那一轮（最后一句她说的话）之前、他最后一条消息的 uuid。
+    返回 (uuid, 原因)。uuid 为 None 表示没法分叉（比如这是第一轮），调用方就开新会话。"""
+    p = _session_path(session_id)
+    if not p:
+        return None, 'no-file'
+    entries = []
+    try:
+        with open(p, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(d, dict) and d.get('uuid') and d.get('type') in ('user', 'assistant'):
+                    entries.append(d)
+    except Exception:
+        return None, 'read-fail'
+    last_user = None
+    for i in range(len(entries) - 1, -1, -1):
+        if _is_real_user(entries[i]):
+            last_user = i
+            break
+    if last_user is None:
+        return None, 'no-user'
+    for j in range(last_user - 1, -1, -1):
+        if entries[j].get('type') == 'assistant':
+            return entries[j]['uuid'], 'ok'
+    return None, 'first-turn'
+
+
+_FORK_FLAG_BROKEN = False
+
+
 def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp='', req_model=None,
-              local_mcp=('', []), image_input=False, web_mcp=('', [], []), effort='', thinking=True):
+              local_mcp=('', []), image_input=False, web_mcp=('', [], []), effort='', thinking=True,
+              resume_at=None):
     cmd = [os.environ.get('CC_BIN') or 'claude', '-p',
            '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     if effort:
@@ -731,6 +839,9 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
         cmd += ['--input-format', 'stream-json']
     if resume_id:
         cmd += ['--resume', resume_id]
+        if resume_at:
+            # 重新生成：接着那个会话，但只接到被 roll 那一轮之前，另起一个新会话号，旧的不动
+            cmd += ['--resume-session-at', resume_at, '--fork-session']
     if system_prompt:
         # 默认整个换掉 Claude Code 自带的系统提示（"你是写代码的助手"那一套），
         # 不然他总把自己当助手在"扮演角色"，思考里冒出"保持人设""她们俩在调情"这种旁观话。
@@ -885,6 +996,7 @@ class _Run:
         self.think_tokens = 0  # Claude Code 估算的思考 token（这一轮累计），网页拿来和摘要字数对比
         self.think_text = ''   # 这一轮的思考原文（用来判断要不要翻成中文）
         self._think_sent = 0
+        self.all_text = ''     # 这一轮说出口的全部文字（断线后在后台说完时，存起来等她回来拿）
 
     def _open_text(self):
         if self.text_open:
@@ -901,6 +1013,7 @@ class _Run:
             t = '\n\n' + t
         self.need_sep = False
         self.text_emitted = True
+        self.all_text += t
         out.append(sse({'type': 'content_block_delta', 'index': TEXT,
                         'delta': {'type': 'text_delta', 'text': t}}))
         return out
@@ -1227,9 +1340,118 @@ def think_to_zh(text, data_dir):
     return None, '', False
 
 
+# ------------------------------------------------------------
+# 断线后在后台把话说完
+# 以前：她锁屏 / 切后台 / 网闪一下 → 连接断了 → 直接把 claude 掐死 → 会话记录没写完
+#       → 下一句接不上（No conversation found）→ 重开会话把历史重喂一遍 → 「链接出错」+ 回复两遍。
+# 现在：连接断了 claude 照样说完、把会话写完；说出口的话存起来，她回来网页自己取。
+# ------------------------------------------------------------
+_pending_lock = threading.Lock()
+_DETACHED = {}      # key -> proc：断线后还在后台说的
+_STOP_REQ = {}      # key -> 时间：她按了「停」/挂了电话，这一句不要了
+
+
+def stop_detached(key):
+    """她主动按停：后台那个也收掉，不存回复。"""
+    _STOP_REQ[key] = time.time()
+    proc = _DETACHED.get(key)
+    if proc is not None and proc.poll() is None:
+        _signal_group(proc.pid, signal.SIGTERM)
+        return True
+    return False
+
+
+def _pending_path(data_dir):
+    return os.path.join(data_dir, 'cc_pending.json')
+
+
+def save_pending(data_dir, key, text, mids):
+    with _pending_lock:
+        d = _jload(_pending_path(data_dir), {})
+        d[key] = {'text': text, 'ts': int(time.time() * 1000), 'mids': list(mids or [])}
+        _jsave(_pending_path(data_dir), d)
+
+
+def take_pending(data_dir, key):
+    with _pending_lock:
+        d = _jload(_pending_path(data_dir), {})
+        v = d.pop(key, None)
+        if v is not None:
+            _jsave(_pending_path(data_dir), d)
+    return v
+
+
+def _finish_detached(proc, q, run, deadline, t_start, tag, meta, holder, data_dir):
+    peak, outcome = 0, 'detached_done'
+    _DETACHED[run.key] = proc
+    if time.time() - _STOP_REQ.get(run.key, 0) < 15:
+        _signal_group(proc.pid, signal.SIGTERM)   # 她按的是「停」，不是断线
+    try:
+        while True:
+            left = deadline - time.time()
+            if left <= 0:
+                outcome = 'detached_timeout'
+                break
+            try:
+                kind, raw = q.get(timeout=min(PING_EVERY, left))
+            except queue.Empty:
+                peak = max(peak, group_rss(proc.pid))
+                continue
+            if kind == 'eof':
+                break
+            try:
+                d = json.loads(raw.decode('utf-8', 'ignore').strip() or 'null')
+            except Exception:
+                continue
+            if isinstance(d, dict):
+                run.handle(d)
+    except Exception as e:
+        outcome = 'detached_error'
+        print(f'[cc] 后台说完时出错 #{tag}: {type(e).__name__}', flush=True)
+    finally:
+        _DETACHED.pop(run.key, None)
+        if time.time() - _STOP_REQ.get(run.key, 0) < 600 and _STOP_REQ.get(run.key, 0) >= t_start:
+            outcome = 'stopped'
+        peak = max(peak, group_rss(proc.pid))
+        leftover = _cleanup(proc, graceful=outcome == 'detached_done')
+        res = run.result or {}
+        text = run.all_text.strip()
+        if outcome == 'detached_done' and run.session_id:
+            try:
+                bump_turns(data_dir, run.key, run.session_id)
+            except Exception:
+                pass
+        if text and outcome == 'detached_done':
+            try:
+                save_pending(data_dir, run.key, text, run.mids)
+            except Exception as e:
+                print(f'[cc] 存后台回复失败: {e}', flush=True)
+        dur = time.time() - t_start
+        print(f'[cc] 结束 #{tag} outcome={outcome} exit={proc.returncode} dur={dur:.1f}s '
+              f'api_ms={res.get("duration_api_ms", "?")} saved_chars={len(text)} peak_rss={_mb(peak)} '
+              f'cleaned={leftover} {mem_line()}', flush=True)
+        try:
+            u = run.usage or {}
+            record_run(data_dir, dict(meta, outcome=outcome, dur=round(dur, 1),
+                                      tools=[v['name'] for v in run.tools.values()][:30],
+                                      peak_mb=round(peak / 1048576), mcp=run.mcp,
+                                      tokens={'in': u.get('input_tokens', 0), 'out': u.get('output_tokens', 0),
+                                              'cr': u.get('cache_read_input_tokens', 0),
+                                              'cw': u.get('cache_creation_input_tokens', 0)}))
+            record_usage(data_dir, u, meta.get('model'), tag)
+        except Exception:
+            pass
+        slot = holder.get('slot')
+        if slot is not None:
+            slot.release()
+
+
 def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=None, web_mcp=None, effort=None,
-                thinking=True):
-    """生成器：产出前端格式的 SSE。"""
+                thinking=True, holder=None, regen=False):
+    """生成器：产出前端格式的 SSE。
+    holder：传了的话，客户端断开时 claude 不掐死，交给后台说完（见 _finish_detached）。
+    regen：重新生成——从被 roll 的那一轮之前分叉，被 roll 掉的回复他看不到。"""
+    global _FORK_FLAG_BROKEN
     timeout = float(os.environ.get('CC_TIMEOUT') or 600)
     cwd = (os.environ.get('CC_CWD') or '').strip() or os.path.join(data_dir, 'cc_workspace')
     os.makedirs(cwd, exist_ok=True)
@@ -1245,6 +1467,15 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
     yield sse({'type': 'message_start', 'message': {'usage': {}}})
 
     resume_id = get_session(data_dir, key)
+    resume_at = None
+    if regen and resume_id:
+        anchor, why = (None, 'flag-broken') if _FORK_FLAG_BROKEN else regen_anchor(resume_id)
+        if anchor:
+            resume_at = anchor
+        else:
+            # 分不了叉（第一轮、找不到记录、这个版本不支持）：开新会话，只带网页里剩下的历史（已经去掉 roll 的那条）
+            resume_id = None
+        print(f'[cc] 重新生成 #{_short(key)} fork={"yes" if resume_at else "no"} ({why})', flush=True)
     eff = pick_effort(effort)
     attempt = 0
     run = None
@@ -1255,7 +1486,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             # 续会话时，上次已经送进 claude 会话里的消息（比如上次等太久、断了、没回上）不再重复送，
             # 不然重发几遍他就会看到几遍。新会话（没有 resume）则全部带上。
             this_turn, skipped = tail, 0
-            if resume_id:
+            if resume_id and not resume_at:
                 dl = get_delivered(data_dir, key)
                 this_turn = [m for m in tail if not (_mid(m) and _mid(m) in dl)]
                 skipped = len(tail) - len(this_turn)
@@ -1277,7 +1508,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model,
                             local_mcp=local_mcp_config(cwd), image_input=bool(images),
-                            web_mcp=web, effort=eff, thinking=thinking is not False)
+                            web_mcp=web, effort=eff, thinking=thinking is not False, resume_at=resume_at)
             run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
             st = concurrency()
@@ -1312,6 +1543,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             deadline = time.time() + timeout
             timed_out = False
             got_eof = False
+            detached = False
             outcome = 'client_gone'   # 没正常走完就是前端断开了（GeneratorExit）
             peak = 0
             next_sample = 0.0
@@ -1348,36 +1580,48 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 raise
             finally:
                 # 正常结束：给 claude 几秒自己退出、写完会话记录；
-                # 超时或客户端断开（Flask 关闭生成器 -> GeneratorExit）：直接收掉整个进程组
-                peak = max(peak, group_rss(proc.pid))
-                leftover = _cleanup(proc, graceful=got_eof)
-                res = run.result or {}
-                dur = time.time() - t_start
-                print(f'[cc] 结束 #{tag} outcome={outcome} exit={proc.returncode} '
-                      f'dur={dur:.1f}s api_ms={res.get("duration_api_ms", "?")} '
-                      f'turns={res.get("num_turns", "?")} peak_rss={_mb(peak)} '
-                      f'cleaned={leftover} {mem_line()}', flush=True)
-                # 排查记录 + 用量记录（只有元数据）
-                err_short = ''
-                if res and (res.get('is_error') or res.get('subtype') not in (None, 'success')):
-                    err_short = str(res.get('result') or res.get('subtype') or '')[:160]
-                elif not res and outcome == 'done':
-                    err_short = (''.join(err_tail).strip()[-160:] or f'退出码 {proc.returncode}')
-                try:
-                    u = run.usage or {}
-                    record_run(data_dir, {
-                        'ts': int(t_start * 1000), 'conv': tag, 'outcome': outcome,
-                        'dur': round(dur, 1), 'model': pick_model(model, upstream_cfg) or 'default',
-                        'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
-                        'skipped_dup': skipped, 'mcp': run.mcp, 'error': err_short,
-                        'tools': [v['name'] for v in run.tools.values()][:30],
-                        'peak_mb': round(peak / 1048576), 'tokens': {
-                            'in': u.get('input_tokens', 0), 'out': u.get('output_tokens', 0),
-                            'cr': u.get('cache_read_input_tokens', 0),
-                            'cw': u.get('cache_creation_input_tokens', 0)}})
-                    record_usage(data_dir, u, pick_model(model, upstream_cfg), tag)
-                except Exception as e:
-                    print(f'[cc] 写排查记录失败: {e}', flush=True)
+                # 客户端断开（锁屏、切后台、网闪）：claude 还在说的话交给后台说完，不掐死；
+                # 超时：收掉整个进程组
+                if (outcome == 'client_gone' and holder is not None and not got_eof
+                        and proc.poll() is None):
+                    detached = True
+                    holder['detached'] = True
+                    meta = {'ts': int(t_start * 1000), 'conv': tag, 'model': pick_model(model, upstream_cfg) or 'default',
+                            'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
+                            'skipped_dup': skipped, 'error': ''}
+                    print(f'[cc] 她那边断开了 #{tag}，让他在后台说完', flush=True)
+                    threading.Thread(target=_finish_detached, daemon=True,
+                                     args=(proc, q, run, deadline, t_start, tag, meta, holder, data_dir)).start()
+                else:
+                    peak = max(peak, group_rss(proc.pid))
+                    leftover = _cleanup(proc, graceful=got_eof)
+                    res = run.result or {}
+                    dur = time.time() - t_start
+                    print(f'[cc] 结束 #{tag} outcome={outcome} exit={proc.returncode} '
+                          f'dur={dur:.1f}s api_ms={res.get("duration_api_ms", "?")} '
+                          f'turns={res.get("num_turns", "?")} peak_rss={_mb(peak)} '
+                          f'cleaned={leftover} {mem_line()}', flush=True)
+                    # 排查记录 + 用量记录（只有元数据）
+                    err_short = ''
+                    if res and (res.get('is_error') or res.get('subtype') not in (None, 'success')):
+                        err_short = str(res.get('result') or res.get('subtype') or '')[:160]
+                    elif not res and outcome == 'done':
+                        err_short = (''.join(err_tail).strip()[-160:] or f'退出码 {proc.returncode}')
+                    try:
+                        u = run.usage or {}
+                        record_run(data_dir, {
+                            'ts': int(t_start * 1000), 'conv': tag, 'outcome': outcome,
+                            'dur': round(dur, 1), 'model': pick_model(model, upstream_cfg) or 'default',
+                            'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
+                            'skipped_dup': skipped, 'mcp': run.mcp, 'error': err_short,
+                            'tools': [v['name'] for v in run.tools.values()][:30],
+                            'peak_mb': round(peak / 1048576), 'tokens': {
+                                'in': u.get('input_tokens', 0), 'out': u.get('output_tokens', 0),
+                                'cr': u.get('cache_read_input_tokens', 0),
+                                'cw': u.get('cache_creation_input_tokens', 0)}})
+                        record_usage(data_dir, u, pick_model(model, upstream_cfg), tag)
+                    except Exception as e:
+                        print(f'[cc] 写排查记录失败: {e}', flush=True)
 
             if timed_out:
                 print(f'[cc] 超时 {timeout:.0f}s，已结束子进程', flush=True)
@@ -1411,6 +1655,15 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     _THINK_FLAG_BROKEN = True
                     print('[cc] 这个版本不支持 --thinking-display，去掉后重试', flush=True)
                     continue
+                # 重新生成的分叉参数这个版本不认，或者分叉失败：记住，改成开新会话（只带剩下的历史）再来一次
+                if resume_at and not run.text_emitted and attempt <= 3 and (
+                        'resume-session-at' in low or 'fork-session' in low or 'unknown option' in low
+                        or any(s in low for s in _RESUME_MISS)):
+                    if 'resume-session-at' in low or 'fork-session' in low or 'unknown option' in low:
+                        _FORK_FLAG_BROKEN = True
+                    print(f'[cc] 重新生成分叉失败，改开新会话：{detail[:200]}', flush=True)
+                    resume_id, resume_at = None, None
+                    continue
                 # 续会话失败（比如凭据目录没持久化，旧会话文件没了）：丢掉映射，重开一次
                 if (resume_id and attempt == 1 and not run.text_emitted
                         and any(s in low for s in _RESUME_MISS)):
@@ -1425,9 +1678,11 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                 # 兜底：没收到任何增量，就用 result 里的全文
                 for c in run.text(res['result']):
                     yield c
+            if not failed and run.session_id:
+                bump_turns(data_dir, key, run.session_id)
             break
     finally:
-        if sys_file:
+        if sys_file and not (holder or {}).get('detached'):
             try:
                 os.remove(sys_file)
             except Exception:

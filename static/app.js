@@ -104,8 +104,15 @@ const GROUP_LABEL = {
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
 };
+// ============ 钥匙 ============
+// 她给了哪把钥匙，他想用就自己开门（open_tools），这一轮说完自动关；没给的进不去。
+// 开关存在手机里，同步到服务器，cc 模式和他自己醒来都按这个来。
+const KEY_EXTRA = { self: '唤醒闹钟电话', notebook: '小本子', emoji: '表情包' };   // 只在服务器上用的
+const keyGroups = () => [...Object.keys(T), ...Object.keys(KEY_EXTRA)];
 function groupOn(g) { return localStorage.getItem('tg-' + g) !== '0'; }
-function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); }
+function keysMap() { const o = {}; keyGroups().forEach(g => o[g] = groupOn(g)); return o; }
+function syncKeys() { jpost('/api/persona', { tool_keys: keysMap() }).catch(() => { }); }
+function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); syncKeys(); }
 function groupTokens(g) {
   const s = JSON.stringify(T[g] || []);
   const cn = (s.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -114,10 +121,10 @@ function groupTokens(g) {
 function renderToolGroups() {
   const el = $('tool-groups'); if (!el) return;
   el.innerHTML = '';
-  Object.keys(T).forEach(g => {
+  keyGroups().forEach(g => {
     const d = document.createElement('div');
     d.className = 'ctx-option' + (groupOn(g) ? ' active' : '');
-    d.innerHTML = `${GROUP_LABEL[g]}<span style="opacity:.6;font-size:10px;margin-left:5px;">${groupTokens(g)}</span>`;
+    d.innerHTML = T[g] ? `${GROUP_LABEL[g]}<span style="opacity:.6;font-size:10px;margin-left:5px;">${groupTokens(g)}</span>` : KEY_EXTRA[g];
     d.onclick = () => setGroup(g, !groupOn(g));
     el.appendChild(d);
   });
@@ -146,7 +153,13 @@ function loadMcp() {
   catch (e) { mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP)); }
   if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
-function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); }
+function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); syncObUrl(); }
+// 记忆库地址告诉服务器：Claude Code 和他自己醒来都连这一个（搬服务器换了地址也跟着走）
+const isOB = s => s && (s.id === 'ombre' || /ombre/i.test(s.name || '') || /jwhjwh|ombre/i.test(s.url || ''));
+function syncObUrl() {
+  const ob = (mcpServers || []).find(s => s.enabled && isOB(s));
+  if (ob && ob.url) jpost('/api/ob-url', { url: ob.url }).catch(() => { });
+}
 // ============ MCP 工具列表同步 ============
 // 以前工具列表是添加那一刻拍的快照，服务器后来加了新工具这里也看不到。
 // 现在：打开 MCP 面板时、以及每次打开网页（最多一小时一次）都去每个服务器重新拉一遍 tools/list。
@@ -601,9 +614,11 @@ function stickerize(html) {
 }
 const isStickerOnly = t => { const m = /^\[([^\[\]]+)\]$/.exec((t || '').trim()); return !!m && allStickers().some(x => x.name === m[1]); };
 function emojiNames() {
-  const his = STICKERS.lin.map(x => x.name).filter(Boolean);
+  const his = STICKERS.lin.filter(x => x && x.name).map(x => x.note ? `${x.name}（${x.note}）` : x.name);
   const hers = STICKERS.user.map(x => x.name).filter(Boolean);
+  const unseen = STICKERS.lin.filter(x => x && x.name && !x.seen).map(x => x.name);
   let s = his.length ? `你能用的表情：${his.join('、')}。` : '';
+  if (unseen.length) s += `还没看过长什么样的：${unseen.join('、')}（有「表情包」钥匙就能自己看、自己记它什么时候用）。`;
   if (hers.length) s += `她的表情包：${hers.join('、')}（她发 [名字] 就是发了那张表情）。`;
   return s;
 }
@@ -667,8 +682,9 @@ function roomNote() {
     return `你们现在一起在${curKind === 'music' ? '听音房听《' : '放映室看《'}${curMedia.note || curMedia.filename}》，她停在 ${fmtTime(stageTime())}。`;
   return '';
 }
+// 会变的（在哪个房间、停在哪）。表情清单不常变，单独放 extra_stable 进 system，不跟着每句话重复
 function extraNote() {
-  const parts = [emojiNames(), roomNote()];
+  const parts = [roomNote()];
   if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
@@ -690,9 +706,7 @@ function splitSay(text) {
     if (prev && prev.length <= 2 && p.length <= 2) out[out.length - 1] = prev + '\n' + p;
     else out.push(p);
   }
-  // 超过 6 段时，后面的并进第 6 段，不丢字
-  if (out.length > 6) out.splice(5, out.length - 5, out.slice(5).join('\n\n'));
-  return out;
+  return out;   // 空了几行就拆几条，不限条数
 }
 // 边收边拆：每段一个气泡，正在写的那段带光标。done 时去掉光标、单个表情去掉气泡底色
 function streamSegs(wrap, text, done) {
@@ -1023,11 +1037,12 @@ async function streamResponse(wrap, hist) {
   let thinkZh = false;                    // 思考原本是外文、已经换成中文译文
   let thinkHide = '';                     // 外文思考没翻成：不显示、不保存（这里放原因）
   // 用局部变量：上一轮被「停」掉后它的收尾不能把这一轮的控制器清掉
+  if (handoffBusy) await handoffBusy;   // 新窗口的「更早的事」还在压，等它好了再发第一句
   const ac = new AbortController();
   abortController = ac;
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking() })
+    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), extra_stable: emojiNames(), _session_id: getSessionId(), _conv_id: currentConvId, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking(), _ctx: ctxWindow, _regen: takeRegen() })
   });
   if (!resp.ok) {
     // 429 = 服务器上一条还没回完（只跑得动一个），给句人话，不自动重试
@@ -1364,8 +1379,33 @@ function turnError(wrap, e) {
   if (e && e.name === 'AbortError') return;   // 自己按了停，不算出错
   console.error(e);
   currentBubble = null;
-  updateBubble(wrap, (e && e.friendly) || '连接出错，请重试。', true);
+  updateBubble(wrap, (e && e.friendly) || '断开了一下，他还在那边接着说，说完会自己出现…', true);
+  watchPending(120);
 }
+// ============ 断线找回 ============
+// 锁屏 / 切后台 / 网闪一下，连接断了，他在服务器上照样把话说完、存起来；这里去取回来
+async function fetchPending() {
+  if (!currentConvId) return false;
+  let d; try { d = await jget('/api/cc/pending?conv=' + encodeURIComponent(currentConvId)); } catch (e) { return false; }
+  if (!d || !d.text) return false;
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'assistant') last.content = d.text;
+  else messages.push({ role: 'assistant', content: d.text });
+  saveConv(); loadConv(currentConvId);
+  return true;
+}
+let pendingWatch = null;
+function watchPending(sec) {
+  if (pendingWatch) clearInterval(pendingWatch);
+  const end = Date.now() + sec * 1000;
+  pendingWatch = setInterval(async () => {
+    if (isTyping) return;
+    if (await fetchPending() || Date.now() > end) { clearInterval(pendingWatch); pendingWatch = null; }
+  }, 5000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !isTyping) fetchPending(); });
+// 她按「停」/挂电话：这一句不要了，服务器那边也别接着说
+const ccStop = () => { if (currentConvId) jpost('/api/cc/stop', { conv: currentConvId }).catch(() => { }); };
 async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && !!pendingChatImg;
@@ -1421,8 +1461,12 @@ async function sendComposed(text, imgs, opts) {
   }
   endTurn(seq);
 }
+// 重新生成：告诉服务器这一句是 roll 的，Claude Code 那边从这一轮之前分叉，被 roll 掉的他看不到
+let regenNext = false;
+const takeRegen = () => { const v = regenNext; regenNext = false; return v; };
 async function regenAt(row) {
   if (isTyping || !row) return;
+  regenNext = true;
   const idx = parseInt(row.dataset.msgIdx);
   messages.splice(idx);
   [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= idx) r.remove(); });
@@ -1536,7 +1580,11 @@ function loadConv(id) {
   roomCtx = keep;
   scrollBottom(); localStorage.setItem('current-conv-id', id);
 }
-function newConv() {
+// 换新窗口无缝接上：最后两轮原样带过去，再往前的跟旧摘要一起压成新窗口的「更早的事」。
+// 新窗口在 cc 里是新会话，不背旧会话的全部记录，最省。fresh=true（清空对话）就什么都不带。
+const CARRY_ROUNDS = 2;
+function newConv(fresh) {
+  const prev = { id: currentConvId, msgs: messages };
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
   recapDone = 0;
@@ -1544,7 +1592,31 @@ function newConv() {
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
   $('conv-panel').classList.remove('open'); showPage('chat');
+  if (fresh !== true && prev.id && prev.msgs.length) handoff(prev);
 }
+function handoff(prev) {
+  const real = m => m && m.role === 'user' && !m._internal && !m._callmark && !(Array.isArray(m.content) && m.content.some(c => c && c.type === 'tool_result'));
+  const starts = [];
+  prev.msgs.forEach((m, i) => { if (real(m)) starts.push(i); });
+  const cut = starts.length > CARRY_ROUNDS ? starts[starts.length - CARRY_ROUNDS] : (starts[0] ?? prev.msgs.length);
+  const textOf = c => typeof c === 'string' ? c : (Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('') : '');
+  const carry = [];
+  for (const m of prev.msgs.slice(cut)) {
+    if (m._internal || m._callmark) continue;
+    const t = textOf(m.content); if (!t) continue;
+    if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid() });
+    else if (m.role === 'assistant') carry.push({ role: 'assistant', content: t });
+  }
+  const older = prev.msgs.slice(Math.max(0, cut - 40), cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
+    .map(m => ({ role: m.role, content: textOf(m.content) })).filter(m => m.content);
+  const to = currentConvId;
+  messages = carry; saveConv(); loadConv(to);
+  const tip = document.createElement('div'); tip.className = 'sys-msg'; tip.textContent = '— 接着上个窗口 —';
+  msgBox().insertBefore(tip, msgBox().children[1] || null);
+  handoffBusy = jpost('/api/recap/handoff', { from: prev.id, to, messages: older })
+    .catch(() => { }).finally(() => { handoffBusy = null; });
+}
+let handoffBusy = null;
 function renderConvs() {
   const list = getConvs(), el = $('conv-list');
   $('conv-count').textContent = list.length ? list.length + ' 段' : '';
@@ -1562,7 +1634,7 @@ function renderConvs() {
       if (!confirm('删除这段对话？')) return;
       localStorage.removeItem('conv-' + c.id);
       const nl = getConvs().filter(x => x.id !== c.id); saveConvs(nl);
-      if (currentConvId === c.id) { if (nl.length) loadConv(nl[0].id); else newConv(); }
+      if (currentConvId === c.id) { if (nl.length) loadConv(nl[0].id); else newConv(true); }
       renderConvs();
     };
     d.onclick = () => { if (messages.length) saveConv(); loadConv(c.id); renderConvs(); $('conv-panel').classList.remove('open'); showPage('chat'); };
