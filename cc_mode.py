@@ -53,6 +53,7 @@ import signal
 import subprocess
 import threading
 import time
+import uuid
 
 THINK, TEXT = 0, 1
 PING_EVERY = 5           # 秒；没有输出时发 SSE 注释保活，也借此尽快发现客户端断开、早点收掉子进程
@@ -784,38 +785,61 @@ def _is_real_user(entry):
     return False
 
 
-def regen_anchor(session_id):
-    """重新生成：找到被 roll 的那一轮（最后一句她说的话）之前、他最后一条消息的 uuid。
-    返回 (uuid, 原因)。uuid 为 None 表示没法分叉（比如这是第一轮），调用方就开新会话。"""
+_NOTE_HEAD = re.compile(r'^\s*〔[^〕]*〕\s*')
+
+
+def _entry_text(entry):
+    c = (entry.get('message') or {}).get('content')
+    if isinstance(c, str):
+        t = c
+    else:
+        t = '\n'.join(b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
+    return _NOTE_HEAD.sub('', t or '').strip()
+
+
+def regen_fork(session_id, target_text):
+    """重新生成：在会话记录里找到她要重来的那句话（按内容找，不管是不是最后一句），
+    把它之前的记录复制成一份新会话，返回新会话号。找不到就返回 None（调用方开新会话）。
+    不靠 Claude Code 的隐藏参数，自己切，稳。"""
     p = _session_path(session_id)
     if not p:
         return None, 'no-file'
-    entries = []
     try:
         with open(p, encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    d = json.loads(line)
-                except Exception:
-                    continue
-                if isinstance(d, dict) and d.get('uuid') and d.get('type') in ('user', 'assistant'):
-                    entries.append(d)
+            raw = [l for l in f.read().split('\n') if l.strip()]
     except Exception:
         return None, 'read-fail'
-    last_user = None
-    for i in range(len(entries) - 1, -1, -1):
-        if _is_real_user(entries[i]):
-            last_user = i
+    rows = []
+    for l in raw:
+        try:
+            rows.append(json.loads(l))
+        except Exception:
+            rows.append(None)
+    target = _NOTE_HEAD.sub('', target_text or '').strip()
+    hit = None
+    for i in range(len(rows) - 1, -1, -1):
+        d = rows[i]
+        if isinstance(d, dict) and _is_real_user(d) and target and _entry_text(d) == target:
+            hit = i
             break
-    if last_user is None:
-        return None, 'no-user'
-    for j in range(last_user - 1, -1, -1):
-        if entries[j].get('type') == 'assistant':
-            return entries[j]['uuid'], 'ok'
-    return None, 'first-turn'
+    if hit is None:
+        return None, 'not-found'
+    # 切在那句话之前；前面得有他说过的话，不然就是第一轮，直接开新会话
+    if not any(isinstance(d, dict) and d.get('type') == 'assistant' for d in rows[:hit]):
+        return None, 'first-turn'
+    new_id = str(uuid.uuid4())
+    out = []
+    for d, l in zip(rows[:hit], raw[:hit]):
+        if isinstance(d, dict):
+            if d.get('sessionId'):
+                d['sessionId'] = new_id
+            out.append(json.dumps(d, ensure_ascii=False))
+    try:
+        with open(os.path.join(os.path.dirname(p), new_id + '.jsonl'), 'w', encoding='utf-8') as f:
+            f.write('\n'.join(out) + '\n')
+    except Exception:
+        return None, 'write-fail'
+    return new_id, 'ok'
 
 
 _FORK_FLAG_BROKEN = False
@@ -1487,13 +1511,11 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
         if all(_mid(m) and _mid(m) in dl for m in tail):
             regen = True
     if regen and resume_id:
-        anchor, why = (None, 'flag-broken') if _FORK_FLAG_BROKEN else regen_anchor(resume_id)
-        if anchor:
-            resume_at = anchor
-        else:
-            # 分不了叉（第一轮、找不到记录、这个版本不支持）：开新会话，只带网页里剩下的历史（已经去掉 roll 的那条）
-            resume_id = None
-        print(f'[cc] 重新生成 #{_short(key)} fork={"yes" if resume_at else "no"} ({why})', flush=True)
+        target = '\n\n'.join(t for t in (_text_of(m.get('content')).strip() for m in tail) if t)
+        new_id, why = regen_fork(resume_id, target)
+        # 切好了就接新那份；切不了（第一轮、找不到）：开新会话，只带网页里剩下的历史（已经去掉 roll 的那些）
+        resume_id = new_id
+        print(f'[cc] 重新生成 #{_short(key)} fork={"yes" if new_id else "no"} ({why})', flush=True)
     eff = pick_effort(effort)
     attempt = 0
     run = None
@@ -1504,7 +1526,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
             # 续会话时，上次已经送进 claude 会话里的消息（比如上次等太久、断了、没回上）不再重复送，
             # 不然重发几遍他就会看到几遍。新会话（没有 resume）则全部带上。
             this_turn, skipped = tail, 0
-            if resume_id and not resume_at:
+            if resume_id and not regen:
                 dl = get_delivered(data_dir, key)
                 this_turn = [m for m in tail if not (_mid(m) and _mid(m) in dl)]
                 skipped = len(tail) - len(this_turn)
