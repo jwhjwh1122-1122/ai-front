@@ -78,6 +78,10 @@ const T = {
     { name: 'desire_feed', description: '反复在想的事记下来，会沉成执念', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, drive: { type: 'string' }, strength: { type: 'number' } } } },
     { name: 'desire_vent', description: '憋到头了自己解决完，写下过程（text）和当时想对她说没说出口的话（said）', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' }, said: { type: 'string' } } } },
   ],
+  emoji: [
+    { name: 'emoji_look', description: '看某个表情包长什么样', input_schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } } },
+    { name: 'emoji_note', description: '给表情记一句：它是什么、你什么时候想用（20 字内）', input_schema: { type: 'object', required: ['name', 'note'], properties: { name: { type: 'string' }, note: { type: 'string' } } } },
+  ],
   notebook: [
     { name: 'notebook', description: '你的小本子，永远在你眼前，不会被压缩、换对话、重新生成也不丢。只写必须记住的事。action=read|add|rewrite：add 加一行，rewrite 整本重写（太长就精简）。最多 800 字', input_schema: { type: 'object', required: ['action'], properties: { action: { type: 'string' }, text: { type: 'string' } } } },
   ],
@@ -110,7 +114,7 @@ const GROUP_LABEL = {
   more: '再说一句', memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
-  self: '唤醒闹钟电话', notebook: '小本子',
+  self: '唤醒闹钟电话', notebook: '小本子', emoji: '表情包',
 };
 // ============ 钥匙 ============
 // 钥匙在她手里（设置页开关）。给了钥匙的，他想用就自己 open_tools 开门，这一轮结束门自动关；
@@ -276,6 +280,21 @@ async function execTool(name, args) {
     if (name === 'say_more') {
       wantMore = true;
       return txt('嗯，接着说。');
+    }
+    if (name === 'emoji_look') {
+      const it = JSON.parse(localStorage.getItem('custom-emoji') || '[]').find(x => x.name === args.name);
+      if (!it) return txt('没有这个表情');
+      const blob = await (await fetch(it.data)).blob();
+      const url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+      const small = (typeof shrinkImage === 'function' && await shrinkImage(url, 256)) || url;   // 看清就行，小图省 token
+      jpost('/api/emoji/note', { name: it.name, seen: true }).then(d => d.items && setEmojiList(d.items)).catch(() => { });
+      const s = `表情「${it.name}」${it.note ? '，你之前记的：' + it.note : ''}`;
+      return { content: [{ type: 'text', text: s }, { type: 'image_url', image_url: { url: small } }], _summary: `看了表情「${it.name}」` };
+    }
+    if (name === 'emoji_note') {
+      const d = await jpost('/api/emoji/note', { name: args.name, note: args.note, seen: true });
+      if (d.items) setEmojiList(d.items);
+      return txt(d.error || '记下了，下次就知道什么时候用它');
     }
     if (name === 'say_more') { wantMore = true; return txt('嗯，接着说。'); }
     if (name === 'lin_status') { await jpost('/api/lin-status', { text: args.text }); showLinState(args.text); return txt('状态改好了'); }
@@ -589,12 +608,20 @@ function buildMsgs(msgs) {
   }
   return out;
 }
+// 他知道有哪些表情、各是什么（自己看过写的备注）。不常变，放 system 走缓存
 function emojiNames() {
   try {
-    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]')
-      .map(x => x && x.name).filter(Boolean);
-    return l.length ? `你能用的表情：${l.join('、')}。` : '';
+    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]').filter(x => x && x.name);
+    if (!l.length) return '';
+    const s = l.map(x => x.note ? `${x.name}（${x.note}）` : x.name).join('、');
+    const unseen = l.filter(x => !x.seen).map(x => x.name);
+    return `你能用的表情，回复里写 [名字] 就会发出去：${s}。`
+      + (unseen.length ? `还没看过长什么样的：${unseen.join('、')}——想看用 emoji_look，看完用 emoji_note 记一句它是什么、什么时候用。` : '');
   } catch (e) { return ''; }
+}
+function setEmojiList(items) {
+  if (!Array.isArray(items)) return;
+  try { localStorage.setItem('custom-emoji', JSON.stringify(items)); } catch (e) { }
 }
 function roomNote() {
   if (roomCtx === 'reader' && currentBook) {

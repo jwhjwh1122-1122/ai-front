@@ -2620,6 +2620,55 @@ def emoji_upload():
     return jsonify({'url': '/emoji/' + fn})
 
 
+EMOJI_INDEX = os.path.join(EMOJI_DIR, 'index.json')
+
+
+def _emoji_index():
+    return jread(EMOJI_INDEX, [])
+
+
+@app.route('/api/emoji/sync', methods=['POST'])
+def emoji_sync():
+    """手机上有、服务器上没有的补进来，然后把整份清单还回去。换设备也能看到同一套表情。"""
+    items = (request.json or {}).get('items') or []
+    idx = _emoji_index()
+    have = {x['name'] for x in idx}
+    for it in items:
+        n, u = (it.get('name') or '').strip(), it.get('data') or ''
+        if n and u.startswith('/emoji/') and n not in have:
+            idx.append({'name': n, 'data': u, 'note': it.get('note', ''), 'seen': bool(it.get('seen'))})
+            have.add(n)
+    jwrite(EMOJI_INDEX, idx)
+    return jsonify(idx)
+
+
+@app.route('/api/emoji/delete', methods=['POST'])
+def emoji_delete():
+    n = (request.json or {}).get('name')
+    idx = [x for x in _emoji_index() if x['name'] != n]
+    jwrite(EMOJI_INDEX, idx)
+    return jsonify(idx)
+
+
+@app.route('/api/emoji/note', methods=['POST'])
+def emoji_note():
+    """他看过之后写的：这张是什么、什么时候用。"""
+    d = request.json or {}
+    idx = _emoji_index()
+    hit = None
+    for x in idx:
+        if x['name'] == d.get('name'):
+            hit = x
+            if 'note' in d:
+                x['note'] = (d.get('note') or '').strip()[:60]
+            if d.get('seen'):
+                x['seen'] = True
+    if not hit:
+        return jsonify({'error': '没有这个表情', 'items': idx}), 404
+    jwrite(EMOJI_INDEX, idx)
+    return jsonify({'ok': True, 'items': idx})
+
+
 @app.route('/emoji/<filename>')
 def serve_emoji(filename):
     return send_from_directory(EMOJI_DIR, secure_filename(filename), max_age=31536000)

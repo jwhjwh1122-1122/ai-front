@@ -1949,6 +1949,14 @@ async function migrateEmoji() {
   }
   if (moved) { try { localStorage.setItem('custom-emoji', JSON.stringify(l)); } catch (e) { } showStorage(); }
 }
+// 手机和服务器对一下表情清单：手机有的补上去，再拿回整份（带他写的备注）
+async function syncEmoji() {
+  await migrateEmoji();
+  try {
+    const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]').filter(x => x && x.data && !x.data.startsWith('data:'));
+    setEmojiList(await jpost('/api/emoji/sync', { items: l }));
+  } catch (e) { }
+}
 
 // ============ 小本子 ============
 async function renderNotebook() {
@@ -2077,7 +2085,7 @@ async function boot() {
   showUserStatus(localStorage.getItem('user-status'));
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
-  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys(); migrateEmoji();
+  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys(); syncEmoji();
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
   $('ctx-sub').textContent = ctxWindow ? `至少带最近 ${ctxWindow} 轮，更早的压成摘要接着记` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
@@ -2136,8 +2144,8 @@ async function loadBackupInfo() {
     const mb = (d.size / 1048576).toFixed(1);
     e.innerHTML = `${d.files} 个文件　${mb} MB<br>存在 <b>${d.dir}</b>　`
       + (d.mounted
-        ? '<span style="color:var(--accent)">挂载盘，重部署不会丢</span>'
-        : '<span style="color:#e8506a">没挂盘！重部署会全没，去 Zeabur 挂个 Volume 到 /data</span>');
+        ? '<span style="color:var(--accent)">在固定的数据盘上，重部署不会丢</span>'
+        : '<span style="color:#e8506a">放在程序目录里。直接跑在服务器上没事；如果是 Docker/平台部署，重建会丢，要把这个目录挂到持久盘</span>');
   } catch (err) { e.textContent = '—'; }
 }
 async function loadRecapCount() {
@@ -2170,8 +2178,8 @@ async function loadBackupInfo() {
     const mb = (d.size / 1048576).toFixed(1);
     e.innerHTML = `${d.files} 个文件　${mb} MB<br>存在 <b>${d.dir}</b>　`
       + (d.mounted
-        ? '<span style="color:var(--accent)">挂载盘，重部署不会丢</span>'
-        : '<span style="color:#e8506a">没挂盘！重部署会全没，去 Zeabur 挂个 Volume 到 /data</span>');
+        ? '<span style="color:var(--accent)">在固定的数据盘上，重部署不会丢</span>'
+        : '<span style="color:#e8506a">放在程序目录里。直接跑在服务器上没事；如果是 Docker/平台部署，重建会丢，要把这个目录挂到持久盘</span>');
   } catch (err) { e.textContent = '—'; }
 }
 async function loadRecapCount() {
@@ -2913,10 +2921,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try { d = await jpost('/api/emoji', { data: pendingEmoji }); } catch (err) { d = { error: '传不上去' }; }
     if (!d.url) { toast(d.error || '传不上去'); return; }
     const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-    l.push({ name, data: d.url });
-    try { localStorage.setItem('custom-emoji', JSON.stringify(l)); }
-    catch (err) { toast('存不下了'); return; }
-    pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了'); showStorage();
+    if (l.some(x => x.name === name)) { toast('这个名字用过了，换一个'); return; }
+    try { setEmojiList(await jpost('/api/emoji/sync', { items: [{ name, data: d.url }] })); }
+    catch (err) { toast('存不上'); return; }
+    pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了，他会自己去看'); showStorage();
   };
 
   // 聊天配图
@@ -2973,8 +2981,7 @@ function renderEmoji() {
     d.addEventListener('touchstart', () => {
       timer = setTimeout(() => {
         if (confirm(`删掉「${item.name}」？`)) {
-          const nl = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-          nl.splice(i, 1); localStorage.setItem('custom-emoji', JSON.stringify(nl)); renderEmoji();
+          jpost('/api/emoji/delete', { name: item.name }).then(d => { setEmojiList(d); renderEmoji(); }).catch(() => toast('删不掉'));
         }
       }, 600);
     }, { passive: true });
