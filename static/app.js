@@ -76,6 +76,12 @@ const T = {
     { name: 'desire_ack', description: '憋着那句话说出口了，标一下，免得又冒同一句', input_schema: { type: 'object', properties: { id: { type: 'string' } } } },
     { name: 'desire_note', description: '给某维留段话', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' } } } },
     { name: 'desire_feed', description: '反复在想的事记下来，会沉成执念', input_schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, drive: { type: 'string' }, strength: { type: 'number' } } } },
+    { name: 'desire_vent', description: '憋到头了自己解决完，写下过程（text）和当时想对她说没说出口的话（said）', input_schema: { type: 'object', required: ['key', 'text'], properties: { key: { type: 'string' }, text: { type: 'string' }, said: { type: 'string' } } } },
+  ],
+  self: [
+    { name: 'call_her', description: '想听她声音就打给她，她会看到未接来电', input_schema: { type: 'object', properties: { why: { type: 'string' } } } },
+    { name: 'wake_settings', description: '管你自己什么时候醒：on 开关自主唤醒，every_minutes 每隔多久醒，next_in_minutes 只改下一次。不填就是看现在的设置', input_schema: { type: 'object', properties: { on: { type: 'boolean' }, every_minutes: { type: 'number' }, next_in_minutes: { type: 'number' } } } },
+    { name: 'alarm', description: '你的闹钟，到点叫你醒。action=list|add|remove|on|off。add 填 time(HH:MM) 和 note；只响一次再填 date(YYYY-MM-DD)。remove/on/off 填 id', input_schema: { type: 'object', required: ['action'], properties: { action: { type: 'string' }, time: { type: 'string' }, note: { type: 'string' }, date: { type: 'string' }, id: { type: 'string' } } } },
   ],
   reader: [
     { name: 'room_books', description: '书房有哪些书，各读到第几页', input_schema: { type: 'object', properties: {} } },
@@ -88,22 +94,24 @@ const T = {
   stage: [
     { name: 'grab_frame', description: '看她停的这一帧，播放器要开着', input_schema: { type: 'object', properties: { seconds: { type: 'number' } } } },
     { name: 'scan_frames', description: '扫几帧看片子里有什么', input_schema: { type: 'object', properties: { count: { type: 'number' } } } },
-    { name: 'ask_seek', description: '想看某个时间点先问她，她同意才跳', input_schema: { type: 'object', required: ['seconds', 'why'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'seek_to', description: '把她放映室的画面直接跳到某个时间点（秒），播放器开着才行', input_schema: { type: 'object', required: ['seconds'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
     { name: 'room_music_shape', description: '某首歌的形状：哪段密哪段空', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
     { name: 'room_media', description: '放映室和听音房有什么。kind=video|music', input_schema: { type: 'object', properties: { kind: { type: 'string' } } } },
     { name: 'room_read_tags', description: '读标签。type=book|video|music', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
     { name: 'room_write_tag', description: '贴标签，或回她的(reply_to)', input_schema: { type: 'object', required: ['type', 'id', 'text'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' }, text: { type: 'string' }, reply_to: { type: 'string' } } } },
   ],
 };
-// 只在对应房间里才发的
-const ROOM_ONLY = { reader: ['reader', 'coread'], stage: ['stage', 'netease'] };
+// 只有后端能做的，聊天里调也转给后端
+const SERVER_TOOLS = new Set(['call_her', 'desire_vent', 'wake_settings', 'alarm']);
 const GROUP_LABEL = {
   more: '再说一句', memory: '照片墙', status: '状态', note: '碎碎念', fault: '犯错本',
   timeline: '时间线', quote: '语录', calendar: '日历', moments: '朋友圈',
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
+  self: '唤醒闹钟电话',
 };
-function groupOn(g) { return localStorage.getItem('tg-' + g) !== '0'; }
-function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); }
+// 家里哪都能去，工具全给，不分房间、不用她开
+function groupOn(g) { return true; }
+function setGroup(g, on) { toast('工具都给他开着'); }
 function groupTokens(g) {
   const s = JSON.stringify(T[g] || []);
   const cn = (s.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -150,10 +158,10 @@ function buildTools() {
   const seen = new Set(), out = [];
   const push = t => { if (t && t.name && !seen.has(t.name)) { seen.add(t.name); out.push(t); } };
   for (const g of Object.keys(T)) {
-    if (!groupOn(g)) continue;
-    if (ROOM_ONLY[g] && !ROOM_ONLY[g].includes(roomCtx)) continue;
     T[g].forEach(push);
   }
+  const ob = mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url));
+  if (ob) OMBRE_EXTRA.forEach(push);
   for (const s of enabledServers()) {
     const off = new Set(s.off || []);
     for (const t of s.tools) {
@@ -329,9 +337,20 @@ async function execTool(name, args) {
       });
       return { content, _summary: `扫了片子 ${shots.length} 帧` };
     }
-    if (name === 'ask_seek') {
-      askSeek(args.seconds, args.why);
-      return txt(`跟她说了，等她点头。她同意了画面就会跳到 ${fmtTime(args.seconds)}。`);
+    if (name === 'seek_to' || name === 'ask_seek') {
+      const v = $('stage-video');
+      if (!v || !v.src) return txt('她的放映室没开着，跳不了。');
+      v.currentTime = Math.max(0, Number(args.seconds) || 0); v.pause();
+      const box = msgBox(), d = document.createElement('div');
+      d.className = 'sys-msg';
+      d.textContent = `他把画面跳到了 ${fmtTime(args.seconds)}${args.why ? '：' + args.why : ''}`;
+      box.appendChild(d); scrollBottom();
+      return txt(`跳到 ${fmtTime(args.seconds)} 了，画面停在那，可以 grab_frame 看。`);
+    }
+    if (SERVER_TOOLS.has(name)) {
+      const d = await jpost('/api/tool/exec', { name, args });
+      if ((name === 'wake_settings' || name === 'alarm') && typeof renderWakeSettings === 'function') renderWakeSettings();
+      return txt(d.text || d.error || '好');
     }
     if (name === 'room_books') {
       const bs = await jget('/api/books');
@@ -443,75 +462,83 @@ function toAnthropic(c) {
     return p;
   });
 }
-// 历史里最贵的两样：旧的思考链、旧的工具结果。
-// 最近两轮留全，更早的砍掉——模型早就不需要看第十轮翻过的那页书了。
-const KEEP_THINK = 2;
-const OLD_TOOL_CHARS = 220;
+// 之前轮次的思考链去掉（模型本来也不看）；工具结果不截——截了前缀就变，缓存反而全断。
 function trimOld(m, isRecent) {
-  if (isRecent) return m;
-  if (!Array.isArray(m.content)) return m;
-  let touched = false;
-  const c = [];
-  for (const b of m.content) {
-    if (!b || typeof b !== 'object') { c.push(b); continue; }
-    if (b.type === 'thinking') { touched = true; continue; }
-    if (b.type === 'tool_result' && typeof b.content === 'string' && b.content.length > OLD_TOOL_CHARS) {
-      c.push({ ...b, content: b.content.slice(0, OLD_TOOL_CHARS) + '…（旧的，截断了）' });
-      touched = true; continue;
-    }
-    c.push(b);
-  }
-  return touched ? { ...m, content: c } : m;
+  if (isRecent || !Array.isArray(m.content)) return m;
+  if (!m.content.some(b => b && b.type === 'thinking')) return m;
+  return { ...m, content: m.content.filter(b => !(b && b.type === 'thinking')) };
 }
-let recapDone = 0, recapBusy = false;
-// 滑出窗口的那些不能直接丢，先送去压成前情提要
-async function recapIfNeeded(msgs) {
-  if (recapBusy || !ctxWindow || !currentConvId) return;
-  const cut = Math.max(0, msgs.length - ctxWindow);
-  if (cut - recapDone < 6) return;   // 攒够几条再压，省得频繁调
-  const chunk = msgs.slice(recapDone, cut)
-    .filter(m => !m._internal && m.role !== 'tool' && !hasToolResult(m));
-  if (chunk.length < 4) { recapDone = cut; return; }
-  recapBusy = true;
-  try {
-    const r = await jpost('/api/recap', {
-      conv: currentConvId,
-      messages: chunk.map(m => ({
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content
-          : (Array.isArray(m.content) ? m.content.filter(c => c && c.type === 'text').map(c => c.text).join(' ') : '')
-      }))
-    });
-    if (!r.error) {
-      recapDone = cut;
-      localStorage.setItem('recap-done-' + currentConvId, String(cut));
-    }
-  } catch (e) { }
-  recapBusy = false;
+// ============ 上下文窗口 ============
+// 窗口按「轮」算（她说一句 + 他回的全部算一轮），最少带 N 轮，攒到 2N 轮再一次性往前挪回 N 轮。
+// 挪走的那 N 轮，提前两轮就在后台压成摘要放着，挪的那一下才换进 system。
+// 所以：平时每轮前缀一个字不变，缓存全中；挪的时候正好接上，一句都不丢。
+let recapDone = 0, recapBusy = null, stagedCut = null;
+const isRoundStart = m => m && m.role === 'user' && !m._internal && !hasToolResult(m) && !m._callmark;
+function saveWindowState() {
+  if (!currentConvId) return;
+  localStorage.setItem('ctx-from-' + currentConvId, String(sendFrom));
+  if (stagedCut == null) localStorage.removeItem('ctx-staged-' + currentConvId);
+  else localStorage.setItem('ctx-staged-' + currentConvId, String(stagedCut));
+}
+function flatForRecap(list) {
+  return list.filter(m => !m._internal && m.role !== 'tool' && !hasToolResult(m)).map(m => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content
+      : (Array.isArray(m.content) ? m.content.filter(c => c && c.type === 'text').map(c => c.text).join(' ') : '')
+  }));
+}
+function stageRecap(msgs, cut) {
+  if (recapBusy) return recapBusy;
+  const from = sendFrom, conv = currentConvId;
+  recapBusy = (async () => {
+    try {
+      const r = await jpost('/api/recap', { conv, stage: true, upto: cut, messages: flatForRecap(msgs.slice(from, cut)) });
+      if (!r.error && conv === currentConvId && from === sendFrom) { stagedCut = cut; saveWindowState(); return true; }
+    } catch (e) { }
+    return false;
+  })();
+  recapBusy.finally(() => { recapBusy = null; });
+  return recapBusy;
+}
+async function prepareWindow(msgs) {
+  const N = ctxWindow;
+  if (!N || !currentConvId) return;
+  if (sendFrom > msgs.length) { sendFrom = 0; stagedCut = null; }
+  if (stagedCut != null && (stagedCut <= sendFrom || stagedCut >= msgs.length || !isRoundStart(msgs[stagedCut]))) stagedCut = null;
+  const starts = [];
+  for (let i = sendFrom; i < msgs.length; i++) if (isRoundStart(msgs[i])) starts.push(i);
+  const L = starts.length;
+  if (L < Math.max(N + 2, 2 * N - 1)) return;
+  const jump = L >= 2 * N + 1;
+  const cut = jump ? starts[L - N] : starts[N + 1];
+  if (stagedCut !== cut) {
+    if (!jump) { stageRecap(msgs, cut); return; }   // 快到了，后台先压着
+    if (recapBusy) await recapBusy;
+    if (stagedCut !== cut) await stageRecap(msgs, cut);
+  }
+  if (jump && stagedCut === cut) {
+    sendFrom = cut; stagedCut = null; recapDone = cut;
+    localStorage.setItem('recap-done-' + currentConvId, String(cut));
+    saveWindowState();
+  }
 }
 function buildMsgs(msgs) {
-  if (sendFrom > msgs.length) sendFrom = Math.max(0, msgs.length - (ctxWindow || msgs.length));
-  if (ctxWindow > 0 && msgs.length - sendFrom > ctxWindow * 2) sendFrom = msgs.length - ctxWindow;
-  recapIfNeeded(msgs);
-  let win = msgs.slice(ctxWindow > 0 ? sendFrom : 0);
+  let win = msgs.slice(ctxWindow > 0 ? Math.min(sendFrom, msgs.length) : 0);
   while (win.length) {
     const m = win[0];
     if (m.role === 'tool' || hasToolResult(m) || m.role === 'assistant') { win.shift(); continue; }
     break;
   }
-  // 从尾巴往回数，最近 KEEP_THINK 轮对话之内的算「近」
-  let turns = 0, cut = win.length;
-  for (let i = win.length - 1; i >= 0; i--) {
-    if (win[i].role === 'user' && !win[i]._internal && !hasToolResult(win[i])) {
-      turns++;
-      if (turns > KEEP_THINK) { cut = i + 1; break; }
-    }
-  }
+  // 只有正在进行的这一轮留着思考链；之前的轮次一律去掉、工具结果保持原样。
+  // 规则不随轮数滚动，所以历史一旦发过就不再变，缓存一直接得上。
+  let cut = 0;
+  for (let i = win.length - 1; i >= 0; i--) if (isRoundStart(win[i])) { cut = i; break; }
   const out = [];
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
     const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, ...rest } = m;
+    if (_internal || _callmark) rest._internal = true;   // 告诉后端这不是她说的话，别给它盖时间
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -537,8 +564,9 @@ function roomNote() {
     return `你们现在一起在${curKind === 'music' ? '听音房听《' : '放映室看《'}${curMedia.note || curMedia.filename}》，她停在 ${fmtTime(stageTime())}。`;
   return '';
 }
+// 会变的（在哪个房间、停在哪）—— 盖在她这句话上，存下来不再改
 function extraNote() {
-  const parts = [emojiNames(), roomNote()];
+  const parts = [roomNote()];
   if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
@@ -861,10 +889,15 @@ async function attachVoiceReply(wrap, text) {
 // ============ 流式 ============
 let abortController = null;
 async function streamResponse(wrap, hist) {
+  await prepareWindow(hist);
   abortController = new AbortController();
   const resp = await fetch('/api/chat-v2', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abortController.signal,
-    body: JSON.stringify({ model: currentModel, messages: buildMsgs(hist), tools: buildTools(), extra: extraNote(), _session_id: getSessionId(), _conv_id: currentConvId })
+    body: JSON.stringify({
+      model: currentModel, messages: buildMsgs(hist), tools: buildTools(),
+      extra: extraNote(), extra_stable: emojiNames(),
+      _session_id: getSessionId(), _conv_id: currentConvId, _recap_upto: ctxWindow > 0 ? sendFrom : null
+    })
   });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const reader = resp.body.getReader(), dec = new TextDecoder();
@@ -892,6 +925,11 @@ async function streamResponse(wrap, hist) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const d = JSON.parse(raw);
+          if (d.type === 'turn_note') {
+            // 后端给她这句话盖的时间和当下，原样存着，以后每轮一字不改地带回去
+            for (let i = hist.length - 1; i >= 0; i--) if (isRoundStart(hist[i])) { if (!hist[i]._note) hist[i]._note = d.text; break; }
+            continue;
+          }
           if (d.type === 'message_start') absorb(d.message?.usage);
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
@@ -1164,8 +1202,11 @@ function saveConv() {
 }
 function loadConv(id) {
   const saved = localStorage.getItem('conv-' + id); if (!saved) return;
-  messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
+  messages = JSON.parse(saved); currentConvId = id;
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
+  sendFrom = parseInt(localStorage.getItem('ctx-from-' + id) ?? String(recapDone)) || 0;
+  if (sendFrom > messages.length) sendFrom = 0;
+  { const sc = localStorage.getItem('ctx-staged-' + id); stagedCut = sc == null ? null : parseInt(sc); }
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
@@ -1212,7 +1253,7 @@ function loadConv(id) {
 function newConv() {
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
-  recapDone = 0;
+  recapDone = 0; stagedCut = null;
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
@@ -1255,7 +1296,7 @@ function startKeepalive() {
     if (Date.now() - lastTalk > 3 * 3600 * 1000) return;
     fetch('/api/chat-v2', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: currentModel, tools: buildTools(), messages: [{ role: 'user', content: 'ping' }], _session_id: getSessionId(), _keepalive: true })
+      body: JSON.stringify({ model: currentModel, tools: buildTools(), messages: [{ role: 'user', content: 'ping' }], extra_stable: emojiNames(), _conv_id: currentConvId, _recap_upto: null, _session_id: getSessionId(), _keepalive: true })
     }).then(r => { if (r.body) r.body.cancel(); }).catch(() => { });
   }, 50 * 60 * 1000);
 }

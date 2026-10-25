@@ -306,9 +306,22 @@ window.addEventListener('error', function (e) {
         <div class="ctx-option" data-wake="120">2 小时</div>
         <div class="ctx-option" data-wake="240">4 小时</div>
       </div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+        <input class="mini-input" id="wake-custom" type="number" min="5" inputmode="numeric" placeholder="自己填分钟数" style="flex:1;">
+        <button class="btn-ghost" id="btn-wake-custom" style="font-size:13px;padding:8px 14px;white-space:nowrap;">用这个</button>
+      </div>
+      <div class="settings-sub" id="wake-next" style="margin-top:7px;"></div>
       <div class="settings-sub" id="wake-cost" style="margin-top:7px;"></div>
       <div class="settings-label" style="margin-top:12px;">叫他的时候说什么</div>
       <textarea class="persona-area" id="wake-prompt" style="min-height:70px;font-size:13px;"></textarea>
+      <div class="settings-label" style="margin-top:14px;">闹钟</div>
+      <div class="settings-sub">到这个点叫他醒一次，不管上面开没开。他自己也能加、能删。</div>
+      <div id="alarm-list" style="margin-top:8px;"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+        <input class="mini-input" id="alarm-time" type="time" style="width:118px;flex:none;">
+        <input class="mini-input" id="alarm-note" placeholder="到点让他干嘛（可不填）" style="flex:1;min-width:0;">
+        <button class="btn-ghost" id="btn-alarm-add" style="font-size:13px;padding:8px 14px;white-space:nowrap;">加</button>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn-ghost" id="btn-wake-log" style="font-size:13px;padding:9px;">看记录</button>
         <button class="btn-solid" id="btn-wake-now" style="font-size:13px;padding:9px;">现在叫他一次</button>
@@ -344,9 +357,9 @@ window.addEventListener('error', function (e) {
     <div class="settings-card">
       <div class="settings-label">上下文窗口</div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-        <div class="ctx-option" data-val="5">5 条</div>
-        <div class="ctx-option" data-val="10">10 条</div>
-        <div class="ctx-option" data-val="15">15 条</div>
+        <div class="ctx-option" data-val="5">5 轮</div>
+        <div class="ctx-option" data-val="10">10 轮</div>
+        <div class="ctx-option" data-val="15">15 轮</div>
         <div class="ctx-option" data-val="0">全部</div>
       </div>
       <div class="settings-sub" id="ctx-sub"></div>
@@ -354,7 +367,7 @@ window.addEventListener('error', function (e) {
 
     <div class="settings-card">
       <div class="settings-label">工具</div>
-      <div class="settings-sub">一个功能一个开关，关掉的这一轮就不发给他。后面的数字是它占多少 token。书房和影音只在你进那个房间时才发。</div>
+      <div class="settings-sub">家里所有工具都给他开着，在哪都能用，不用经过你。后面的数字是它占多少 token（走缓存，每轮只算一成）。</div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;" id="tool-groups"></div>
       <div class="settings-sub" id="tool-sub" style="margin-top:9px;"></div>
     </div>
@@ -1235,7 +1248,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=25"></script>
-<script src="/static/rooms.js?v=26"></script>
+<script src="/static/app.js?v=26"></script>
+<script src="/static/rooms.js?v=27"></script>
 </body>
 </html>

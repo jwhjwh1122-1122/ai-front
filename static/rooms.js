@@ -16,6 +16,7 @@ function showPage(name) {
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
+  if (name === 'settings') renderWakeSettings();
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
 async function refreshTimeCounts() {
@@ -1907,6 +1908,45 @@ async function renderFaults() {
 }
 
 // ============ 唤醒 ============
+// 设置页里唤醒那块，每次打开都从后端拉——他自己改了间隔/闹钟，这里也跟着变
+async function renderWakeSettings() {
+  let p, st;
+  try { [p, st] = await Promise.all([jget('/api/persona'), jget('/api/wake/log')]); } catch (e) { return null; }
+  CFG.wake_on = p.wake_on; CFG.wake_interval = p.wake_interval;
+  $('wake-on').checked = !!p.wake_on;
+  const wi = parseInt(p.wake_interval) || 120;
+  let hit = false;
+  document.querySelectorAll('[data-wake]').forEach(o => { const on = parseInt(o.dataset.wake) === wi; hit = hit || on; o.classList.toggle('active', on); });
+  const cu = $('wake-custom'); if (cu) cu.placeholder = hit ? '自己填分钟数' : `现在是 ${wi} 分钟`;
+  const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。';
+  const nx = $('wake-next');
+  if (nx) {
+    if (!p.wake_on) nx.textContent = '';
+    else {
+      const base = (st.next_wake_in || wi) * 60, left = Math.max(0, Math.round((base - (Date.now() / 1000 - (st.wake_anchor || st.last_wake || 0))) / 60));
+      nx.textContent = `每 ${wi} 分钟醒一次，下次大约 ${left} 分钟后${st.next_wake_in ? '（他自己定的）' : ''}`;
+    }
+  }
+  const wp = $('wake-prompt'); if (wp && document.activeElement !== wp) wp.value = p.wake_prompt || '';
+  const box = $('alarm-list');
+  if (box) {
+    const al = p.wake_alarms || [];
+    box.innerHTML = al.length ? '' : '<div class="settings-sub">还没有闹钟</div>';
+    al.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(a => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;';
+      row.innerHTML = `<input type="checkbox" ${a.on === false ? '' : 'checked'}>
+        <b style="font-variant-numeric:tabular-nums;">${esc(a.time)}</b>
+        <span style="flex:1;min-width:0;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.date ? '只响 ' + esc(a.date) + ' · ' : '每天 · '}${a.by === 'lin' ? '他定的' : '你定的'}${a.note ? ' · ' + esc(a.note) : ''}</span>
+        <span style="cursor:pointer;color:var(--text-muted);padding:0 4px;">✕</span>`;
+      const save = async list => { await jpost('/api/persona', { wake_alarms: list }); renderWakeSettings(); };
+      row.querySelector('input').onchange = ev => save(al.map(x => x.id === a.id ? { ...x, on: ev.target.checked } : x));
+      row.lastElementChild.onclick = () => { if (confirm(`删掉 ${a.time} 的闹钟？`)) save(al.filter(x => x.id !== a.id)); };
+      box.appendChild(row);
+    });
+  }
+  return p;
+}
 async function markWakeRead() { try { await fetch('/api/wake/read', { method: 'POST' }); } catch (e) { } }
 async function renderWakeLog() {
   $('wake-panel').classList.add('open');
@@ -1919,7 +1959,7 @@ async function renderWakeLog() {
     const t = new Date(x.ts);
     const did = (x.did || []).length ? `<div class="mumble-date" style="text-align:left;">做了：${x.did.join('、')}</div>` : '';
     return `<div class="mumble"><div class="mumble-body">${esc(x.said || '（这次什么都没说）')}</div>
-      ${did}<div class="mumble-date">${t.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${t.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}${x.manual ? ' · 你叫的' : ''}</div></div>`;
+      ${did}<div class="mumble-date">${t.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${t.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}${x.manual ? ' · 你叫的' : (x.why ? ' · ' + esc(x.why) : '')}</div></div>`;
   }).join('');
   markWakeRead(); $('dot-chat').classList.remove('on');
 }
@@ -1985,15 +2025,19 @@ async function boot() {
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
   loadMcp(); updateMcpSub(); renderToolGroups();
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
-  $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
+  $('ctx-sub').textContent = ctxWindow ? `至少带最近 ${ctxWindow} 轮，更早的压成摘要接着记` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
   document.querySelectorAll('[data-voice]').forEach(o => o.classList.toggle('active', o.dataset.voice === voice));
   $('auto-voice-toggle').checked = localStorage.getItem('auto-voice') === '1';
-  $('wake-on').checked = !!CFG.wake_on;
-  const wi = CFG.wake_interval || 120;
-  document.querySelectorAll('[data-wake]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.wake) === wi));
-  { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
-  try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
+  try {
+    const p = await renderWakeSettings();
+    if (p) {
+      CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status'));
+      // 闹钟按她这边的时间响
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz && p.tz !== tz) jpost('/api/persona', { tz }).catch(() => { });
+    }
+  } catch (e) { }
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
@@ -2572,6 +2616,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('wake-on').onchange = async e => {
     await jpost('/api/persona', { wake_on: e.target.checked });
     toast(e.target.checked ? '他会自己醒了' : '关掉了');
+    renderWakeSettings();
   };
   const wakeCost = m => {
     const e = $('wake-cost'); if (!e) return;
@@ -2580,12 +2625,28 @@ document.addEventListener('DOMContentLoaded', () => {
       : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。';
   };
   document.querySelectorAll('[data-wake]').forEach(o => o.onclick = async () => {
-    document.querySelectorAll('[data-wake]').forEach(x => x.classList.remove('active'));
-    o.classList.add('active');
     const m = parseInt(o.dataset.wake);
     wakeCost(m);
     await jpost('/api/persona', { wake_interval: m });
+    renderWakeSettings(); toast(`每 ${m} 分钟醒一次，从现在开始算`);
   });
+  $('btn-wake-custom').onclick = async () => {
+    const m = parseInt($('wake-custom').value);
+    if (!(m >= 5)) { toast('最少 5 分钟'); return; }
+    wakeCost(m);
+    await jpost('/api/persona', { wake_interval: m });
+    $('wake-custom').value = '';
+    renderWakeSettings(); toast(`每 ${m} 分钟醒一次，从现在开始算`);
+  };
+  $('btn-alarm-add').onclick = async () => {
+    const t = $('alarm-time').value;
+    if (!t) { toast('先选个时间'); return; }
+    const p = await jget('/api/persona');
+    const al = (p.wake_alarms || []).concat([{ id: 'a' + Date.now().toString(36), time: t, note: $('alarm-note').value.trim(), on: true, by: 'user' }]);
+    await jpost('/api/persona', { wake_alarms: al });
+    $('alarm-time').value = ''; $('alarm-note').value = '';
+    renderWakeSettings(); toast(`${t} 会叫他`);
+  };
   $('wake-prompt').addEventListener('blur', () => jpost('/api/persona', { wake_prompt: $('wake-prompt').value }));
   $('btn-wake-log').onclick = renderWakeLog;
   $('btn-wake-now').onclick = async () => {
@@ -2628,7 +2689,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); ctxWindow = parseInt(o.dataset.val);
     localStorage.setItem('ctx-window', ctxWindow);
-    $('ctx-sub').textContent = ctxWindow ? `每次带最近 ${ctxWindow} 轮` : '带上全部（贵）';
+    $('ctx-sub').textContent = ctxWindow ? `至少带最近 ${ctxWindow} 轮，更早的压成摘要接着记` : '带上全部（贵）';
   });
   document.querySelectorAll('[data-voice]').forEach(o => o.onclick = () => {
     document.querySelectorAll('[data-voice]').forEach(x => x.classList.remove('active'));

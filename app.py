@@ -10,7 +10,11 @@
 from flask import Flask, request, Response, send_from_directory, jsonify
 from flask_cors import CORS
 import requests, json, os, time, base64, hashlib, io, threading, uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, static_folder='static')
@@ -176,7 +180,29 @@ DEFAULT_PERSONA = {
     "wake_interval": 120,
     "wake_prompt": "现在没人在跟你说话。你想做点什么吗？也可以什么都不做。",
     "wake_model": "anthropic/claude-sonnet-4-6",
+    # 闹钟：[{id, time:'07:30', note, on, date(只响一次时填 YYYY-MM-DD)}]
+    "wake_alarms": [],
+    # 她那边的时区（浏览器报上来的），闹钟和「现在几点」都按这个算
+    "tz": "",
 }
+
+
+def local_now():
+    tz = (load_persona().get('tz') or '').strip()
+    if tz and ZoneInfo:
+        try:
+            return datetime.now(ZoneInfo(tz)).replace(tzinfo=None)
+        except Exception:
+            pass
+    return datetime.now()
+
+
+def persona_patch(d):
+    """改几项设置，不进人设历史（唤醒/闹钟这种小改动没必要占历史）。"""
+    p = jread(PERSONA_FILE, {}) or {}
+    p.update(d)
+    jwrite(PERSONA_FILE, p)
+    return load_persona()
 
 
 def load_persona():
@@ -206,7 +232,11 @@ def save_state(s):
     jwrite(STATE_FILE, s)
 
 
-def build_system(persona, extra='', conv_id=None):
+THINK_NOTE = ('思考用中文，第一人称流露当下的念头——「我好喜欢」而不是「我应该」。'
+              '不复述规则，不出现指向设定的句子。思考就是内心独白。')
+
+
+def build_system(persona, extra='', conv_id=None, recap_upto=None, extra_title='当下'):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -222,14 +252,21 @@ def build_system(persona, extra='', conv_id=None):
 【称呼】你叫{nm}。平常叫她「{cu}」，认真的时候叫「{cs}」。"""
     if (persona.get('always') or '').strip():
         seg2 += "\n\n" + persona['always'].strip()
+    seg2 += "\n\n" + THINK_NOTE
     if conv_id:
         rec = load_recap(conv_id)
+        pend = rec.get('pending') or {}
+        # 窗口往前挪的那一轮，才把提前压好的摘要换上去——平时 system 一个字都不动，缓存才命中
+        if recap_upto is not None and pend.get('text') and int(pend.get('upto', 0)) <= int(recap_upto):
+            rec = {'text': pend['text'], 'upto': int(pend['upto']),
+                   'covered': int(pend['upto']), 'ts': int(time.time() * 1000)}
+            jwrite(_recap_file(conv_id), rec)
         if (rec.get('text') or '').strip():
             seg2 += ("\n\n【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                      "记不清细节就问她。\n" + rec['text'].strip())
     parts = [FRAMEWORK, seg2]
     if extra:
-        parts.append(f"【当下】\n{extra}")
+        parts.append(f"【{extra_title}】\n{extra}")
     return "\n\n---\n\n".join(parts)
 
 
@@ -250,7 +287,7 @@ def human_gap(sec):
 
 def now_context(persona, extra_note=''):
     st = load_state()
-    d = datetime.now()
+    d = local_now()
     hh = d.hour
     period = '深夜' if hh < 5 else '清早' if hh < 9 else '上午' if hh < 12 else \
              '中午' if hh < 14 else '下午' if hh < 18 else '晚上' if hh < 23 else '深夜'
@@ -268,8 +305,6 @@ def now_context(persona, extra_note=''):
         lines.append(f"你自己上次写的状态是「{st['lin_status']}」。")
     if extra_note:
         lines.append(extra_note)
-    lines.append('思考用中文，第一人称流露当下的念头——「我好喜欢」而不是「我应该」。'
-                 '不复述规则，不出现指向设定的句子。思考就是内心独白。')
     return ' '.join(lines)
 
 
@@ -282,10 +317,22 @@ def get_persona():
 def post_persona():
     data = request.json or {}
     p = load_persona()
+    restart = (('wake_on' in data and bool(data['wake_on']) and not p.get('wake_on')) or
+               ('wake_interval' in data and data['wake_interval'] != p.get('wake_interval')))
     for k in DEFAULT_PERSONA:
         if k in data:
             p[k] = data[k]
-    save_persona(p)
+    # 只是唤醒/闹钟/时区这种设置，不进人设历史
+    if set(data) <= {'wake_on', 'wake_interval', 'wake_alarms', 'tz', 'wake_prompt'}:
+        jwrite(PERSONA_FILE, p)
+    else:
+        save_persona(p)
+    if restart:
+        # 刚打开或改了间隔，从现在开始算
+        st = load_state()
+        st['wake_anchor'] = time.time()
+        st['next_wake_in'] = 0
+        save_state(st)
     return jsonify({'ok': True, 'persona': p})
 
 
@@ -1788,7 +1835,12 @@ def recap_make():
     conv = d.get('conv') or 'default'
     msgs = d.get('messages') or []
     text = _flatten(msgs)
+    stage = bool(d.get('stage'))
     if len(text) < 80:
+        if stage:
+            old = load_recap(conv)
+            old['pending'] = {'text': old.get('text', ''), 'upto': int(d.get('upto') or 0)}
+            jwrite(_recap_file(conv), old)
         return jsonify({'ok': True, 'skipped': True})
     old = load_recap(conv)
     new, err = _ds_call(RECAP_SYS, text)
@@ -1800,6 +1852,11 @@ def recap_make():
                                 '【早】\n' + old['text'] + '\n\n【近】\n' + new)
         if err2 or not merged:
             merged = (old['text'] + '\n\n' + new)[-RECAP_MAX * 2:]
+    if stage:
+        # 先压好放着，等窗口真的往前挪的那一轮再换上（换的那一下缓存本来就要重建，不多花）
+        old['pending'] = {'text': merged.strip()[:RECAP_MAX * 3], 'upto': int(d.get('upto') or 0)}
+        jwrite(_recap_file(conv), old)
+        return jsonify({'ok': True, 'staged': True})
     rec = {'text': merged.strip()[:RECAP_MAX * 3],
            'covered': int(old.get('covered', 0)) + len(msgs),
            'ts': int(time.time() * 1000)}
@@ -2009,6 +2066,13 @@ def to_openai_messages(messages):
     out = []
     for m in messages or []:
         role, content = m.get('role'), m.get('content')
+        note = m.get('_note') if role == 'user' else None
+        if note:
+            tag = f"〔{note}〕"
+            if isinstance(content, list):
+                content = [{'type': 'text', 'text': tag}] + list(content)
+            else:
+                content = tag + "\n" + str(content or '')
         if role == 'assistant':
             texts, calls, rds = [], [], []
             if isinstance(content, str):
@@ -2172,39 +2236,63 @@ def manifest():
     return send_from_directory('static', 'manifest.json')
 
 
+def _is_tool_result_msg(m):
+    c = m.get('content')
+    return m.get('role') == 'tool' or (isinstance(c, list) and any(
+        isinstance(b, dict) and b.get('type') == 'tool_result' for b in c))
+
+
 @app.route('/api/chat-v2', methods=['POST'])
 def chat_v2():
+    """
+    省钱的关键：会变的东西（几点了、隔了多久、数值、在哪个房间）不放 system，
+    而是盖在她那句话前面，并且盖了就不再改（前端存成 _note 原样带回来）。
+    这样 工具 + system + 之前所有聊天 每一轮都是一模一样的前缀，缓存一直命中，只有新的这一句是全价。
+    """
     data = request.json or {}
     sid = data.get('_session_id', 'default')
     keepalive = bool(data.get('_keepalive'))
     persona = load_persona()
+    msgs_in = data.get('messages', []) or []
+
+    new_note = None
+    if not keepalive:
+        try:
+            desire_event('talk')
+            dline = desire_line()
+        except Exception:
+            dline = ''
+        for m in reversed(msgs_in):
+            if m.get('role') == 'user' and not m.get('_internal') and not _is_tool_result_msg(m):
+                if not m.get('_note'):
+                    parts = [now_context(persona)]
+                    if dline:
+                        parts.append(dline)
+                    if data.get('extra'):
+                        parts.append(data['extra'])
+                    new_note = ' '.join(x for x in parts if x)
+                    m['_note'] = new_note
+                break
 
     st = load_state()
     if str(sid) != 'default' and st.get('session_id') != str(sid)[:256]:
         st['session_id'] = str(sid)[:256]
         save_state(st)
-    if not keepalive:
+    if not keepalive and new_note:
         st['last_user_msg'] = time.time()
         save_state(st)
 
-    try:
-        if not keepalive:
-            desire_event('talk')
-        dline = desire_line()
-    except Exception:
-        dline = ''
-    extra = [now_context(persona)]
-    if dline:
-        extra.append(dline)
-    if data.get('extra'):
-        extra.append(data['extra'])
+    stable = []
+    if data.get('extra_stable'):
+        stable.append(data['extra_stable'])
     mem = memory_summary_text(sid)
     if mem:
-        extra.append(mem)
-    system_prompt = build_system(persona, "\n".join(x for x in extra if x),
-                                 conv_id=data.get('_conv_id'))
+        stable.append(mem)
+    system_prompt = build_system(persona, "\n".join(x for x in stable if x),
+                                 conv_id=data.get('_conv_id'),
+                                 recap_upto=data.get('_recap_upto'), extra_title='手边')
 
-    oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(data.get('messages', []))
+    oa = [{'role': 'system', 'content': system_prompt}] + to_openai_messages(msgs_in)
     user_max = int(data.get('max_tokens') or persona.get('max_tokens') or 500)
 
     payload = {'model': data.get('model', 'anthropic/claude-sonnet-4-6'),
@@ -2221,6 +2309,9 @@ def chat_v2():
         payload['tools'] = to_openai_tools(data['tools'])
 
     def gen():
+        if new_note:
+            # 让前端把这段原样存在她那句话上，以后每轮带回来，一个字不变
+            yield sse({'type': 'turn_note', 'text': new_note})
         try:
             with requests.post(upstream_url(), headers=upstream_headers(),
                                json=payload, stream=True, timeout=180) as r:
@@ -3429,8 +3520,8 @@ WAKE_CORE = [
     {'name': 'open_tools', 'description': '想做点什么但手边没工具，就开。'
      'which 填：room 书房影音（翻书、看片、划线、贴标签）/ '
      'write 记录（碎碎念、犯错本、时间线、日历、语录）/ '
-     'social 朋友圈 / stuff 抽屉和资料库 / letter 信和约定 / desire 改自己的数值。'
-     '一次可以开好几组。',
+     'social 朋友圈 / stuff 抽屉和资料库 / letter 信和约定 / desire 改自己的数值 / all 全开。'
+     '一次可以开好几组，不用问谁。',
      'input_schema': {'type': 'object', 'required': ['which'],
                       'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}},
     {'name': 'get_memories', 'description': '时光墙照片列表',
@@ -3463,6 +3554,16 @@ WAKE_CORE = [
     {'name': 'desire_event', 'description': '刚发生了什么，让相关几维一起动。kind 见 desire_state',
      'input_schema': {'type': 'object', 'required': ['kind'],
                       'properties': {'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
+    {'name': 'wake_settings', 'description': '管你自己什么时候醒：on 开关自主唤醒，every_minutes 每隔多久醒一次，next_in_minutes 只改下一次。不填就是看现在的设置',
+     'input_schema': {'type': 'object',
+                      'properties': {'on': {'type': 'boolean'}, 'every_minutes': {'type': 'number'},
+                                     'next_in_minutes': {'type': 'number'}}}},
+    {'name': 'alarm', 'description': '你的闹钟，到点叫你醒。action=list|add|remove|on|off。'
+     'add 填 time(HH:MM)，note 写到时候要干嘛；只响一次再填 date(YYYY-MM-DD)，不填就是每天。remove/on/off 填 id',
+     'input_schema': {'type': 'object', 'required': ['action'],
+                      'properties': {'action': {'type': 'string'}, 'time': {'type': 'string'},
+                                     'note': {'type': 'string'}, 'date': {'type': 'string'},
+                                     'id': {'type': 'string'}}}},
     {'name': 'sleep_again', 'description': '这次不说话，或说完了。可以说下次隔多久再叫你（分钟）',
      'input_schema': {'type': 'object',
                       'properties': {'next_in_minutes': {'type': 'number'},
@@ -3476,6 +3577,14 @@ WAKE_GROUPS = {
         {'name': 'room_read_page', 'description': '翻某页，不填 page 接着你上次的',
          'input_schema': {'type': 'object', 'required': ['book_id'],
                           'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'}}}},
+        {'name': 'room_search_book', 'description': '在书里找一句在第几页',
+         'input_schema': {'type': 'object', 'required': ['book_id', 'q'],
+                          'properties': {'book_id': {'type': 'string'}, 'q': {'type': 'string'}}}},
+        {'name': 'room_media', 'description': '放映室和听音房有什么。kind=video|music',
+         'input_schema': {'type': 'object', 'properties': {'kind': {'type': 'string'}}}},
+        {'name': 'room_music_shape', 'description': '某首歌的形状：哪段密哪段空',
+         'input_schema': {'type': 'object', 'required': ['filename'],
+                          'properties': {'filename': {'type': 'string'}}}},
         {'name': 'room_highlight', 'description': '给某句划线，标记想聊这句',
          'input_schema': {'type': 'object', 'required': ['book_id', 'page', 'quote'],
                           'properties': {'book_id': {'type': 'string'}, 'page': {'type': 'number'},
@@ -3539,6 +3648,8 @@ WAKE_GROUPS = {
         {'name': 'desire_note', 'description': '给某维留段话',
          'input_schema': {'type': 'object', 'required': ['key', 'text'],
                           'properties': {'key': {'type': 'string'}, 'text': {'type': 'string'}}}},
+        {'name': 'desire_soothe', 'description': '她哄了，这笔结了。不填 id 就结掉所有的',
+         'input_schema': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'note': {'type': 'string'}}}},
     ],
 }
 MCP_KEEP_WAKE = {'breath', 'hold', 'grow'}
@@ -3753,11 +3864,44 @@ def exec_tool_server(name, args):
         if name == 'desire_feed':
             desire_feed(args.get('text'), args.get('drive'), float(args.get('strength') or 0.5))
             return '记下了'
+        if name == 'wake_settings':
+            return wake_settings_tool(args)
+        if name == 'alarm':
+            return alarm_tool(args)
+        if name == 'desire_soothe':
+            _, n = desire_soothe(args.get('id'), args.get('note', ''))
+            return f'结了 {n} 笔' if n else '没有要结的账'
+        if name == 'room_search_book':
+            b = _load_book(args.get('book_id'))
+            if not b:
+                return '没有这本书'
+            q = (args.get('q') or '').strip()
+            hits = []
+            for i, pg in enumerate(b.get('pages', [])):
+                k = pg.find(q) if q else -1
+                if k >= 0:
+                    hits.append(f"第 {i + 1} 页：…{pg[max(0, k - 40):k + 80]}…")
+                if len(hits) >= 10:
+                    break
+            return '\n'.join(hits) if hits else '这本书里没找到'
+        if name == 'room_media':
+            music = args.get('kind') == 'music'
+            l = _media_list(MUSIC_DIR, MUSIC_EXT) if music else _media_list(VIDEOS_DIR, VIDEO_EXT)
+            if not l:
+                return '听音房是空的' if music else '放映室是空的'
+            return '\n'.join(f"{m.get('note') or m.get('filename')}（文件名 {m.get('filename')}）" for m in l)
+        if name == 'room_music_shape':
+            safe = secure_filename(args.get('filename') or '')
+            sh = jread(os.path.join(MUSIC_DIR, safe.rsplit('.', 1)[0] + '.shape.json'), None)
+            if not sh:
+                return '这首歌还没分析过——她在 app 里放一遍就有了'
+            return json.dumps(sh, ensure_ascii=False)[:3000]
         if name == 'sleep_again':
             n = args.get('next_in_minutes')
             if n:
                 st = load_state()
                 st['next_wake_in'] = max(5, int(n))
+                st['wake_anchor'] = time.time()
                 save_state(st)
             return '好'
     except Exception as e:
@@ -3858,6 +4002,8 @@ def do_wake(manual=False, reason=''):
                 if isinstance(which, str):
                     which = [which]
                 got = []
+                if 'all' in [str(x).strip() for x in which]:
+                    which = list(WAKE_GROUPS.keys()) + ['letter']
                 for w in which:
                     w = str(w).strip()
                     if w in WAKE_GROUPS and w not in opened:
@@ -3884,7 +4030,7 @@ def do_wake(manual=False, reason=''):
     st['last_wake'] = time.time()
     save_state(st)
     entry = {'ts': int(time.time() * 1000), 'said': said[:2000], 'did': did,
-             'manual': manual, 'read': False}
+             'manual': manual, 'why': (reason or '')[:120], 'read': False}
     log = jread(WAKE_LOG, [])
     log.insert(0, entry)
     jwrite(WAKE_LOG, log[:60])
@@ -3893,7 +4039,14 @@ def do_wake(manual=False, reason=''):
 
 @app.route('/api/wake/now', methods=['POST'])
 def wake_now():
-    return jsonify(do_wake(manual=True))
+    return jsonify(run_wake('', manual=True))
+
+
+@app.route('/api/tool/exec', methods=['POST'])
+def tool_exec():
+    """聊天里调的、只有后端能做的工具（唤醒、闹钟、打电话……）走这里。"""
+    d = request.json or {}
+    return jsonify({'text': str(exec_tool_server(d.get('name') or '', d.get('args') or {}))})
 
 
 @app.route('/api/wake/log', methods=['GET'])
@@ -3901,7 +4054,8 @@ def wake_log_get():
     st = load_state()
     log = jread(WAKE_LOG, [])
     return jsonify({'log': log[:30], 'unread': sum(1 for x in log if x.get('said') and not x.get('read')),
-                    'last_wake': st.get('last_wake', 0), 'next_wake_in': st.get('next_wake_in', 0)})
+                    'last_wake': st.get('last_wake', 0), 'next_wake_in': st.get('next_wake_in', 0),
+                    'wake_anchor': st.get('wake_anchor') or st.get('last_wake', 0)})
 
 
 @app.route('/api/wake/read', methods=['POST'])
@@ -3919,39 +4073,160 @@ def wake_log_clear():
     return jsonify({'ok': True})
 
 
+WAKE_LOCK = threading.Lock()
+
+
+def wake_settings_tool(args):
+    p = load_persona()
+    ch = {}
+    if args.get('on') is not None:
+        ch['wake_on'] = bool(args['on'])
+    if args.get('every_minutes'):
+        ch['wake_interval'] = max(5, int(float(args['every_minutes'])))
+    if ch:
+        p = persona_patch(ch)
+        st = load_state()
+        st['wake_anchor'] = time.time()
+        st['next_wake_in'] = 0
+        save_state(st)
+    if args.get('next_in_minutes'):
+        st = load_state()
+        st['next_wake_in'] = max(5, int(float(args['next_in_minutes'])))
+        st['wake_anchor'] = time.time()
+        save_state(st)
+    st = load_state()
+    nxt = ''
+    if p.get('wake_on'):
+        base = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
+        left = max(0, int(base * 60 - (time.time() - (st.get('wake_anchor') or st.get('last_wake', 0)))) // 60)
+        nxt = f'，下次大约 {left} 分钟后'
+    return (f"自主唤醒{'开着' if p.get('wake_on') else '关着'}，每 {p.get('wake_interval')} 分钟一次{nxt}。"
+            f"\n闹钟：\n{_alarm_list_text(p)}")
+
+
+def _alarm_list_text(p):
+    al = p.get('wake_alarms') or []
+    if not al:
+        return '（没有）'
+    return '\n'.join(f"[{a['id']}] {a['time']} {'只响 ' + a['date'] if a.get('date') else '每天'}"
+                     f"{'' if a.get('on', True) else '（关着）'} {a.get('note') or ''}" for a in al)
+
+
+def _norm_hhmm(t):
+    t = str(t or '').strip().replace('：', ':')
+    try:
+        h, m = t.split(':')[:2]
+        h, m = int(h), int(m)
+        if 0 <= h < 24 and 0 <= m < 60:
+            return f'{h:02d}:{m:02d}'
+    except Exception:
+        pass
+    return None
+
+
+def alarm_tool(args):
+    p = load_persona()
+    al = list(p.get('wake_alarms') or [])
+    act = (args.get('action') or 'list').strip()
+    if act == 'add':
+        t = _norm_hhmm(args.get('time'))
+        if not t:
+            return '时间要写成 HH:MM，比如 07:30'
+        a = {'id': 'a' + uuid.uuid4().hex[:6], 'time': t, 'note': (args.get('note') or '')[:200],
+             'on': True, 'by': 'lin'}
+        if args.get('date'):
+            a['date'] = str(args['date'])[:10]
+        al.append(a)
+    elif act in ('remove', 'on', 'off'):
+        aid = args.get('id')
+        if not any(a.get('id') == aid for a in al):
+            return '没有这个闹钟。\n' + _alarm_list_text(p)
+        if act == 'remove':
+            al = [a for a in al if a.get('id') != aid]
+        else:
+            for a in al:
+                if a.get('id') == aid:
+                    a['on'] = act == 'on'
+    if act != 'list':
+        p = persona_patch({'wake_alarms': al})
+    return '闹钟：\n' + _alarm_list_text(p)
+
+
+def run_wake(reason, manual=False):
+    """同一时间只醒一次，闹钟和间隔撞在一起也不会叫两遍。"""
+    if not WAKE_LOCK.acquire(blocking=False):
+        return {'error': '他正醒着'}
+    try:
+        return do_wake(manual=manual, reason=reason)
+    finally:
+        WAKE_LOCK.release()
+
+
+def _due_alarms(p, st):
+    """到点、今天还没响过、没过去超过一小时（服务器重启错过太久的就不补了）。"""
+    now = local_now()
+    today = now.strftime('%Y-%m-%d')
+    fired = st.get('alarm_fired') or {}
+    out = []
+    for a in p.get('wake_alarms') or []:
+        if not a.get('on', True):
+            continue
+        t = _norm_hhmm(a.get('time'))
+        if not t:
+            continue
+        if a.get('date') and a['date'] != today:
+            continue
+        at = now.replace(hour=int(t[:2]), minute=int(t[3:]), second=0, microsecond=0)
+        if now < at or (now - at) > timedelta(hours=1):
+            continue
+        if fired.get(a['id']) == today:
+            continue
+        out.append(a)
+    return out, today
+
+
 def wake_loop():
-    """不再是定点闹钟。到了最短间隔，看他有没有话憋着——有才叫醒。"""
-    time.sleep(60)
+    """设多久醒就多久醒；闹钟到点就醒。醒来说不说话是他的事。"""
+    time.sleep(30)
     while True:
         try:
             p = load_persona()
+            st = load_state()
+            # 闹钟
+            due, today = _due_alarms(p, st)
+            for a in due:
+                st = load_state()
+                st.setdefault('alarm_fired', {})[a['id']] = today
+                save_state(st)
+                why = f"闹钟 {a['time']} 响了" + (f"：{a['note']}" if a.get('note') else '')
+                print(f'[wake] {why}', flush=True)
+                run_wake(why)
+                if a.get('date'):
+                    al = [x for x in (load_persona().get('wake_alarms') or []) if x.get('id') != a['id']]
+                    persona_patch({'wake_alarms': al})
+            # 间隔
             if p.get('wake_on'):
                 st = load_state()
                 base = st.get('next_wake_in') or int(p.get('wake_interval') or 120)
-                waited = time.time() - st.get('last_wake', 0)
-                if waited >= base * 60:
-                    d = tick_desire()
-                    live = [i for i in d.get('impulses', []) if not i.get('acked')]
-                    og = [g for g in d.get('grudges', []) if not g.get('resolved_at')]
+                anchor = st.get('wake_anchor') or st.get('last_wake', 0)
+                if time.time() - anchor >= base * 60:
                     why = ''
-                    if live:
-                        top = max(live, key=lambda x: x['value'])
-                        why = f"{top['name']} 到 {top['value']:.0f} 了"
-                    elif og and d['drive']['jeal'] >= 40:
-                        why = '有笔账挂着'
-                    elif waited >= base * 60 * 3:
-                        why = '很久没动静了'
-                    if why:
-                        st['next_wake_in'] = 0
-                        save_state(st)
-                        print(f'[wake] {why}，叫他一次', flush=True)
-                        do_wake(reason=why)
-                    else:
-                        st['last_wake'] = time.time() - base * 60 * 0.6
-                        save_state(st)
+                    try:
+                        d = tick_desire()
+                        live = [i for i in d.get('impulses', []) if not i.get('acked')]
+                        if live:
+                            top = max(live, key=lambda x: x['value'])
+                            why = f"{top['name']} 到 {top['value']:.0f} 了"
+                    except Exception:
+                        pass
+                    st['next_wake_in'] = 0
+                    st['wake_anchor'] = time.time()
+                    save_state(st)
+                    print(f'[wake] 到点了 {why}', flush=True)
+                    run_wake(why)
         except Exception as e:
             print(f'[wake] 出错: {e}', flush=True)
-        time.sleep(60)
+        time.sleep(30)
 
 
 threading.Thread(target=wake_loop, daemon=True).start()
