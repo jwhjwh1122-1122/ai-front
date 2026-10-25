@@ -16,7 +16,7 @@ function showPage(name) {
   localStorage.setItem('cur-page', name);
   if (name === 'home') refreshHome();
   if (name === 'time') refreshTimeCounts();
-  if (name === 'settings') { renderWakeSettings(); renderNotebook(); }
+  if (name === 'settings') { renderWakeSettings(); renderNotebook(); showStorage(); }
   if (name === 'chat') { $('dot-chat').classList.remove('on'); markWakeRead(); scrollBottom(); }
 }
 async function refreshTimeCounts() {
@@ -1907,6 +1907,31 @@ async function renderFaults() {
   }).join('');
 }
 
+// ============ 手机里的存储 ============
+// 浏览器给的空间只有大约 5MB（按字算）。看看这段对话、表情、全部各占多少
+function lsSize(k) { const v = localStorage.getItem(k); return v == null ? 0 : (k.length + v.length); }
+function fmtKB(n) { return n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function showStorage() {
+  const el = $('storage-sub'); if (!el) return;
+  let total = 0;
+  for (let i = 0; i < localStorage.length; i++) total += lsSize(localStorage.key(i));
+  const cur = currentConvId ? lsSize('conv-' + currentConvId) : 0, emo = lsSize('custom-emoji');
+  const pct = Math.round(total / (5 * 1024 * 1024) * 100);
+  el.innerHTML = `这段对话占 ${fmtKB(cur)} · 表情 ${fmtKB(emo)} · 手机里一共用了 ${fmtKB(total)}（上限约 5 MB，已用 ${pct}%）`
+    + (pct >= 80 ? '<br><span style="color:var(--accent)">快满了，点「+ 新建」换个窗口会接着聊，旧的可以删掉</span>' : '');
+}
+// 以前的表情是整张图塞在手机里的，挪到服务器上，手机只留个地址
+async function migrateEmoji() {
+  let l; try { l = JSON.parse(localStorage.getItem('custom-emoji') || '[]'); } catch (e) { return; }
+  if (!l.some(x => x && typeof x.data === 'string' && x.data.startsWith('data:'))) return;
+  let moved = 0;
+  for (const it of l) {
+    if (!it || typeof it.data !== 'string' || !it.data.startsWith('data:')) continue;
+    try { const d = await jpost('/api/emoji', { data: it.data }); if (d.url) { it.data = d.url; moved++; } } catch (e) { }
+  }
+  if (moved) { try { localStorage.setItem('custom-emoji', JSON.stringify(l)); } catch (e) { } showStorage(); }
+}
+
 // ============ 小本子 ============
 async function renderNotebook() {
   const el = $('nb-text'); if (!el) return;
@@ -2034,7 +2059,7 @@ async function boot() {
   showUserStatus(localStorage.getItem('user-status'));
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
-  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys();
+  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys(); migrateEmoji();
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
   $('ctx-sub').textContent = ctxWindow ? `至少带最近 ${ctxWindow} 轮，更早的压成摘要接着记` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
@@ -2855,14 +2880,18 @@ document.addEventListener('DOMContentLoaded', () => {
     r.readAsDataURL(f); e.target.value = '';
   };
   $('emoji-name-cancel').onclick = () => { pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); };
-  $('emoji-name-ok').onclick = () => {
+  $('emoji-name-ok').onclick = async () => {
     const name = $('emoji-name-input').value.trim();
     if (!name || !pendingEmoji) { toast('起个名字'); return; }
+    toast('上传中…');
+    let d;
+    try { d = await jpost('/api/emoji', { data: pendingEmoji }); } catch (err) { d = { error: '传不上去' }; }
+    if (!d.url) { toast(d.error || '传不上去'); return; }
     const l = JSON.parse(localStorage.getItem('custom-emoji') || '[]');
-    l.push({ name, data: pendingEmoji });
+    l.push({ name, data: d.url });
     try { localStorage.setItem('custom-emoji', JSON.stringify(l)); }
-    catch (err) { toast('存不下了，删几个'); return; }
-    pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了');
+    catch (err) { toast('存不下了'); return; }
+    pendingEmoji = null; $('emoji-name-modal').classList.remove('open'); renderEmoji(); toast('加好了'); showStorage();
   };
 
   // 聊天配图

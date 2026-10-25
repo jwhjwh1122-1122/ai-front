@@ -2592,6 +2592,39 @@ def delete_memory(filename):
     return jsonify({'ok': True})
 
 
+# 表情包存服务器硬盘，不再塞进手机浏览器（那里只有几 MB）
+EMOJI_DIR = os.path.join(DATA_DIR, 'emoji')
+os.makedirs(EMOJI_DIR, exist_ok=True)
+
+
+@app.route('/api/emoji', methods=['POST'])
+def emoji_upload():
+    d = request.json or {}
+    url = d.get('data') or ''
+    if not url.startswith('data:') or ';base64,' not in url:
+        return jsonify({'error': 'bad data'}), 400
+    head, b64 = url.split(',', 1)
+    mime = head[5:].split(';')[0].lower()
+    ext = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/gif': 'gif',
+           'image/webp': 'webp'}.get(mime)
+    if not ext:
+        return jsonify({'error': '只收 png/jpg/gif/webp'}), 400
+    raw = base64.b64decode(b64)
+    if len(raw) > 8 * 1024 * 1024:
+        return jsonify({'error': '太大了（超过 8MB）'}), 400
+    fn = hashlib.md5(raw).hexdigest()[:16] + '.' + ext
+    fp = os.path.join(EMOJI_DIR, fn)
+    if not os.path.exists(fp):
+        with open(fp, 'wb') as f:
+            f.write(raw)
+    return jsonify({'url': '/emoji/' + fn})
+
+
+@app.route('/emoji/<filename>')
+def serve_emoji(filename):
+    return send_from_directory(EMOJI_DIR, secure_filename(filename), max_age=31536000)
+
+
 @app.route('/memories/<filename>')
 def serve_memory(filename):
     return send_from_directory(MEMORIES_DIR, filename)
