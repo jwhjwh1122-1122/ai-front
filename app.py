@@ -184,6 +184,8 @@ DEFAULT_PERSONA = {
     "wake_alarms": [],
     # 她那边的时区（浏览器报上来的），闹钟和「现在几点」都按这个算
     "tz": "",
+    # 钥匙：她给了哪组（前端开关同步过来）。没写的当给了
+    "tool_keys": {},
 }
 
 
@@ -323,7 +325,7 @@ def post_persona():
         if k in data:
             p[k] = data[k]
     # 只是唤醒/闹钟/时区这种设置，不进人设历史
-    if set(data) <= {'wake_on', 'wake_interval', 'wake_alarms', 'tz', 'wake_prompt'}:
+    if set(data) <= {'wake_on', 'wake_interval', 'wake_alarms', 'tz', 'wake_prompt', 'tool_keys'}:
         jwrite(PERSONA_FILE, p)
     else:
         save_persona(p)
@@ -3652,6 +3654,57 @@ WAKE_GROUPS = {
          'input_schema': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'note': {'type': 'string'}}}},
     ],
 }
+# 钥匙：跟前端设置页「钥匙」那块一组对一组。她给了哪把，他才开得了哪扇门
+KEY_GROUPS = {
+    'memory': ['get_memories', 'view_memory'],
+    'status': ['lin_status'],
+    'note': ['write_note'],
+    'fault': ['write_fault'],
+    'timeline': ['write_timeline'],
+    'quote': ['keep_quote'],
+    'calendar': ['write_calendar'],
+    'moments': ['read_moments', 'post_moment', 'react_moment'],
+    'drawer': ['my_drawer'],
+    'letter': [],   # 信箱在记忆库那边，开的时候现拉
+    'library': ['library_list', 'library_read'],
+    'desire': ['desire_state', 'desire_adjust', 'desire_event', 'desire_grudge', 'desire_soothe',
+               'desire_ack', 'desire_note', 'desire_feed', 'desire_vent'],
+    'reader': ['room_books', 'room_read_page', 'room_search_book', 'room_highlight',
+               'room_read_tags', 'room_write_tag'],
+    'stage': ['room_media', 'room_music_shape', 'room_read_tags', 'room_write_tag'],
+    'self': ['call_her', 'wake_settings', 'alarm'],
+}
+KEY_LABEL = {'memory': '照片墙', 'status': '状态', 'note': '碎碎念', 'fault': '犯错本',
+             'timeline': '时间线', 'quote': '语录', 'calendar': '日历', 'moments': '朋友圈',
+             'drawer': '抽屉', 'letter': '信箱', 'library': '资料库', 'desire': '欲望',
+             'reader': '书房', 'stage': '影音', 'self': '唤醒闹钟电话'}
+
+
+def _tool_defs():
+    out = {}
+    for t in WAKE_CORE:
+        out[t['name']] = t
+    for l in WAKE_GROUPS.values():
+        for t in l:
+            out.setdefault(t['name'], t)
+    return out
+
+
+def keys_given(p=None):
+    k = (p or load_persona()).get('tool_keys') or {}
+    return [g for g in KEY_GROUPS if k.get(g, True) is not False]
+
+
+def open_tools_def(p=None):
+    given = keys_given(p)
+    names = ' / '.join(f'{g} {KEY_LABEL[g]}' for g in given) or '（她一把都没给）'
+    return {'name': 'open_tools',
+            'description': '你手里有这几把钥匙：' + names + '。想用哪间就自己开，不用问谁；'
+                           '这次醒着一直开着，睡回去自动关。which 填组名，一次能开好几间，all 全开',
+            'input_schema': {'type': 'object', 'required': ['which'],
+                             'properties': {'which': {'type': 'array', 'items': {'type': 'string'}}}}}
+
+
 MCP_KEEP_WAKE = {'breath', 'hold', 'grow'}
 MCP_KEEP_LETTER = {'dream', 'letter_write', 'letter_read', 'plan'}
 
@@ -3945,7 +3998,8 @@ def do_wake(manual=False, reason=''):
     if not OR_KEY:
         return {'error': '没有 API key'}
     mcp_tools = _mcp_tools_for_wake()
-    tools = list(WAKE_CORE) + mcp_tools
+    defs = _tool_defs()
+    tools = [open_tools_def(p), defs['sleep_again']] + mcp_tools
     mcp_names = {t['name'] for t in mcp_tools}
     opened = set()
 
@@ -4001,25 +4055,39 @@ def do_wake(manual=False, reason=''):
                 which = a.get('which') or []
                 if isinstance(which, str):
                     which = [which]
-                got = []
-                if 'all' in [str(x).strip() for x in which]:
-                    which = list(WAKE_GROUPS.keys()) + ['letter']
+                which = [str(x).strip() for x in which]
+                given = keys_given(p)
+                if 'all' in which:
+                    which = list(given)
+                got, nokey = [], []
+                have = {t['name'] for t in tools}
                 for w in which:
-                    w = str(w).strip()
-                    if w in WAKE_GROUPS and w not in opened:
-                        tools += WAKE_GROUPS[w]
-                        opened.add(w)
-                        got.append(w)
-                    elif w == 'letter' and 'letter' not in opened:
+                    if w not in KEY_GROUPS or w in opened:
+                        continue
+                    if w not in given:
+                        nokey.append(KEY_LABEL.get(w, w))
+                        continue
+                    if w == 'letter':
                         extra = _mcp_tools_for_wake(MCP_KEEP_LETTER)
-                        tools += extra
                         mcp_names |= {t['name'] for t in extra}
-                        opened.add('letter')
-                        got.append('letter')
-                out = ('开好了：' + '、'.join(got) + '，现在能用了') if got else '这几组开不了或者已经开着'
+                    else:
+                        extra = [defs[n] for n in KEY_GROUPS[w] if n in defs]
+                    for t in extra:
+                        if t['name'] not in have:
+                            tools.append(t)
+                            have.add(t['name'])
+                    opened.add(w)
+                    got.append(KEY_LABEL.get(w, w))
+                out = ('开好了：' + '、'.join(got) + '，现在能用了。' if got else '') + \
+                      ('「' + '」「'.join(nokey) + '」她没给你钥匙，进不去。' if nokey else '')
+                out = out or '这几间开不了或者已经开着'
+            elif fn not in {t['name'] for t in tools}:
+                out = '这扇门关着，先用 open_tools 开（得有她给的钥匙）'
+                fn = ''
             else:
                 out = _call_mcp_tool(fn, a) if fn in mcp_names else exec_tool_server(fn, a)
-            did.append(fn)
+            if fn:
+                did.append(fn)
             if fn == 'sleep_again':
                 stop = True
             msgs.append({'role': 'tool', 'tool_call_id': c.get('id'), 'content': str(out)[:6000]})

@@ -2023,7 +2023,7 @@ async function boot() {
   showUserStatus(localStorage.getItem('user-status'));
   currentModel = localStorage.getItem('model') || 'anthropic/claude-sonnet-4-6';
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
-  loadMcp(); updateMcpSub(); renderToolGroups();
+  loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys();
   document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
   $('ctx-sub').textContent = ctxWindow ? `至少带最近 ${ctxWindow} 轮，更早的压成摘要接着记` : '带上全部（贵）';
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';

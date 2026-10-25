@@ -109,9 +109,25 @@ const GROUP_LABEL = {
   drawer: '抽屉', letter: '信箱', library: '资料库', desire: '欲望', reader: '书房', stage: '影音',
   self: '唤醒闹钟电话',
 };
-// 钥匙在她手里：她开了哪组，他就能随时用哪组，在哪个房间都行，用的时候不用再问
+// ============ 钥匙 ============
+// 钥匙在她手里（设置页开关）。给了钥匙的，他想用就自己 open_tools 开门，这一轮结束门自动关；
+// 没给钥匙的，他开不了。say_more 不算门。
 function groupOn(g) { return localStorage.getItem('tg-' + g) !== '0'; }
-function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); }
+function keysMap() { const o = {}; Object.keys(T).forEach(g => o[g] = groupOn(g)); return o; }
+function syncKeys() { jpost('/api/persona', { tool_keys: keysMap() }).catch(() => { }); }
+function setGroup(g, on) { localStorage.setItem('tg-' + g, on ? '1' : '0'); renderToolGroups(); syncKeys(); }
+const NO_DOOR = new Set(['more']);
+let openedGroups = new Set();
+const groupsOf = n => Object.keys(T).filter(g => T[g].some(t => t.name === n));
+function openToolsDef() {
+  const given = Object.keys(T).filter(g => groupOn(g) && !NO_DOOR.has(g));
+  const names = given.map(g => `${g} ${GROUP_LABEL[g]}`).join(' / ') || '（她一把都没给）';
+  return {
+    name: 'open_tools',
+    description: `你手里有这几把钥匙：${names}。想用哪间就自己开，不用问她；这一轮说完自动关。which 填组名，一次能开好几间，all 全开`,
+    input_schema: { type: 'object', required: ['which'], properties: { which: { type: 'array', items: { type: 'string' } } } }
+  };
+}
 function groupTokens(g) {
   const s = JSON.stringify(T[g] || []);
   const cn = (s.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -157,12 +173,14 @@ const enabledServers = () => mcpServers.filter(s => s.enabled && Array.isArray(s
 function buildTools() {
   const seen = new Set(), out = [];
   const push = t => { if (t && t.name && !seen.has(t.name)) { seen.add(t.name); out.push(t); } };
+  // 门的说明放最前；有钥匙的那几组定义一直带着（这样前缀不变、缓存不断），但门没开就用不了
+  push(openToolsDef());
   for (const g of Object.keys(T)) {
     if (!groupOn(g)) continue;
     T[g].forEach(push);
   }
   const ob = mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url));
-  if (ob) OMBRE_EXTRA.forEach(push);
+  if (ob) OMBRE_EXTRA.forEach(t => { if (!groupsOf(t.name).length) push(t); });
   for (const s of enabledServers()) {
     const off = new Set(s.off || []);
     for (const t of s.tools) {
@@ -218,6 +236,28 @@ async function fetchTags(type, id, pos) {
 }
 async function execTool(name, args) {
   args = args || {};
+  if (name === 'open_tools') {
+    let which = args.which || [];
+    if (typeof which === 'string') which = [which];
+    which = which.map(x => String(x).trim());
+    const given = Object.keys(T).filter(g => groupOn(g) && !NO_DOOR.has(g));
+    if (which.includes('all')) which = given;
+    const got = [], nokey = [];
+    for (const w of which) {
+      if (!T[w] || NO_DOOR.has(w)) continue;
+      if (!groupOn(w)) { nokey.push(GROUP_LABEL[w] || w); continue; }
+      if (!openedGroups.has(w)) { openedGroups.add(w); got.push(GROUP_LABEL[w] || w); }
+    }
+    const out = (got.length ? `开好了：${got.join('、')}，这一轮能用。` : '') + (nokey.length ? `「${nokey.join('」「')}」她没给你钥匙，进不去。` : '');
+    return txt(out || '这几间已经开着，或者没有这间');
+  }
+  {
+    const gs = groupsOf(name).filter(g => !NO_DOOR.has(g));
+    if (gs.length) {
+      if (!gs.some(groupOn)) return txt(`「${GROUP_LABEL[gs[0]]}」她没给你钥匙，用不了。`);
+      if (!gs.some(g => openedGroups.has(g))) return txt(`「${GROUP_LABEL[gs[0]]}」的门关着，先 open_tools 开 ${gs.find(groupOn)}。`);
+    }
+  }
   try {
     if (name === 'get_memories') {
       const items = await jget('/api/memories');
@@ -1046,6 +1086,7 @@ function sanitize(m) {
   };
 }
 async function runToolLoop(wrap, origLen) {
+  openedGroups = new Set();   // 新的一轮，门都是关的
   let work = [...messages], finalText = '';
   moreRounds = 0; wantMore = false;
   while (true) {
