@@ -38,7 +38,7 @@ LABELS = {
 ORDER = ['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_opus']
 
 _lock = threading.Lock()
-_cache = {'at': 0, 'ok': False, 'data': None, 'error': ''}
+_cache = {'at': 0, 'ok': False, 'data': None, 'error': '', 'wait_until': 0}
 
 
 def _ms(v):
@@ -83,6 +83,9 @@ def _fetch_api(data_dir):
         age = now - _cache['at']
         if _cache['at'] and ((_cache['ok'] and age < CACHE_OK_SEC) or (not _cache['ok'] and age < CACHE_FAIL_SEC)):
             return _cache['data'], _cache['error']
+        if now < _cache.get('wait_until', 0):
+            # 刚被说「问得太勤」：先歇着，不然越问越被拒，一直卡在很久以前那份
+            return (_cache['data'] if _cache['ok'] else None), '用量接口说问得太勤了，过几分钟再看'
     toks = _tokens(data_dir)
     data, err = None, ''
     if not toks:
@@ -104,7 +107,8 @@ def _fetch_api(data_dir):
                 continue
         if r.status_code == 429:
             err = '用量接口说问得太勤了，过几分钟再看'
-            with _lock:   # 429 时沿用上一次的成功结果
+            with _lock:   # 429：歇 5 分钟再问，这期间沿用上一次的成功结果
+                _cache['wait_until'] = now + 300
                 if _cache['ok'] and _cache['data']:
                     return _cache['data'], err
         elif r.status_code in (401, 403):
@@ -140,6 +144,11 @@ def build_usage(data_dir):
                     continue
                 limits[k] = {'key': k, 'label': LABELS.get(k, k), 'pct': max(0.0, min(100.0, pct)),
                              'resets_at': _ms(v.get('resets_at'))}
+                # 这份数据是旧的、它的重置时间已经过了：那个百分比早就不对了，不显示
+                ra = limits[k]['resets_at']
+                if ra and ra < int(time.time() * 1000):
+                    limits[k]['pct'] = None
+                    limits[k]['stale'] = True
     # 接口没给的，用 Claude Code 自己报的限额事件补上重置时间（没有百分比）
     for k in ('five_hour', 'seven_day'):
         ev = events.get(k) or {}

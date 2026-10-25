@@ -54,7 +54,7 @@ const fmtTok = n => { n = Number(n) || 0; return n < 1000 ? String(n) : n < 1e6 
 function resetText(ms) {
   if (!ms) return '重置时间未知';
   const left = ms - Date.now();
-  if (left <= 0) return '已到重置时间';
+  if (left <= 0) return '已重置，等下次刷新';
   if (left < 24 * 3600e3) {
     const h = Math.floor(left / 3600e3), m = Math.floor(left % 3600e3 / 60e3);
     return (h ? `${h} 小时 ` : '') + `${m} 分后重置`;
