@@ -1892,6 +1892,29 @@ def recap_make():
     return jsonify({'ok': True, 'recap': rec})
 
 
+@app.route('/api/recap/handoff', methods=['POST'])
+def recap_handoff():
+    """换新窗口：旧窗口的摘要 + 旧窗口里还没压的那些，合成新窗口的【更早的事】。"""
+    d = request.json or {}
+    src, dst = d.get('from'), d.get('to')
+    if not dst:
+        return jsonify({'error': 'no target'}), 400
+    base = (load_recap(src).get('text') or '').strip() if src else ''
+    text = _flatten(d.get('messages') or [])
+    merged = base
+    if len(text) >= 80:
+        new, err = _ds_call(RECAP_SYS, text)
+        if not err and new:
+            merged = new
+            if base:
+                m2, err2 = _ds_call(MERGE_SYS, '【早】\n' + base + '\n\n【近】\n' + new)
+                merged = m2 if (not err2 and m2) else (base + '\n\n' + new)[-RECAP_MAX * 2:]
+    rec = {'text': (merged or '').strip()[:RECAP_MAX * 3], 'covered': 0,
+           'ts': int(time.time() * 1000), 'from': src}
+    jwrite(_recap_file(dst), rec)
+    return jsonify({'ok': True, 'recap': rec})
+
+
 @app.route('/api/recap', methods=['PUT'])
 def recap_edit():
     """他自己改摘要，或者补一句。"""

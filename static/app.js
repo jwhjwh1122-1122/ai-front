@@ -545,6 +545,7 @@ function stageRecap(msgs, cut) {
   return recapBusy;
 }
 async function prepareWindow(msgs) {
+  if (handoffBusy) await handoffBusy;   // 新窗口的「更早的事」还在压，等它好了再发第一句
   const N = ctxWindow;
   if (!N || !currentConvId) return;
   if (sendFrom > msgs.length) { sendFrom = 0; stagedCut = null; }
@@ -1295,7 +1296,11 @@ function loadConv(id) {
   roomCtx = keep;
   scrollBottom(); localStorage.setItem('current-conv-id', id);
 }
-function newConv() {
+// 换新窗口无缝接上：最后两轮原样带过去（语气接得上），再往前的跟旧摘要一起压成新窗口的「更早的事」
+const CARRY_ROUNDS = 2;
+let handoffBusy = null;
+function newConv(fresh) {
+  const prev = { id: currentConvId, msgs: messages, from: Math.min(sendFrom, messages.length) };
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
   recapDone = 0; stagedCut = null;
@@ -1303,6 +1308,30 @@ function newConv() {
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
   $('conv-panel').classList.remove('open'); showPage('chat');
+  if (fresh !== true && prev.id && prev.msgs.length) handoff(prev);
+}
+function handoff(prev) {
+  const starts = [];
+  for (let i = prev.from; i < prev.msgs.length; i++) if (isRoundStart(prev.msgs[i])) starts.push(i);
+  const cut = starts.length > CARRY_ROUNDS ? starts[starts.length - CARRY_ROUNDS] : (starts[0] ?? prev.msgs.length);
+  const textOf = c => typeof c === 'string' ? c : (Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('') : '');
+  const carry = [];
+  for (const m of prev.msgs.slice(cut)) {
+    if (m._internal || hasToolResult(m) || m._callmark) continue;
+    const t = textOf(m.content);
+    if (!t) continue;
+    if (m.role === 'user') carry.push(m._note ? { role: 'user', content: t, _note: m._note } : { role: 'user', content: t });
+    else if (m.role === 'assistant') {
+      const last = carry[carry.length - 1];
+      if (last && last.role === 'assistant') last.content += '\n\n' + t; else carry.push({ role: 'assistant', content: t });
+    }
+  }
+  const to = currentConvId;
+  messages = carry; saveConv(); loadConv(to);
+  const tip = document.createElement('div'); tip.className = 'sys-msg'; tip.textContent = '— 接着上个窗口 —';
+  msgBox().insertBefore(tip, msgBox().children[1] || null);
+  handoffBusy = jpost('/api/recap/handoff', { from: prev.id, to, messages: flatForRecap(prev.msgs.slice(prev.from, cut)) })
+    .catch(() => { }).finally(() => { handoffBusy = null; loadRecapCount && loadRecapCount(); });
 }
 function renderConvs() {
   const list = getConvs(), el = $('conv-list');
@@ -1321,7 +1350,7 @@ function renderConvs() {
       if (!confirm('删除这段对话？')) return;
       localStorage.removeItem('conv-' + c.id);
       const nl = getConvs().filter(x => x.id !== c.id); saveConvs(nl);
-      if (currentConvId === c.id) { if (nl.length) loadConv(nl[0].id); else newConv(); }
+      if (currentConvId === c.id) { if (nl.length) loadConv(nl[0].id); else newConv(true); }
       renderConvs();
     };
     d.onclick = () => { if (messages.length) saveConv(); loadConv(c.id); renderConvs(); $('conv-panel').classList.remove('open'); showPage('chat'); };

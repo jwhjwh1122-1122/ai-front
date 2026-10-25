@@ -2707,7 +2707,7 @@ document.addEventListener('DOMContentLoaded', () => {
     o.classList.add('active'); localStorage.setItem('tts-voice', o.dataset.voice);
   });
   $('auto-voice-toggle').onchange = e => localStorage.setItem('auto-voice', e.target.checked ? '1' : '0');
-  $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(); };
+  $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(true); };
   $('btn-new-conv').onclick = newConv;
   $('btn-up-save').onclick = async () => {
     const r = await jpost('/api/upstream', upstreamBody());
