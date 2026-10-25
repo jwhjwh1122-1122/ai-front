@@ -560,7 +560,7 @@ function splitSay(text) {
     if (prev && prev.length <= 2 && p.length <= 2) out[out.length - 1] = prev + '\n' + p;
     else out.push(p);
   }
-  return out.slice(0, 6);
+  return out;
 }
 function sayDelay(text) {
   return Math.min(2200, 420 + [...String(text)].length * 42);
@@ -1121,9 +1121,17 @@ async function sendComposed(text, imgs, opts) {
 }
 async function regenAt(row) {
   if (isTyping || !row) return;
-  const idx = parseInt(row.dataset.msgIdx);
+  let idx = parseInt(row.dataset.msgIdx);
+  if (isNaN(idx)) return;
+  // 往回退到她真正说的那句话为止：这一轮里的工具调用、工具结果、中间冒出来的半截话全部 roll 掉
+  while (idx > 0) {
+    const m = messages[idx - 1];
+    if (m && m.role === 'user' && !m._internal && !hasToolResult(m) && !m._callmark) break;
+    idx--;
+  }
   messages.splice(idx);
   [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= idx) r.remove(); });
+  saveConv();
   if (!messages.length || messages[messages.length - 1].role !== 'user') return;
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = '';
