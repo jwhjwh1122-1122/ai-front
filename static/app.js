@@ -788,7 +788,10 @@ function addUserBubble(text, imgData, idx, audio) {
   const av = uav ? `<div class="msg-avatar has-img"><img src="${uav}"></div>` : '';
   let c = '';
   if (imgData) c += `<div class="bubble-img"><img src="${imgData}"></div>`;
-  if (text && !(audio && audio.url)) c += `<div class="bubble user${isStickerOnly(text) ? ' sticker-only' : ''}">${stickerize(esc(text))}</div>`;
+  // 她的也按空行拆成几条（只是显示，发给他的还是原样一整句）
+  if (text && !(audio && audio.url)) splitSay(text).filter(Boolean).forEach(sg => {
+    c += `<div class="bubble user${isStickerOnly(sg) ? ' sticker-only' : ''}">${stickerize(esc(sg))}</div>`;
+  });
   row.innerHTML = `${av}<div class="bubble-wrap">${c}<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
     <span class="msg-action-btn" data-edit="1" title="编辑" style="font-size:21px">ฅ</span><span class="msg-action-btn" data-copy="1" title="复制" style="font-size:21px">✎</span>
     <span class="msg-time">${nowStr()}</span></div></div>`;
