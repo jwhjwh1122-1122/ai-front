@@ -3309,7 +3309,10 @@ function drawToolRows(box, s, card) {
 // 回车就发，Shift+回车换行。
 // 中文输入法、手机键盘有时 keydown 拿不到 Enter（keyCode 229），回车就变成插了个换行，
 // 所以 keydown、beforeinput、input 三道都接一下，哪道先接到就在哪发，并且只发一次。
+// 手机（触屏）：回车就是换行，点发送按钮才发——要用空行把话拆成几个气泡
+const TOUCH = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 function bindEnterSend(el, send) {
+  if (TOUCH) return;
   let shift = false, last = 0;
   const fire = () => { const now = Date.now(); if (now - last < 300) return; last = now; send(); };
   const isBreak = t => t === 'insertLineBreak' || t === 'insertParagraph';

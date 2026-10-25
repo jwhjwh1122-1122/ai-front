@@ -2373,6 +2373,10 @@ def chat_v2():
         st['last_user_msg'] = time.time()
         save_state(st)
     if is_cc and not keepalive:
+        try:
+            show_new_stickers(msgs_in)
+        except Exception as e:
+            print(f'[sticker] 附图失败: {e}', flush=True)
         for m in reversed(msgs_in):
             if isinstance(m, dict) and m.get('role') == 'user' and not m.get('_internal'):
                 c = m.get('content')
@@ -4570,6 +4574,30 @@ def _sticker_patch(name, **kw):
     if hit:
         jwrite(p, items)
     return hit
+
+
+def show_new_stickers(msgs):
+    """她这句里的表情包，他第一次见的那张附上图让他看一眼（一张只附一次，之后靠他记的那句意思，省额度）。"""
+    m = next((x for x in reversed(msgs) if isinstance(x, dict) and x.get('role') == 'user' and not x.get('_internal')), None)
+    if not m:
+        return
+    c = m.get('content')
+    text = c if isinstance(c, str) else '\n'.join(b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
+    names = {x.get('name'): x for x in _stickers_all()}
+    new = []
+    for nm in dict.fromkeys(re.findall(r'\[([^\[\]]{1,20})\]', text or '')):
+        it = names.get(nm)
+        if it and not it.get('seen') and len(new) < 2:
+            new.append(it)
+    if not new:
+        return
+    blocks = c if isinstance(c, list) else [{'type': 'text', 'text': c or ''}]
+    for it in new:
+        blocks.append({'type': 'image_url', 'image_url': {'url': '/stickers/' + it['file']}})
+        _sticker_patch(it['name'], seen=True)
+    blocks.append({'type': 'text', 'text': '（她发的表情' + '、'.join(f"[{it['name']}]" for it in new)
+                   + ' 你是第一次见，图附在上面了。看完用 sticker_note 记一句它是什么意思，以后就不再发图）'})
+    m['content'] = blocks
 
 
 def sticker_note_tool(args):
