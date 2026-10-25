@@ -706,7 +706,13 @@ function splitSay(text) {
     if (prev && prev.length <= 2 && p.length <= 2) out[out.length - 1] = prev + '\n' + p;
     else out.push(p);
   }
-  return out;   // 空了几行就拆几条，不限条数
+  // 表情包单独一个气泡，不跟文字挤在一起
+  const names = (typeof allStickers === 'function' ? allStickers() : []).map(x => x && x.name).filter(Boolean);
+  if (!names.length) return out;
+  const re = new RegExp('(' + names.map(n => '\\[' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\]').join('|') + ')');
+  const res = [];
+  for (const p of out) p.split(re).map(x => x.trim()).filter(Boolean).forEach(x => res.push(x));
+  return res.length ? res : out;   // 空了几行就拆几条，不限条数
 }
 // 边收边拆：每段一个气泡，正在写的那段带光标。done 时去掉光标、单个表情去掉气泡底色
 function streamSegs(wrap, text, done) {
