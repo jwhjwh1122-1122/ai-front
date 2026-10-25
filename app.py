@@ -2402,8 +2402,12 @@ def chat_v2():
                 win = int(data.get('_ctx') if data.get('_ctx') is not None else 15)
             except Exception:
                 win = 15
-            if win > 0 and not data.get('_regen') and cc_mode.session_turns(DATA_DIR, cc_key) >= win:
-                print(f'[cc] 会话聊满 {win} 轮，换新会话 #{cc_mode._short(cc_key)}', flush=True)
+            sf = cc_mode._session_file_size(cc_mode.get_session(DATA_DIR, cc_key)) or 0
+            max_mb = float(os.environ.get('CC_ROTATE_MB') or 2)
+            if win > 0 and not data.get('_regen') and (
+                    cc_mode.session_turns(DATA_DIR, cc_key) >= win or sf > max_mb * 1048576):
+                print(f'[cc] 会话聊满（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮 / {sf // 1048576}MB），'
+                      f'换新会话 #{cc_mode._short(cc_key)}', flush=True)
                 cc_mode.set_session(DATA_DIR, cc_key, None)
             holder = {}
             gen = cc_mode.stream_chat(messages=msgs_in,

@@ -1468,6 +1468,12 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
 
     resume_id = get_session(data_dir, key)
     resume_at = None
+    if not regen and resume_id and tail:
+        # 这一轮她的话全都已经送进过会话（网页把他那条回复删了又发一遍 = 重新生成，
+        # 或者上次没收到回复又发了一遍）：都当重新生成，从这一轮之前重来，不让他看到之前的版本
+        dl = get_delivered(data_dir, key)
+        if all(_mid(m) and _mid(m) in dl for m in tail):
+            regen = True
     if regen and resume_id:
         anchor, why = (None, 'flag-broken') if _FORK_FLAG_BROKEN else regen_anchor(resume_id)
         if anchor:
