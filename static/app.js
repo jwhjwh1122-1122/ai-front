@@ -175,7 +175,14 @@ function loadMcp() {
   catch (e) { mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP)); }
   if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
-function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); }
+function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); syncObUrl(); }
+// 哪个是记忆库：认 id / 名字 / 地址，搬服务器换了地址也认得
+const isOB = s => s && (s.id === 'ombre' || /ombre/i.test(s.name || '') || /jwhjwh|ombre/i.test(s.url || ''));
+// 把前端设置里的记忆库地址告诉后端，他自己醒来时也连同一个
+function syncObUrl() {
+  const ob = mcpServers.find(s => s.enabled && isOB(s));
+  if (ob && ob.url) jpost('/api/ob-url', { url: ob.url }).catch(() => { });
+}
 const enabledServers = () => mcpServers.filter(s => s.enabled && Array.isArray(s.tools) && s.tools.length);
 function buildTools() {
   const seen = new Set(), out = [];
@@ -186,7 +193,7 @@ function buildTools() {
     if (!groupOn(g)) continue;
     T[g].forEach(push);
   }
-  const ob = mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url));
+  const ob = mcpServers.find(s => s.enabled && isOB(s));
   if (ob) OMBRE_EXTRA.forEach(t => { if (!groupsOf(t.name).length) push(t); });
   for (const s of enabledServers()) {
     const off = new Set(s.off || []);
@@ -200,7 +207,7 @@ function buildTools() {
 function findServerForTool(n) {
   for (const s of enabledServers()) if (s.tools.some(t => t && t.name === n)) return s;
   if (OMBRE_EXTRA.some(t => t.name === n)) {
-    return mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url)) || null;
+    return mcpServers.find(s => s.enabled && isOB(s)) || null;
   }
   return null;
 }
@@ -221,7 +228,7 @@ async function parseMcp(r, server) {
   try { const d = JSON.parse(text); return d.result || d; } catch (e) { return { error: 'JSON parse failed' }; }
 }
 async function callOB(name, args) {
-  const server = findServerForTool(name) || mcpServers.find(s => s.enabled && /jwhjwh|ombre/i.test(s.url));
+  const server = findServerForTool(name) || mcpServers.find(s => s.enabled && isOB(s));
   if (!server) return { error: '没有连着记忆库' };
   const h = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
   if (server.sid) h['Mcp-Session-Id'] = server.sid;

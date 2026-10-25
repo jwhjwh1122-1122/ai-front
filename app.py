@@ -54,7 +54,21 @@ def upstream_headers():
             'Content-Type': 'application/json'}
 EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
 DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
+_MCP_DEFAULT = 'https://jwhjwh.zeabur.app/mcp'
+
+
+def ob_url():
+    """记忆库地址：环境变量 OB_MCP_URL 优先，其次是前端设置里那个记忆库（同步过来的），最后才是老地址。"""
+    env = (os.environ.get('OB_MCP_URL') or '').strip()
+    if env:
+        return env
+    try:
+        u = (jread(os.path.join(DATA_DIR, 'ob_url.json'), {}) or {}).get('url')
+        if u:
+            return u
+    except Exception:
+        pass
+    return _MCP_DEFAULT
 
 BASE = os.path.dirname(__file__)
 
@@ -2462,7 +2476,7 @@ def mcp_connect():
 def mcp():
     data = request.json
     sid = request.headers.get('Mcp-Session-Id') or data.pop('_sid', None)
-    target = data.pop('_server', None) or MCP_URL
+    target = data.pop('_server', None) or ob_url()
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
     if sid:
         headers['Mcp-Session-Id'] = sid
@@ -4119,7 +4133,7 @@ def exec_tool_server(name, args):
 
 def _mcp_tools_for_wake(names=None):
     try:
-        result, _ = _mcp_once(MCP_URL, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
+        result, _ = _mcp_once(ob_url(), {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
         tools = result.get('tools') if isinstance(result, dict) else None
         if not tools:
             return []
@@ -4133,7 +4147,7 @@ def _mcp_tools_for_wake(names=None):
 
 def _call_mcp_tool(name, args):
     try:
-        result, _ = _mcp_once(MCP_URL, {'jsonrpc': '2.0', 'method': 'tools/call',
+        result, _ = _mcp_once(ob_url(), {'jsonrpc': '2.0', 'method': 'tools/call',
                                         'params': {'name': name, 'arguments': args or {}},
                                         'id': int(time.time())}, timeout=120)
         if isinstance(result, dict):
@@ -4263,6 +4277,15 @@ def do_wake(manual=False, reason=''):
 @app.route('/api/wake/now', methods=['POST'])
 def wake_now():
     return jsonify(run_wake('', manual=True))
+
+
+@app.route('/api/ob-url', methods=['GET', 'POST'])
+def ob_url_api():
+    if request.method == 'POST':
+        u = ((request.json or {}).get('url') or '').strip()
+        if u.startswith('http'):
+            jwrite(os.path.join(DATA_DIR, 'ob_url.json'), {'url': u})
+    return jsonify({'url': ob_url()})
 
 
 @app.route('/api/tool/exec', methods=['POST'])
