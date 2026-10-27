@@ -388,6 +388,8 @@ window.addEventListener('error', function (e) {
         <div class="ctx-option" data-val="10">10 条</div>
         <div class="ctx-option" data-val="15">15 条</div>
         <div class="ctx-option" data-val="0">全部</div>
+        <div class="ctx-option" id="ctx-custom">自定义</div>
+        <input id="ctx-custom-input" type="number" inputmode="numeric" min="1" max="2000" placeholder="几条" style="display:none;width:72px;padding:6px 10px;border-radius:14px;border:1px solid var(--border);background:transparent;color:inherit;font-size:14px;">
       </div>
       <div class="settings-sub" id="ctx-sub"></div>
     </div>
@@ -1304,6 +1306,6 @@ window.addEventListener('error', function (e) {
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
 <script src="/static/app.js?v=40"></script>
-<script src="/static/rooms.js?v=38"></script>
+<script src="/static/rooms.js?v=39"></script>
 </body>
 </html>

@@ -2228,8 +2228,7 @@ async function boot() {
   ctxWindow = parseInt(localStorage.getItem('ctx-window') ?? '15');
   loadMcp(); updateMcpSub(); renderToolGroups(); syncKeys(); syncObUrl();
   syncMcpTools(false).then(r => { if (r) { updateMcpSub(); renderToolGroups(); } });
-  document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
-  $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
+  markCtx();
   const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
   document.querySelectorAll('[data-voice]').forEach(o => o.classList.toggle('active', o.dataset.voice === voice));
   $('auto-voice-toggle').checked = localStorage.getItem('auto-voice') === '1';
@@ -2961,14 +2960,21 @@ document.addEventListener('DOMContentLoaded', () => {
     sub(cur);
   })();
 
-  document.querySelectorAll('[data-val]').forEach(o => o.onclick = () => {
-    document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
-    o.classList.add('active'); ctxWindow = parseInt(o.dataset.val);
-    localStorage.setItem('ctx-window', ctxWindow);
-    // 改了马上生效：窗口按新设置往回放宽/收窄（全部 = 从头开始），不用等聊满新的轮数
-    sendFrom = ctxWindow > 0 ? Math.max(0, messages.length - ctxWindow * 2) : 0;
-    $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
-  });
+  document.querySelectorAll('[data-val]').forEach(o => o.onclick = () => setCtx(parseInt(o.dataset.val)));
+  // 自定义：点一下出个小输入框，填几条就是几条
+  $('ctx-custom').onclick = () => {
+    const inp = $('ctx-custom-input');
+    inp.style.display = ''; inp.value = [5, 10, 15, 0].includes(ctxWindow) ? '' : ctxWindow;
+    inp.focus();
+  };
+  const applyCustom = () => {
+    const inp = $('ctx-custom-input'), n = parseInt(inp.value);
+    inp.style.display = 'none';
+    if (n > 0) setCtx(Math.min(n, 2000));
+  };
+  $('ctx-custom-input').addEventListener('change', applyCustom);
+  $('ctx-custom-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+  $('ctx-custom-input').addEventListener('blur', applyCustom);
   document.querySelectorAll('[data-voice]').forEach(o => o.onclick = () => {
     document.querySelectorAll('[data-voice]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); localStorage.setItem('tts-voice', o.dataset.voice);
@@ -3402,6 +3408,23 @@ async function renderNotebook() {
   } catch (e) { el.textContent = '—'; }
 }
 
+// ============ 上下文窗口 ============
+function markCtx() {
+  const preset = [5, 10, 15, 0].includes(ctxWindow);
+  document.querySelectorAll('[data-val]').forEach(o => o.classList.toggle('active', parseInt(o.dataset.val) === ctxWindow));
+  const c = $('ctx-custom');
+  if (c) { c.classList.toggle('active', !preset); c.textContent = preset ? '自定义' : `自定义 · ${ctxWindow} 条`; }
+  $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
+}
+function setCtx(n) {
+  if (!(n >= 0)) return;
+  ctxWindow = n;
+  localStorage.setItem('ctx-window', ctxWindow);
+  // 改了马上生效：窗口按新设置往回放宽/收窄（全部 = 从头开始），不用等聊满新的轮数
+  sendFrom = ctxWindow > 0 ? Math.max(0, messages.length - ctxWindow * 2) : 0;
+  markCtx();
+}
+
 // ============ 多选消息 → 放进新窗口继续 ============
 // 顶上的 ☑ 进入多选：点消息勾上/取消，底下一条栏「放进新窗口」把勾上的按原来顺序复制到一个新对话里，原对话不动
 let selMode = false;
@@ -3446,6 +3469,15 @@ function setupMultiSelect() {
     updSelBar();
   }, true);
 }
+// 改版面前后，屏幕上正看着的那条留在原来的位置
+function keepView(change) {
+  const box = $('messages'), bt = box.getBoundingClientRect().top;
+  const rows = [...box.querySelectorAll('.msg-row')];
+  const anchor = rows.find(r => r.getBoundingClientRect().bottom > bt);
+  const before = anchor ? anchor.getBoundingClientRect().top : 0;
+  change();
+  if (anchor) box.scrollTop += anchor.getBoundingClientRect().top - before;
+}
 function updSelBar() {
   const n = selIdx.size, bar = $('sel-bar'); if (!bar) return;
   bar.querySelector('.sel-n').textContent = n ? `已选 ${n} 条` : '点消息来选';
@@ -3453,15 +3485,17 @@ function updSelBar() {
 }
 function enterSelect() {
   if (isTyping) { toast('等他说完再选'); return; }
-  showPage('chat');
+  // 停在你翻到的地方：不切页面（切页面会「贴底」把你拽到最底下），正在贴底的也停掉
+  pinUntil = 0;
+  if (localStorage.getItem('cur-page') !== 'chat') showPage('chat');
   selMode = true; selIdx.clear();
-  $('messages').classList.add('selecting');
+  keepView(() => $('messages').classList.add('selecting'));
   $('sel-bar').classList.add('open');
   updSelBar();
 }
 function exitSelect() {
   selMode = false; selIdx.clear();
-  $('messages').classList.remove('selecting');
+  keepView(() => $('messages').classList.remove('selecting'));
   $('messages').querySelectorAll('.sel-on').forEach(r => r.classList.remove('sel-on'));
   $('sel-bar').classList.remove('open');
 }
