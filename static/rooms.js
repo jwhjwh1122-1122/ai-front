@@ -1916,7 +1916,9 @@ function doSearch() {
     // 改成这几秒一直贴着点的那一条（上面的图片加载完把它挤下去也会追回来）；她自己一碰屏幕就不管了
     pinUntil = 0;
     const findRow = () => document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
-    const row = findRow();
+    let row = findRow();
+    // 很早的消息还没画出来：先把到这条为止的往前补上
+    if (!row && idx < renderFrom) { loadOlder(idx); row = findRow(); }
     if (!row) { toast('这条在聊天里找不到了'); return; }
     row.scrollIntoView({ block: 'center' });
     row.classList.add('sr-flash');

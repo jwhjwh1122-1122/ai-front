@@ -1617,14 +1617,10 @@ function saveConv() {
   if (idx >= 0) list[idx] = entry; else list.unshift(entry);
   saveConvs(list);
 }
-function loadConv(id) {
-  const saved = localStorage.getItem('conv-' + id); if (!saved) return;
-  messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
-  recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
-  $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
-  currentBubble = null; currentThinkWrap = null; currentAiRow = null;
-  const keep = roomCtx; roomCtx = null;
-  messages.forEach((msg, i) => {
+// 长对话一次全画出来手机会卡死：打开时只画最近 RENDER_CHUNK 条，翻到顶再往前补
+const RENDER_CHUNK = 60;
+let renderFrom = 0, loadingOlder = false;
+function renderOneMsg(msg, i) {
     if (msg._callmark) {
       addCallBubble(msg._callinfo || {
         label: String(msg.content || '').replace(/[（）]/g, ''),
@@ -1664,10 +1660,63 @@ function loadConv(id) {
       }
       currentBubble = null; currentAiRow = null;
     }
-  });
+}
+function loadConv(id) {
+  const saved = localStorage.getItem('conv-' + id); if (!saved) return;
+  messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
+  recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
+  $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
+  currentBubble = null; currentThinkWrap = null; currentAiRow = null;
+  const keep = roomCtx; roomCtx = null;
+  renderFrom = Math.max(0, messages.length - RENDER_CHUNK);
+  for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
   roomCtx = keep;
+  updOlderHint();
   scrollBottom(); localStorage.setItem('current-conv-id', id);
 }
+function updOlderHint() {
+  const box = $('messages'); let h = $('older-hint');
+  if (renderFrom > 0) {
+    if (!h) {
+      h = document.createElement('div'); h.id = 'older-hint'; h.className = 'sys-msg';
+      h.style.cursor = 'pointer'; h.onclick = () => loadOlder();
+    }
+    h.textContent = `↑ 还有更早的 ${renderFrom} 条，往上翻或点这里`;
+    const first = box.querySelector('.sys-msg');
+    if (h.parentNode !== box) box.insertBefore(h, first ? first.nextSibling : box.firstChild);
+  } else if (h) h.remove();
+}
+// 往前补一段（toIdx：至少补到这一条，搜索跳转用）。画在临时容器里再整段塞到最前面，位置不跳
+function loadOlder(toIdx) {
+  if (loadingOlder || renderFrom <= 0) return false;
+  loadingOlder = true;
+  const box = $('messages');
+  const from = Math.max(0, Math.min(renderFrom - RENDER_CHUNK, toIdx == null ? Infinity : toIdx - 10));
+  const tmp = document.createElement('div');
+  tmp.style.display = 'none';
+  box.id = 'messages-real'; tmp.id = 'messages'; document.body.appendChild(tmp);
+  const keep = roomCtx; roomCtx = null;
+  const keepB = currentBubble, keepT = currentThinkWrap, keepR = currentAiRow;
+  try { for (let i = from; i < renderFrom; i++) renderOneMsg(messages[i], i); }
+  finally {
+    roomCtx = keep; currentBubble = keepB; currentThinkWrap = keepT; currentAiRow = keepR;
+    tmp.id = ''; box.id = 'messages'; tmp.remove();
+  }
+  const anchor = box.querySelector('.msg-row[data-msg-idx]') || null;
+  const oldH = box.scrollHeight, oldTop = box.scrollTop;
+  const frag = document.createDocumentFragment();
+  while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+  box.insertBefore(frag, anchor);
+  renderFrom = from;
+  updOlderHint();
+  box.scrollTop = oldTop + (box.scrollHeight - oldH);
+  loadingOlder = false;
+  return true;
+}
+document.addEventListener('scroll', e => {
+  const box = $('messages');
+  if (e.target === box && box.scrollTop < 80 && renderFrom > 0 && !selMode) loadOlder();
+}, true);
 // 换新窗口无缝接上：最后两轮原样带过去，再往前的跟旧摘要一起压成新窗口的「更早的事」。
 // 新窗口在 cc 里是新会话，不背旧会话的全部记录，最省。fresh=true（清空对话）就什么都不带。
 const CARRY_ROUNDS = 2;
