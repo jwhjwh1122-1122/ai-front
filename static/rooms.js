@@ -1912,14 +1912,29 @@ function doSearch() {
     $('search-panel').classList.remove('open');
     if (cid !== currentConvId) { if (messages.length) saveConv(); loadConv(cid); }
     showPage('chat');
-    setTimeout(() => {
-      const row = document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
-      if (row) {
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        row.classList.add('sr-flash');
-        setTimeout(() => row.classList.remove('sr-flash'), 2200);
-      }
-    }, 320);
+    // 打开聊天页会「贴底 3 秒」等图片加载，会把这里的跳转拽回最底下：先关掉，
+    // 改成这几秒一直贴着点的那一条（上面的图片加载完把它挤下去也会追回来）；她自己一碰屏幕就不管了
+    pinUntil = 0;
+    const findRow = () => document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
+    const row = findRow();
+    if (!row) { toast('这条在聊天里找不到了'); return; }
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('sr-flash');
+    setTimeout(() => row.classList.remove('sr-flash'), 2200);
+    let holdUntil = Date.now() + 2500;
+    const stop = () => { holdUntil = 0; };
+    const box = msgBox();
+    ['touchstart', 'wheel', 'mousedown'].forEach(ev => box.addEventListener(ev, stop, { once: true, passive: true }));
+    const hold = () => {
+      if (Date.now() > holdUntil) return;
+      pinUntil = 0;
+      const r = findRow(); if (!r) return;
+      const bt = box.getBoundingClientRect(), rt = r.getBoundingClientRect();
+      const off = (rt.top + rt.height / 2) - (bt.top + bt.height / 2);
+      if (Math.abs(off) > 4) box.scrollTop += off;
+      requestAnimationFrame(hold);
+    };
+    requestAnimationFrame(hold);
   });
 }
 
