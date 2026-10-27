@@ -151,7 +151,8 @@ let mcpServers = [];
 function loadMcp() {
   try { const r = localStorage.getItem('mcp-servers'); mcpServers = r ? JSON.parse(r) : JSON.parse(JSON.stringify(DEFAULT_MCP)); }
   catch (e) { mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP)); }
-  if (!Array.isArray(mcpServers) || !mcpServers.length) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
+  // 只有从来没存过（或存坏了）才用默认；自己删光了就保持空，不再自动塞回 Ombre Brain
+  if (!Array.isArray(mcpServers)) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
 }
 function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); syncObUrl(); }
 // 记忆库地址告诉服务器：Claude Code 和他自己醒来都连这一个（搬服务器换了地址也跟着走）
