@@ -227,6 +227,7 @@ DEFAULT_PERSONA = {
 LAST_CC_SYS = os.path.join(DATA_DIR, 'cc_last_system.json')
 LAST_CC_REQ = os.path.join(DATA_DIR, 'cc_last_req.json')
 RECAP_FROZEN = os.path.join(DATA_DIR, 'cc_recap_frozen.json')
+CTX_WIN_FILE = os.path.join(DATA_DIR, 'cc_ctx_win.json')   # 每个对话当前会话是按几轮上下文开的
 
 
 def persona_patch(d):
@@ -2403,6 +2404,16 @@ def chat_v2():
             print(f'[cc] 会话聊满（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮 / {sf // 1048576}MB），'
                   f'换新会话 #{cc_mode._short(cc_key)}', flush=True)
             cc_mode.set_session(DATA_DIR, cc_key, None)
+        # 改了上下文设置：马上换新会话，把网页按新设置带来的全部原话一次给他，
+        # 不然旧会话里只有改之前那几轮，要等聊满新轮数才「生效」
+        win_map = jread(CTX_WIN_FILE, {})
+        prev_win = win_map.get(cc_key, 15)   # 没记过的老对话按默认 15 算
+        if win_map.get(cc_key) != win:
+            if prev_win != win and not data.get('_regen') and cc_mode.get_session(DATA_DIR, cc_key):
+                print(f'[cc] 上下文从 {prev_win} 改成 {win}，换新会话 #{cc_mode._short(cc_key)}', flush=True)
+                cc_mode.set_session(DATA_DIR, cc_key, None)
+            win_map[cc_key] = win
+            jwrite(CTX_WIN_FILE, win_map)
         # 「更早的事」在同一个 Claude Code 会话里一字不动（变了整段缓存就断）；只在开新会话时换成最新的
         frozen = jread(RECAP_FROZEN, {})
         if cc_mode.get_session(DATA_DIR, cc_key) is None or cc_key not in frozen:

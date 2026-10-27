@@ -2945,6 +2945,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-val]').forEach(x => x.classList.remove('active'));
     o.classList.add('active'); ctxWindow = parseInt(o.dataset.val);
     localStorage.setItem('ctx-window', ctxWindow);
+    // 改了马上生效：窗口按新设置往回放宽/收窄（全部 = 从头开始），不用等聊满新的轮数
+    sendFrom = ctxWindow > 0 ? Math.max(0, messages.length - ctxWindow * 2) : 0;
     $('ctx-sub').textContent = ctxWindow ? `他最多背着最近 ${ctxWindow} 轮，满了自动换新会话，更早的压成摘要接着记` : '带上全部（最费额度）';
   });
   document.querySelectorAll('[data-voice]').forEach(o => o.onclick = () => {

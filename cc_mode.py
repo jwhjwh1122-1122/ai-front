@@ -58,8 +58,9 @@ import uuid
 THINK, TEXT = 0, 1
 PING_EVERY = 5           # 秒；没有输出时发 SSE 注释保活，也借此尽快发现客户端断开、早点收掉子进程
 MEM_SAMPLE_EVERY = 5     # 秒；跑的时候多久量一次 claude 进程组的内存
-HISTORY_MAX_MSGS = 30    # 第一次（没有 session）时带上的历史条数上限
-HISTORY_MAX_CHARS = 12000
+# 开新会话时把网页带来的历史（已经按上下文设置裁好）原样垫进去。以前卡 30 条 / 1.2 万字，设成「全部」也只看得到一截
+HISTORY_MAX_MSGS = int(os.environ.get('CC_HISTORY_MAX_MSGS') or 0)        # 0 = 网页给多少带多少
+HISTORY_MAX_CHARS = int(os.environ.get('CC_HISTORY_MAX_CHARS') or 150000)
 SYS_ARG_MAX = 100_000    # 系统提示超过这个字节数就改用 --append-system-prompt-file
 
 _map_lock = threading.Lock()
@@ -615,7 +616,7 @@ def turn_content(tail, data_dir):
 
 def history_transcript(history):
     lines = []
-    for m in history[-HISTORY_MAX_MSGS:]:
+    for m in (history[-HISTORY_MAX_MSGS:] if HISTORY_MAX_MSGS > 0 else history):
         t = _text_of(m.get('content')).strip()
         if not t:
             continue
@@ -957,6 +958,11 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     allowed = _split_list(os.environ.get('CC_ALLOWED_TOOLS') or '')
     if not allowed and auto_mcp and not user_mcp:
         allowed = ['mcp__ob__*']
+    # 查网页的工具（WebSearch / WebFetch）也得放行，不然 -p 模式下他一上网就被自动拒绝，等于没网
+    if bt.lower() != 'none':
+        for t in _split_list(bt):
+            if re.match(r'^[A-Za-z]+$', t) and t not in allowed:
+                allowed.append(t)
     for n in local_names:
         # 本地这组是 app 自己的工具，不放行的话 -p 模式下一用就被拒，所以总是放行
         if not any(a.startswith(f'mcp__{n}__') or a == f'mcp__{n}' for a in allowed):
