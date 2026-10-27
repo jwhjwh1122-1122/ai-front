@@ -855,3 +855,6 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .hpod,.ipod-ball{touch-action:none;}
 /* 随身听/唱片里的封面图不接收触摸：不然按在封面上一拖，会变成「拖图片」，拖动/贴边就失效了 */
 .hpod img,.ipod-ball img,.ipod-disc img{pointer-events:none;-webkit-user-drag:none;user-drag:none;-webkit-touch-callout:none;}
+
+/* 思考第二个框：翻译 */
+.thinking-wrap.thinking-trans{margin-top:4px;opacity:.95}

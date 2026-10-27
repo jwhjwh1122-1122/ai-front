@@ -569,7 +569,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, _thinkTok, ...rest } = m;
+    const { _internal, _thinking, _thinkZh, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, _thinkTok, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -692,7 +692,7 @@ function extraNote() {
 }
 
 // ============ 气泡 ============
-let currentBubble = null, currentThinkWrap = null, currentThinkContent = null, currentAiRow = null, turnThinking = '', turnThinkTok = 0;
+let currentBubble = null, currentThinkWrap = null, currentThinkContent = null, currentAiRow = null, turnThinking = '', turnThinkTok = 0, turnThinkZh = '';
 let wantMore = false, moreRounds = 0;
 const MAX_MORE = 3;
 
@@ -862,6 +862,19 @@ function thinkBlock(wrap, text, saved) {
   };
   wrap.appendChild(t);
   if (!saved) { currentThinkWrap = t; currentThinkContent = t.querySelector('.thinking-content'); }
+}
+// 思考两个框：上面原文，下面翻译（或换成他口吻的那版），各自能点开收起
+function thinkTransBlock(origWrap, text, label) {
+  if (!origWrap || !text) return;
+  const t = document.createElement('div'); t.className = 'thinking-wrap thinking-trans';
+  t.innerHTML = `<div class="thinking-header"><div class="thinking-dot" style="animation:none"></div><span></span><span class="thinking-arrow">▾</span></div><div class="thinking-content"></div>`;
+  t.querySelector('.thinking-header span').textContent = label || '翻译';
+  t.querySelector('.thinking-content').textContent = text;
+  t.querySelector('.thinking-header').onclick = e => {
+    e.currentTarget.nextElementSibling.classList.toggle('open');
+    e.currentTarget.querySelector('.thinking-arrow').classList.toggle('open');
+  };
+  origWrap.parentNode.insertBefore(t, origWrap.nextSibling);
 }
 function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   if (!currentBubble) {
@@ -1079,7 +1092,7 @@ async function streamResponse(wrap, hist) {
     throw err;
   }
   const reader = resp.body.getReader(), dec = new TextDecoder();
-  let buf = '', thinkingText = '', responseText = '', stopReason = null, outTok = 0, inTok = 0, gotDone = false;
+  let buf = '', thinkingText = '', thinkZhText = '', responseText = '', stopReason = null, outTok = 0, inTok = 0, gotDone = false;
   const absorb = u => {
     if (!u) return;
     if (u.cache_read_input_tokens != null) lastCacheRead = u.cache_read_input_tokens;
@@ -1110,9 +1123,9 @@ async function streamResponse(wrap, hist) {
           else if (d.type === 'cc_think') thinkTok = Number(d.tokens) || 0;
           else if (d.type === 'cc_think_hide') { thinkHide = d.why || '没翻成'; }
           else if (d.type === 'cc_think_zh' && d.text) {
-            // 思考原本不是中文：服务器翻好了，整段换成中文（存进记录的也是中文）
-            thinkingText = d.text; thinkZh = d.kind === 'voice' ? '已换成他自己的口吻' : '已译成中文';
-            if (currentThinkContent) currentThinkContent.textContent = thinkingText;
+            // 服务器翻好了：原文留在上面那个框，翻译放在下面再开一个框
+            thinkZhText = d.text; thinkZh = d.kind === 'voice' ? '已换成他自己的口吻' : '已译成中文';
+            thinkTransBlock(currentThinkWrap, thinkZhText, d.kind === 'voice' ? '他自己的口吻' : '翻译');
           }
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
@@ -1141,7 +1154,7 @@ async function streamResponse(wrap, hist) {
               thinkingText += dl.thinking;
               if (currentThinkContent) {
                 const all = thinkingText, cj = (all.match(/[\u4e00-\u9fff]/g) || []).length, la = (all.match(/[A-Za-z]/g) || []).length;
-                currentThinkContent.textContent = cj >= la ? thinkingText : '（他这会儿在用英文想，想完会翻成中文给你看）';
+                currentThinkContent.textContent = thinkingText;   // 原文直接显示，翻译想完了在下面另开一个框
               }
               // 收起时也能看到他正在想的最后一句
               const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');
@@ -1174,9 +1187,9 @@ async function streamResponse(wrap, hist) {
       where: roomCtx ? 'room' : 'chat'
     }).catch(() => { });
   }
-  const hiddenEn = thinkHide ? thinkingText : '';
-  if (thinkHide) thinkingText = '';   // 没翻成的外文思考不存
+  const hiddenEn = '';   // 原文一直保留；没翻成就只有原文那一个框
   if (thinkingText) turnThinking += (turnThinking ? '\n\n' : '') + thinkingText;
+  if (thinkZhText) turnThinkZh += (turnThinkZh ? '\n\n' : '') + thinkZhText;
   const keys = Object.keys(blocks).map(Number).sort((a, b) => a - b);
   const contentBlocks = keys.map(k => { const { _json, _rb, ...c } = blocks[k]; return c; });
   const toolUses = keys.map(k => blocks[k]).filter(b => b.type === 'tool_use')
@@ -1188,17 +1201,13 @@ async function streamResponse(wrap, hist) {
     if (first && currentThinkWrap) wrap.insertBefore(currentThinkWrap, first);
     if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
   }
-  if (thinkHide) {
-    // 你要「完全不要英文」：没翻成的外文思考不显示、不存
-    if (currentThinkContent) currentThinkContent.textContent = `这轮他是用英文想的，没翻成中文，就不给你看了。（${thinkHide}）`;
-  }
+
   if (currentThinkWrap) {
     // 关掉了翻译（CC_THINK_ZH=0）时没有任何翻译消息：把原文放回去，别一直挂着「稍后翻成中文」
     if (currentThinkContent && !thinkZh && !thinkHide && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
     const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
     const sp = currentThinkWrap.querySelector('.thinking-header span');
-    if (sp) sp.textContent = thinkHide ? `已思考${thinkTok ? ' · 想了约 ' + (thinkTok < 1000 ? thinkTok + ' tok' : (thinkTok / 1000).toFixed(1) + 'k tok') : ''}（英文，没显示）`
-      : thinkLabel(thinkingText, thinkTok) + (thinkZh ? ' · ' + thinkZh : '');
+    if (sp) sp.textContent = '原文 · ' + thinkLabel(thinkingText, thinkTok) + (thinkHide ? ' · 这轮没翻成' : '');
   }
   turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
@@ -1292,7 +1301,8 @@ async function runToolLoop(wrap, origLen) {
   if (turnThinking || turnThinkTok)
     for (let i = messages.length - 1; i >= 0; i--)
       if (messages[i].role === 'assistant' && messages[i].content) {
-        if (turnThinking) messages[i]._thinking = turnThinking.slice(0, 3000);
+        if (turnThinking) messages[i]._thinking = turnThinking.slice(0, 8000);
+        if (turnThinkZh) messages[i]._thinkZh = turnThinkZh.slice(0, 8000);
         if (turnThinkTok) messages[i]._thinkTok = turnThinkTok;
         break;
       }
@@ -1458,7 +1468,7 @@ async function sendMsg(fromCtx) {
   saveConv();
   if (hasImg) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
   catch (e) { turnError(wrap, e); }
@@ -1482,7 +1492,7 @@ async function sendComposed(text, imgs, opts) {
   addUserBubble(text, imgs[0] || null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null);
   saveConv();
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
   catch (e) { turnError(wrap, e); }
@@ -1505,7 +1515,7 @@ async function regenAt(row) {
   [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= idx) r.remove(); });
   if (!messages.length || messages[messages.length - 1].role !== 'user') return;
   const wrap = startAiBubble(messages.length);
-  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0;
+  currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   const seq = beginTurn();
   let reply = '';
   try { reply = await runToolLoop(wrap, messages.length); }
@@ -1642,7 +1652,8 @@ function renderOneMsg(msg, i) {
       const wrap = startAiBubble(i);
       if (msg._thinking) {
         thinkBlock(wrap, msg._thinking, true);
-        const sp = wrap.querySelector('.thinking-header span'); if (sp) sp.textContent = thinkLabel(msg._thinking, msg._thinkTok);
+        const sp = wrap.querySelector('.thinking-header span'); if (sp) sp.textContent = (msg._thinkZh ? '原文 · ' : '') + thinkLabel(msg._thinking, msg._thinkTok);
+        if (msg._thinkZh) { const ws = wrap.querySelectorAll('.thinking-wrap'); thinkTransBlock(ws[ws.length - 1], msg._thinkZh, '翻译'); }
       }
       if (Array.isArray(msg._tools)) msg._tools.forEach(t => wrap.appendChild(toolRow(t)));
       if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
