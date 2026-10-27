@@ -4695,6 +4695,46 @@ def ob_url_api():
     return jsonify({'url': cc_mode.ob_url()})
 
 
+# ---------- 手机里存的东西在服务器上留一份（删了桌面 app 再装回来也不丢） ----------
+CLIENT_STORE = os.path.join(DATA_DIR, 'client_store.json')
+_store_lock = threading.Lock()
+
+
+def _store_load():
+    try:
+        with open(CLIENT_STORE, encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+@app.route('/api/store', methods=['GET'])
+def store_get():
+    return jsonify({'data': _store_load()})
+
+
+@app.route('/api/store', methods=['POST'])
+def store_post():
+    b = request.get_json(silent=True) or {}
+    sets = b.get('set') if isinstance(b.get('set'), dict) else {}
+    dels = b.get('del') if isinstance(b.get('del'), list) else []
+    with _store_lock:
+        d = _store_load()
+        for k, v in sets.items():
+            if isinstance(k, str) and isinstance(v, str) and len(k) < 300:
+                d[k] = v
+        for k in dels:
+            if isinstance(k, str):
+                d.pop(k, None)
+        # 先写临时文件再换过去：写到一半断电也不会把整份弄坏
+        tmp = CLIENT_STORE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, CLIENT_STORE)
+    return jsonify({'ok': True, 'n': len(d)})
+
+
 # ---------- 从 Claude Code 的会话记录里找回聊天（手机上的记录被清掉时用） ----------
 _RECOVER_SKIP_KEYS = {'music_listen', 'wake'}
 _RECOVER_PLACEHOLDER = re.compile(r'^（(没有人说话|对方没有说话|她刚才那条你已经收到了[^）]*)）$')

@@ -2224,6 +2224,7 @@ async function boot() {
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   renderWakeExtra();
   await recoverFromServer();
+  if (window.__storeRestored) toast('已从服务器恢复你的数据');
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
