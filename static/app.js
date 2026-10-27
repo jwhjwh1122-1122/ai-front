@@ -133,14 +133,8 @@ function renderToolGroups() {
 }
 
 // ============ MCP ============
-const DEFAULT_MCP = [{
-  id: 'ombre', name: 'Ombre Brain', url: 'https://jwhjwh.zeabur.app/mcp', enabled: true, sid: null,
-  tools: [
-    { name: 'breath', description: '浮现记忆，无 query=自动', input_schema: { type: 'object', properties: { query: { type: 'string' }, max_results: { type: 'number' } } } },
-    { name: 'hold', description: '存一条记忆，把你为什么在意也写进去', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, tags: { type: 'string' }, importance: { type: 'number' }, feel: { type: 'boolean' } } } },
-    { name: 'grow', description: '整理长文本存进记忆', input_schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' } } } },
-  ]
-}];
+// 默认不带任何 MCP：记忆库服务器那边直接连（CC_OB_URL），网页里不用再挂
+const DEFAULT_MCP = [];
 const OMBRE_EXTRA = [
   { name: 'dream', description: '读最近有变动的记忆', input_schema: { type: 'object', properties: {} } },
   { name: 'letter_write', description: '写信。author: user=她写 ai=你写', input_schema: { type: 'object', required: ['author', 'content'], properties: { author: { type: 'string' }, content: { type: 'string' }, title: { type: 'string' } } } },
@@ -153,6 +147,12 @@ function loadMcp() {
   catch (e) { mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP)); }
   // 只有从来没存过（或存坏了）才用默认；自己删光了就保持空，不再自动塞回 Ombre Brain
   if (!Array.isArray(mcpServers)) mcpServers = JSON.parse(JSON.stringify(DEFAULT_MCP));
+  // 老的 zeabur 记忆库地址已经停了（502），记忆库改成服务器那边直接连；网页里残留的这条每次打开都自动清掉
+  const dead = mcpServers.filter(s => s && /jwhjwh\.zeabur\.app/i.test(s.url || ''));
+  if (dead.length) {
+    mcpServers = mcpServers.filter(s => !dead.includes(s));
+    try { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); } catch (e) { }
+  }
 }
 function saveMcp() { localStorage.setItem('mcp-servers', JSON.stringify(mcpServers)); updateMcpSub(); syncObUrl(); }
 // 记忆库地址告诉服务器：Claude Code 和他自己醒来都连这一个（搬服务器换了地址也跟着走）
@@ -1517,6 +1517,28 @@ async function regenAt(row) {
 // ============ 对话管理 ============
 const getConvs = () => { try { return JSON.parse(localStorage.getItem('conversations') || '[]'); } catch (e) { return []; } };
 const saveConvs = l => localStorage.setItem('conversations', JSON.stringify(l));
+// 手机上的记录被清掉（比如把桌面 app 删了）时，从服务器上 Claude Code 留的会话记录里找回。
+// 只跑一次；手机上已经有的对话不碰，只补回没有的。
+async function recoverFromServer() {
+  if (localStorage.getItem('cc-recovered-1')) return;
+  let d;
+  try { d = await jget('/api/cc-recover'); } catch (e) { return; }
+  const list = getConvs(), have = new Set(list.map(c => c.id));
+  let n = 0;
+  for (const c of (d && d.convs) || []) {
+    if (!c || !c.id || have.has(c.id) || localStorage.getItem('conv-' + c.id)) continue;
+    try { localStorage.setItem('conv-' + c.id, JSON.stringify(c.messages || [])); }
+    catch (e) { toast('手机存储满了，只找回了一部分'); break; }
+    list.push({ id: c.id, title: c.title || '对话', preview: c.preview || '', updatedAt: c.updatedAt || 0 });
+    n++;
+  }
+  if (n) {
+    list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    try { saveConvs(list); } catch (e) { }
+    toast(`从服务器找回了 ${n} 段对话`);
+  }
+  localStorage.setItem('cc-recovered-1', String(Date.now()));
+}
 // 老记录里直接存着 base64 图片，最占地方。存不下时把它们换成一句文字再存
 const isDataImg = c => c && c.type === 'image_url' && /^data:/.test(c.image_url?.url || '');
 function stripDataImages(list) {

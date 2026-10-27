@@ -2326,7 +2326,10 @@ def translate_stream(resp):
 # ============================================================
 @app.route('/')
 def index():
-    return send_from_directory('static', 'chat.html')
+    # 首页不让手机缓存，不然更新了代码，桌面 app 还在用旧的 js 版本号
+    r = send_from_directory('static', 'chat.html', max_age=0)
+    r.headers['Cache-Control'] = 'no-cache'
+    return r
 
 
 @app.route('/manifest.json')
@@ -4679,6 +4682,114 @@ def ob_url_api():
         if re.match(r'^https?://[^\s]+$', u) and len(u) < 500:
             jwrite(cc_mode._OB_URL_FILE, {'url': u})
     return jsonify({'url': cc_mode.ob_url()})
+
+
+# ---------- 从 Claude Code 的会话记录里找回聊天（手机上的记录被清掉时用） ----------
+_RECOVER_SKIP_KEYS = {'music_listen', 'wake'}
+_RECOVER_PLACEHOLDER = re.compile(r'^（(没有人说话|对方没有说话|她刚才那条你已经收到了[^）]*)）$')
+_RECOVER_HIST_END = '（记录结束）\n\n'
+
+
+def _recover_user_text(entry):
+    c = (entry.get('message') or {}).get('content')
+    if isinstance(c, str):
+        t = c
+    else:
+        t = '\n'.join(b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
+        if not t.strip() and any(isinstance(b, dict) and b.get('type') == 'image' for b in (c or [])):
+            t = '（一张图片）'
+    if _RECOVER_HIST_END in t:          # 新会话第一句前面垫的旧聊天记录，去掉
+        t = t.split(_RECOVER_HIST_END, 1)[1]
+    t = re.split(r'\n\n〔(?:附图：|她发的表情\[|你刚才发的表情\[)', t, maxsplit=1)[0]
+    t = re.split(r'\n\n（系统提示：', t, maxsplit=1)[0]
+    t = cc_mode._NOTE_HEAD.sub('', t).strip()
+    return '' if _RECOVER_PLACEHOLDER.match(t) else t
+
+
+def _recover_ts(entry):
+    try:
+        return int(datetime.fromisoformat(str(entry.get('timestamp')).replace('Z', '+00:00')).timestamp() * 1000)
+    except Exception:
+        return 0
+
+
+def _recover_session(path):
+    msgs, uuids, cur = [], set(), None
+    try:
+        with open(path, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+    except Exception:
+        return [], set()
+    for l in lines:
+        if not l.strip():
+            continue
+        try:
+            d = json.loads(l)
+        except Exception:
+            continue
+        if not isinstance(d, dict) or d.get('isSidechain'):
+            continue
+        if d.get('type') == 'user' and cc_mode._is_real_user(d):
+            cur = None
+            if d.get('uuid'):
+                uuids.add(d['uuid'])
+            t = _recover_user_text(d)
+            if t:
+                msgs.append({'role': 'user', 'content': t, '_ts': _recover_ts(d), '_mid': 'rec-' + str(d.get('uuid') or uuid.uuid4())[:40]})
+        elif d.get('type') == 'assistant':
+            c = (d.get('message') or {}).get('content')
+            t = c if isinstance(c, str) else ''.join(
+                b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
+            if not t.strip():
+                continue
+            if cur is None:
+                cur = {'role': 'assistant', 'content': '', '_ts': _recover_ts(d)}
+                msgs.append(cur)
+            cur['content'] = (cur['content'] + ('\n\n' if cur['content'] else '') + t.strip())
+    msgs = [m for m in msgs if m['content']]
+    return msgs, uuids
+
+
+@app.route('/api/cc-recover', methods=['GET'])
+def cc_recover():
+    import glob as _g
+    base = (os.environ.get('CLAUDE_CONFIG_DIR') or '').strip() or os.path.expanduser('~/.claude')
+    files = _g.glob(os.path.join(base, 'projects', '*', '*.jsonl'))
+    sid2key = {}
+    for k, v in (cc_mode._map_load(DATA_DIR) or {}).items():
+        if isinstance(v, dict) and v.get('session_id'):
+            sid2key[v['session_id']] = k
+    sessions = []
+    for p in files:
+        sid = os.path.basename(p)[:-6]
+        key = sid2key.get(sid)
+        if key in _RECOVER_SKIP_KEYS:
+            continue
+        msgs, uuids = _recover_session(p)
+        if not any(m['role'] == 'assistant' for m in msgs) or not any(m['role'] == 'user' for m in msgs):
+            continue
+        sessions.append({'sid': sid, 'key': key, 'msgs': msgs, 'uuids': uuids})
+    # 「重新生成」会复制出一份前半段一样的会话：被别的会话完整包含的就不要了
+    sessions.sort(key=lambda s: -len(s['uuids']))
+    kept = []
+    for s in sessions:
+        if s['uuids'] and any(s['uuids'] <= k['uuids'] for k in kept):
+            if s['key'] and not any(k['key'] for k in kept if s['uuids'] <= k['uuids']):
+                for k in kept:          # 被包含的那份才是前端认的对话号，把号让给大的那份
+                    if s['uuids'] <= k['uuids'] and not k['key']:
+                        k['key'] = s['key']
+                        break
+            continue
+        kept.append(s)
+    out = []
+    for s in kept:
+        m = s['msgs']
+        fu = next((x['content'] for x in m if x['role'] == 'user'), '对话')
+        out.append({'id': s['key'] or ('rec-' + s['sid'][:12]), 'title': fu[:20],
+                    'preview': m[-1]['content'][:30], 'updatedAt': max(x['_ts'] for x in m) or 0,
+                    'messages': m})
+    out.sort(key=lambda c: -c['updatedAt'])
+    return jsonify({'convs': out})
 
 
 # ---------- 断线后他在后台说完的那段，网页回来取 ----------

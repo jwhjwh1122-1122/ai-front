@@ -2223,6 +2223,7 @@ async function boot() {
   if (!window.markWake) { const e = $('wake-cost'); if (e) e.textContent = wi <= 55 ? '这个间隔在缓存有效期（1 小时）内，每次醒来便宜。' : '超过 1 小时，缓存会过期，每次醒来要全价重建一次 system。想省就选 45 分以内。'; }
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   renderWakeExtra();
+  await recoverFromServer();
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
