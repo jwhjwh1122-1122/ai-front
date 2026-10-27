@@ -1078,6 +1078,42 @@ _RESUME_MISS = ('no conversation found', 'session not found', 'no session found'
 # ------------------------------------------------------------
 # 跑一次 claude，把输出翻成前端格式
 # ------------------------------------------------------------
+# 「整个脑子看一遍」：他读 OB 读回来一大份（按量算，不按时间），这份单独存着，
+# 上下文窗口滑过去、换新会话都不丢；为了某一两条去查的小量结果照常跟着聊天走。
+# 后来又整个看了一遍，就换成新的那份。
+# ------------------------------------------------------------
+BRAIN_MIN_CHARS = int(os.environ.get('CC_BRAIN_MIN_CHARS') or 3000)
+BRAIN_MAX_CHARS = int(os.environ.get('CC_BRAIN_MAX_CHARS') or 60000)
+_brain_lock = threading.Lock()
+
+
+def _is_ob_read(name):
+    if not name.startswith('mcp__'):
+        return False
+    parts = name.split('__')
+    return (len(parts) >= 3 and parts[1] == 'ob') or parts[-1] in ('breath', 'dream', 'breath_search', 'breath_advanced')
+
+
+def brain_path(data_dir):
+    return os.path.join(data_dir, 'cc_brain.json')
+
+
+def save_brain(data_dir, key, name, text):
+    text = (text or '').strip()
+    if not key or len(text) < BRAIN_MIN_CHARS or not _is_ob_read(name or ''):
+        return
+    with _brain_lock:
+        m = _jload(brain_path(data_dir), {})
+        m[key] = {'text': text[:BRAIN_MAX_CHARS], 'tool': name, 'ts': int(time.time())}
+        _jsave(brain_path(data_dir), m)
+    print(f'[cc] 记下整份记忆 #{_short(key)}（{name}，{len(text)} 字）', flush=True)
+
+
+def load_brain(data_dir, key):
+    return ((_jload(brain_path(data_dir), {}) or {}).get(key) or {}).get('text') or ''
+
+
+# ------------------------------------------------------------
 class _Run:
     def __init__(self, data_dir, key, mids=None):
         self.data_dir, self.key = data_dir, key
@@ -1174,9 +1210,14 @@ class _Run:
                     elif b.get('type') == 'image':
                         parts.append('[图片]')
             txt = '\n'.join(parts)
+        name = (self.tools.get(tid) or {}).get('name', '')
+        if not is_error:
+            try:
+                save_brain(self.data_dir, self.key, name, txt)
+            except Exception as e:
+                print(f'[cc] 存整份记忆失败: {e}', flush=True)
         if len(txt) > self.TOOL_TEXT_MAX:
             txt = txt[:self.TOOL_TEXT_MAX] + '\n…（太长，截断了）'
-        name = (self.tools.get(tid) or {}).get('name', '')
         return [sse({'type': 'cc_tool', 'phase': 'result', 'id': tid, 'name': name,
                      'result': txt, 'is_error': bool(is_error)})]
 

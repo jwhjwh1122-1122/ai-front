@@ -227,6 +227,7 @@ DEFAULT_PERSONA = {
 LAST_CC_SYS = os.path.join(DATA_DIR, 'cc_last_system.json')
 LAST_CC_REQ = os.path.join(DATA_DIR, 'cc_last_req.json')
 RECAP_FROZEN = os.path.join(DATA_DIR, 'cc_recap_frozen.json')
+BRAIN_FROZEN = os.path.join(DATA_DIR, 'cc_brain_frozen.json')   # 每个会话开头定下来的「整份记忆」
 CTX_WIN_FILE = os.path.join(DATA_DIR, 'cc_ctx_win.json')   # 每个对话当前会话是按几轮上下文开的
 
 
@@ -315,7 +316,7 @@ def notebook_tool(args):
     return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
 
 
-def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None):
+def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None, brain_text=''):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -339,6 +340,9 @@ def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook
         if (rec.get('text') or '').strip():
             parts.append("【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                          "记不清细节就问她。\n" + rec['text'].strip())
+    if (brain_text or '').strip():
+        parts.append("【你之前整个看过一遍的记忆】\n这是你在这段对话里从记忆库整个读过的一遍，"
+                     "聊天记录滑出窗口也不会丢，一直在你手里。\n" + brain_text.strip())
     if notebook is None:
         nb = load_nb()
         notebook = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
@@ -2421,13 +2425,18 @@ def chat_v2():
             frozen[cc_key] = (load_recap(data.get('_conv_id')).get('text') or '') \
                 if data.get('_conv_id') and win != 0 else ''
             jwrite(RECAP_FROZEN, frozen)
+        # 整个脑子看过的那一大份：跟「更早的事」一样，开新会话时定下来，同一个会话里不变（缓存不断）
+        brain_frozen = jread(BRAIN_FROZEN, {})
+        if cc_mode.get_session(DATA_DIR, cc_key) is None or cc_key not in brain_frozen:
+            brain_frozen[cc_key] = cc_mode.load_brain(DATA_DIR, cc_key)
+            jwrite(BRAIN_FROZEN, brain_frozen)
         # 醒来时用跟这次聊天一样的设置（思考、深度、MCP、模型不一样，整段缓存也会断）
         jwrite(LAST_CC_REQ, {'effort': data.get('_effort'), 'thinking': data.get('_thinking') is not False,
                              'mcp': data.get('_mcp'), 'model': data.get('model')})
         notebook = nb_current(prev_talk)
         system_prompt = build_system(persona, "\n".join(x for x in stable if x),
                                      conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook,
-                                     recap_text=frozen.get(cc_key, ''))
+                                     recap_text=frozen.get(cc_key, ''), brain_text=brain_frozen.get(cc_key, ''))
         try:
             if jread(LAST_CC_SYS, {}).get('text') != system_prompt:
                 jwrite(LAST_CC_SYS, {'text': system_prompt})   # 醒来时用同一份
