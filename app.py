@@ -2417,7 +2417,9 @@ def chat_v2():
         # 「更早的事」在同一个 Claude Code 会话里一字不动（变了整段缓存就断）；只在开新会话时换成最新的
         frozen = jread(RECAP_FROZEN, {})
         if cc_mode.get_session(DATA_DIR, cc_key) is None or cc_key not in frozen:
-            frozen[cc_key] = (load_recap(data.get('_conv_id')).get('text') or '') if data.get('_conv_id') else ''
+            # 上下文开「全部」时他已经看得到所有原话，压缩版先不带（不删，调回限制时又带上）
+            frozen[cc_key] = (load_recap(data.get('_conv_id')).get('text') or '') \
+                if data.get('_conv_id') and win != 0 else ''
             jwrite(RECAP_FROZEN, frozen)
         # 醒来时用跟这次聊天一样的设置（思考、深度、MCP、模型不一样，整段缓存也会断）
         jwrite(LAST_CC_REQ, {'effort': data.get('_effort'), 'thinking': data.get('_thinking') is not False,
@@ -2433,7 +2435,8 @@ def chat_v2():
             pass
     else:
         system_prompt = build_system(persona, "\n".join(x for x in volatile + stable if x),
-                                     conv_id=data.get('_conv_id'))
+                                     conv_id=data.get('_conv_id'),
+                                     recap_text='' if str(data.get('_ctx')) == '0' else None)   # 「全部」不带压缩版
 
     if is_cc:
         # cc 模式：不走上游 API，在服务器上跑 claude -p（用订阅登录），输出格式和下面一样
