@@ -2239,6 +2239,8 @@ async function boot() {
   try { const p = await jget('/api/persona'); $('wake-prompt').value = p.wake_prompt || ''; CFG.call_user = p.call_user; showUserStatus(localStorage.getItem('user-status')); } catch (e) { }
   renderWakeExtra();
   await recoverFromServer();
+  mergeRecovered();
+  setupMultiSelect();
   if (window.__storeRestored) toast('已从服务器恢复你的数据');
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && localStorage.getItem('conv-' + last)) loadConv(last);
@@ -3396,4 +3398,86 @@ async function renderNotebook() {
     el.style.color = d.text ? 'var(--text)' : 'var(--text-muted)';
     $('nb-count').textContent = d.text ? `${d.text.length} / ${d.max} 字` : '';
   } catch (e) { el.textContent = '—'; }
+}
+
+// ============ 多选消息 → 放进新窗口继续 ============
+// 顶上的 ☑ 进入多选：点消息勾上/取消，底下一条栏「放进新窗口」把勾上的按原来顺序复制到一个新对话里，原对话不动
+let selMode = false;
+const selIdx = new Set();
+function setupMultiSelect() {
+  if ($('sel-bar')) return;
+  const st = document.createElement('style');
+  st.textContent = `
+#messages.selecting .msg-row[data-msg-idx]{position:relative;cursor:pointer;padding-left:30px;transition:background .15s}
+#messages.selecting .msg-row[data-msg-idx]::before{content:'';position:absolute;left:6px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;border:1.5px solid var(--text-muted,#aaa);box-sizing:border-box;background:var(--bg,#fff)}
+#messages.selecting .msg-row.sel-on::before{background:#d47898;border-color:#d47898;box-shadow:inset 0 0 0 3px var(--bg,#fff)}
+#messages.selecting .msg-row.sel-on{background:rgba(212,120,152,.12);border-radius:12px}
+#messages.selecting .msg-row *{pointer-events:none}
+#sel-bar{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:none;align-items:center;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--bg,#fff);border-top:1px solid rgba(212,120,152,.25);box-shadow:0 -4px 16px rgba(0,0,0,.06);font-size:14px}
+#sel-bar.open{display:flex}
+#sel-bar .sel-n{flex:1;color:var(--text-muted,#888)}
+#sel-bar button{border:none;border-radius:16px;padding:8px 14px;font-size:14px;background:rgba(212,120,152,.12);color:#c0607f}
+#sel-bar button.sel-go{background:#d47898;color:#fff}
+#sel-bar button:disabled{opacity:.45}`;
+  document.head.appendChild(st);
+  const bar = document.createElement('div');
+  bar.id = 'sel-bar';
+  bar.innerHTML = '<span class="sel-n">点消息来选</span><button data-a="all">全选</button><button data-a="cancel">取消</button><button class="sel-go" data-a="go" disabled>放进新窗口</button>';
+  document.body.appendChild(bar);
+  bar.querySelector('[data-a="cancel"]').onclick = exitSelect;
+  bar.querySelector('[data-a="all"]').onclick = () => {
+    const rows = [...$('messages').querySelectorAll('.msg-row[data-msg-idx]')];
+    const allOn = rows.length && rows.every(r => selIdx.has(parseInt(r.dataset.msgIdx)));
+    rows.forEach(r => { const i = parseInt(r.dataset.msgIdx); if (allOn) selIdx.delete(i); else selIdx.add(i); r.classList.toggle('sel-on', !allOn); });
+    updSelBar();
+  };
+  bar.querySelector('[data-a="go"]').onclick = selToNewConv;
+  const btn = $('btn-select');
+  if (btn) btn.onclick = () => { if (selMode) exitSelect(); else enterSelect(); };
+  $('messages').addEventListener('click', e => {
+    if (!selMode) return;
+    e.preventDefault(); e.stopPropagation();
+    const row = e.target.closest('.msg-row[data-msg-idx]'); if (!row) return;
+    const i = parseInt(row.dataset.msgIdx);
+    if (selIdx.has(i)) selIdx.delete(i); else selIdx.add(i);
+    row.classList.toggle('sel-on', selIdx.has(i));
+    updSelBar();
+  }, true);
+}
+function updSelBar() {
+  const n = selIdx.size, bar = $('sel-bar'); if (!bar) return;
+  bar.querySelector('.sel-n').textContent = n ? `已选 ${n} 条` : '点消息来选';
+  bar.querySelector('[data-a="go"]').disabled = !n;
+}
+function enterSelect() {
+  if (isTyping) { toast('等他说完再选'); return; }
+  showPage('chat');
+  selMode = true; selIdx.clear();
+  $('messages').classList.add('selecting');
+  $('sel-bar').classList.add('open');
+  updSelBar();
+}
+function exitSelect() {
+  selMode = false; selIdx.clear();
+  $('messages').classList.remove('selecting');
+  $('messages').querySelectorAll('.sel-on').forEach(r => r.classList.remove('sel-on'));
+  $('sel-bar').classList.remove('open');
+}
+function selToNewConv() {
+  if (!selIdx.size) return;
+  // 一条他的回复后面常跟着工具调用/结果：只挑勾上的那几条本身，按原来的先后
+  const picked = [...selIdx].sort((a, b) => a - b).map(i => messages[i]).filter(Boolean)
+    .map(m => JSON.parse(JSON.stringify(m)));
+  if (!picked.length) return;
+  const n = picked.length;
+  exitSelect();
+  if (messages.length) saveConv();
+  const id = genId();
+  try { localStorage.setItem('conv-' + id, JSON.stringify(picked)); }
+  catch (e) { toast('手机存储满了，没放进去'); return; }
+  messages = picked; currentConvId = id;
+  saveConv();
+  loadConv(id);
+  if (typeof renderConvs === 'function') renderConvs();
+  toast(`${n} 条放进新窗口了，接着聊吧`);
 }

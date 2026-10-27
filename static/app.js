@@ -1539,6 +1539,39 @@ async function recoverFromServer() {
   }
   localStorage.setItem('cc-recovered-1', String(Date.now()));
 }
+// 找回来的是按服务器上一段段会话切的，碎在好几个对话里：按时间拼回一个（只做一次，别的对话不碰）
+function mergeRecovered() {
+  if (localStorage.getItem('rec-merged-1')) return;
+  const list = getConvs(), parts = [];
+  for (const c of list) {
+    let msgs = [];
+    try { msgs = JSON.parse(localStorage.getItem('conv-' + c.id) || '[]'); } catch (e) { }
+    if (msgs.some(m => m && typeof m._mid === 'string' && m._mid.startsWith('rec-'))) parts.push({ c, msgs });
+  }
+  if (parts.length < 2) { localStorage.setItem('rec-merged-1', '1'); return; }
+  const seen = new Set(), all = [];
+  parts.forEach((p, pi) => p.msgs.forEach((m, mi) => {
+    const k = m._mid || (m.role + '|' + (m._ts || '') + '|' + (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)));
+    if (seen.has(k)) return;
+    seen.add(k); all.push({ m, pi, mi });
+  }));
+  // 按时间排；没有时间的跟着原来那段的顺序走
+  all.sort((a, b) => ((a.m._ts || 0) - (b.m._ts || 0)) || (a.pi - b.pi) || (a.mi - b.mi));
+  const merged = all.map(x => x.m);
+  const id = 'rec-all-' + Date.now();
+  try { localStorage.setItem('conv-' + id, JSON.stringify(merged)); }
+  catch (e) { toast('手机存储不够，没合并成'); return; }
+  const gone = new Set(parts.map(p => p.c.id));
+  const nl = list.filter(c => !gone.has(c.id));
+  const last = merged[merged.length - 1];
+  nl.unshift({ id, title: '找回的聊天记录', preview: typeof last?.content === 'string' ? last.content.slice(0, 30) : '', updatedAt: Math.max(...merged.map(m => m._ts || 0)) || Date.now() });
+  nl.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  saveConvs(nl);
+  gone.forEach(cid => { localStorage.removeItem('conv-' + cid); localStorage.removeItem('recap-done-' + cid); });
+  if (gone.has(localStorage.getItem('current-conv-id'))) localStorage.setItem('current-conv-id', id);
+  localStorage.setItem('rec-merged-1', '1');
+  toast(`找回的 ${parts.length} 段已经拼成一个对话了`);
+}
 // 老记录里直接存着 base64 图片，最占地方。存不下时把它们换成一句文字再存
 const isDataImg = c => c && c.type === 'image_url' && /^data:/.test(c.image_url?.url || '');
 function stripDataImages(list) {
