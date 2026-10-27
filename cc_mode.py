@@ -1078,11 +1078,11 @@ _RESUME_MISS = ('no conversation found', 'session not found', 'no session found'
 # ------------------------------------------------------------
 # 跑一次 claude，把输出翻成前端格式
 # ------------------------------------------------------------
-# 「整个脑子看一遍」：他读 OB 读回来一大份（按量算，不按时间），这份单独存着，
-# 上下文窗口滑过去、换新会话都不丢；为了某一两条去查的小量结果照常跟着聊天走。
-# 后来又整个看了一遍，就换成新的那份。
+# 「整个脑子看一遍」：不设固定字数，按这段对话里读 OB 读回来的「量」比大小——
+# 读得最多的那次就是整个脑子，单独存着，上下文窗口滑过去、换新会话都不丢。
+# 大鱼吃小鱼：之后再读，只有比存着的那份更多才换掉；
+# 为了一两条去查的小量结果挤不掉它，照常跟着聊天走。
 # ------------------------------------------------------------
-BRAIN_MIN_CHARS = int(os.environ.get('CC_BRAIN_MIN_CHARS') or 3000)
 BRAIN_MAX_CHARS = int(os.environ.get('CC_BRAIN_MAX_CHARS') or 60000)
 _brain_lock = threading.Lock()
 
@@ -1100,11 +1100,14 @@ def brain_path(data_dir):
 
 def save_brain(data_dir, key, name, text):
     text = (text or '').strip()
-    if not key or len(text) < BRAIN_MIN_CHARS or not _is_ob_read(name or ''):
+    if not key or not text or not _is_ob_read(name or ''):
         return
     with _brain_lock:
         m = _jload(brain_path(data_dir), {})
-        m[key] = {'text': text[:BRAIN_MAX_CHARS], 'tool': name, 'ts': int(time.time())}
+        old = (m.get(key) or {})
+        if len(text) <= int(old.get('size') or len(old.get('text') or '')):
+            return   # 没比存着的那份多：小鱼，不换
+        m[key] = {'text': text[:BRAIN_MAX_CHARS], 'size': len(text), 'tool': name, 'ts': int(time.time())}
         _jsave(brain_path(data_dir), m)
     print(f'[cc] 记下整份记忆 #{_short(key)}（{name}，{len(text)} 字）', flush=True)
 
