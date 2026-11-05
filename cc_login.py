@@ -253,6 +253,11 @@ def register_cc_login(app, data_dir):
                 if tok:
                     try:
                         _save_token(data_dir, tok)
+                        try:   # 换了令牌：额度缓存作废，下次按新账号重新查
+                            import cc_usage
+                            cc_usage.reset_cache()
+                        except Exception:
+                            pass
                     except Exception as e:
                         return _PAGE.format(body=f'<div class="msg err">拿到令牌但保存失败：'
                                             f'{html.escape(_mask(str(e)))}</div>')

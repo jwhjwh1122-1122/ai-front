@@ -63,6 +63,57 @@ function resetText(ms) {
   const wk = '日一二三四五六'[d.getDay()];
   return `周${wk} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 重置`;
 }
+// 总额度 = 已用 token / 已用百分比；算出来记在手机上，会话和每周分开存
+const TOK_SRC = '<span class="tok-src">（本地统计）</span>';
+let ccAcct = '';   // 服务器给的账号键（哈希），总额度按账号分开存
+const QUOTA_KEY = k => 'cc-quota-total-' + (ccAcct || 'none') + '-' + k;
+const fmtCap = n => { n = Number(n) || 0; return n < 1000 ? String(Math.round(n)) : n < 1e6 ? +(n / 1000).toPrecision(3) + 'k' : +(n / 1e6).toPrecision(3) + 'M'; };
+function quotaTotal(key, used, pct) {
+  if (used > 0 && typeof pct === 'number' && pct >= 1) {
+    const total = used / (pct / 100);
+    try { localStorage.setItem(QUOTA_KEY(key), String(Math.round(total))); } catch (e) { }
+    return total;
+  }
+  let v = 0;
+  try { v = Number(localStorage.getItem(QUOTA_KEY(key))) || 0; } catch (e) { }
+  return v > 0 ? v : null;
+}
+// 返回 { pct（没有则 null）, est（是不是估的）, main, rem }
+function quotaOf(l, w, apiOk) {
+  const hasPct = typeof l.pct === 'number';
+  const used = w && w.total ? Number(w.total) : 0;
+  const tracked = !!w;   // 只有会话 / 每周这两项这边有 token 统计
+  if (hasPct) {
+    const pct = l.pct;
+    const total = tracked ? quotaTotal(l.key, used, pct) : null;
+    const left = Math.max(0, 100 - pct);
+    if (total) return {
+      pct, est: false,
+      main: `${Math.round(pct)}% 已用 · ${fmtTok(used)} / ${fmtCap(total)} tok${TOK_SRC}`,
+      rem: `剩余 ${Math.round(left)}% · 约 ${fmtTok(Math.max(0, total - used))} tok${TOK_SRC}`,
+    };
+    return { pct, est: false, main: `${Math.round(pct)}% 已用`, rem: `剩余 ${Math.round(left)}%` };
+  }
+  const total = tracked ? quotaTotal(l.key, used, null) : null;
+  if (!apiOk) {
+    // 用量接口这次没查到：明说查不到，不画进度条；只附一行按本账号本地统计的估算
+    const pct = total ? used / total * 100 : null;
+    return {
+      pct: null, est: !!total, estPct: pct, main: '暂时查不到',
+      rem: total ? `本地估算 ≈${Math.round(pct)}% 已用 · ${fmtTok(used)} / ≈${fmtCap(total)} tok${TOK_SRC}`
+        : (tracked && used ? `已用 ${fmtTok(used)} tok${TOK_SRC}` : ''),
+    };
+  }
+  if (total) {
+    const pct = used / total * 100, left = Math.max(0, 100 - pct);
+    return {
+      pct, est: true,
+      main: `≈${Math.round(pct)}% 已用 · ${fmtTok(used)} / ≈${fmtCap(total)} tok${TOK_SRC}`,
+      rem: `剩余 ≈${Math.round(left)}% · 约 ${fmtTok(Math.max(0, total - used))} tok${TOK_SRC}`,
+    };
+  }
+  return { pct: null, est: false, main: '上限未知' + (tracked ? ` · 已用 ${fmtTok(used)} tok${TOK_SRC}` : ''), rem: '' };
+}
 let ccUsageAt = 0;
 async function loadCcUsage(force) {
   const body = $('cc-usage-body'); if (!body) return;
@@ -72,36 +123,41 @@ async function loadCcUsage(force) {
   try { d = await jget('/api/cc/usage'); } catch (e) { body.innerHTML = '<div class="settings-sub">读不到额度</div>'; return; }
   if (!d || !d.ok) { body.innerHTML = `<div class="settings-sub">${esc((d && d.error) || '读不到额度')}</div>`; return; }
   const tk = d.tokens || {};
+  ccAcct = d.account || '';
+  const apiOk = d.source === 'api';
   const tokLine = (w, word) => w && w.count
-    ? `${word} ${w.count} 次 · 耗 <b>${fmtTok(w.total)}</b> tok（新输入 ${fmtTok(w.in + w.cw)} · 读缓存 ${fmtTok(w.cr)} · 输出 ${fmtTok(w.out)}）`
+    ? `${word} ${w.count} 次 · 耗 <b>${fmtTok(w.total)}</b> tok（新输入 ${fmtTok(w.in + w.cw)} · 读缓存 ${fmtTok(w.cr)} · 输出 ${fmtTok(w.out)}）${TOK_SRC}`
     : `${word}还没用过`;
   let html = '';
+  const qs = {};
   for (const l of d.limits || []) {
-    const has = typeof l.pct === 'number';
-    const pct = has ? Math.round(l.pct) : null;
-    const cls = !has ? 'unknown' : pct >= 100 ? 'full' : pct >= 80 ? 'warn' : '';
+    // 接口没查到时，Claude Code 自己报的限额事件里带的百分比也可能有，那是当前账号的、没过重置时间的，照常用
+    const q = quotaOf(l, tk[l.key], apiOk || typeof l.pct === 'number');
+    qs[l.key] = q;
+    const cls = q.pct == null ? '' : q.pct >= 100 ? 'full' : q.pct >= 80 ? 'warn' : '';
     let sub = resetText(l.resets_at);
     if (l.key === 'five_hour') sub += ' · ' + tokLine(tk.five_hour, '这个窗口');
     else if (l.key === 'seven_day') sub += ' · ' + tokLine(tk.seven_day, '这周');
     if (l.status === 'allowed_warning') sub += ' · <span style="color:#e0a23a">快用完了</span>';
     if (l.status === 'rejected') sub += ' · <span style="color:#e8506a">已用完</span>';
-    html += `<div class="usage-row"><div class="usage-top"><span class="usage-name">${esc(l.label)}</span>
-      <span class="usage-pct">${has ? pct + '% 已用' : '百分比未知'}</span></div>
-      <div class="usage-bar"><div class="usage-fill ${cls}" style="width:${has ? Math.min(100, pct) : 0}%"></div></div>
+    html += `<div class="usage-row"><div class="usage-top"><span class="usage-name">${esc(l.label)}</span></div>
+      <div class="usage-q">${q.main}</div>${q.rem ? `<div class="usage-q usage-rem">${q.rem}</div>` : ''}
+      ${q.pct == null ? '' : `<div class="usage-bar"><div class="usage-fill ${cls}" style="width:${Math.min(100, Math.max(0, q.pct))}%"></div></div>`}
       <div class="usage-sub">${sub}</div></div>`;
   }
   if (d.context) {
     html += `<div class="usage-row"><div class="usage-top"><span class="usage-name">当前上下文</span>
-      <span class="usage-pct">${fmtTok(d.context.tokens)} tok</span></div>
-      <div class="usage-sub">上一条回复：读进 <b>${fmtTok(d.context.tokens)}</b> tok、写出 <b>${fmtTok(d.context.out)}</b> tok${d.context.model ? ' · ' + esc(d.context.model) : ''}</div></div>`;
+      <span class="usage-pct">${fmtTok(d.context.tokens)} tok${TOK_SRC}</span></div>
+      <div class="usage-sub">上一条回复：读进 <b>${fmtTok(d.context.tokens)}</b> tok、写出 <b>${fmtTok(d.context.out)}</b> tok${TOK_SRC}${d.context.model ? ' · ' + esc(d.context.model) : ''}</div></div>`;
   }
   body.innerHTML = html || '<div class="settings-sub">还没有数据，聊一句再来看</div>';
   $('cc-usage-src').textContent = d.source === 'api'
     ? '百分比来自 Claude 用量接口 · 刚刚更新'
-    : `百分比拿不到：${d.api_error || '未知原因'}。token 数是这边自己记的`;
+    : `百分比暂时查不到：${d.api_error || '未知原因'}。token 数是这边自己记的（只算当前账号）`;
   const five = (d.limits || []).find(x => x.key === 'five_hour');
-  foldSum('cc-usage-card', !five || (typeof five.pct !== 'number' && !five.resets_at) ? '还没有数据'
-    : ((typeof five.pct === 'number' ? Math.round(five.pct) + '% · ' : '') + resetText(five.resets_at)));
+  const fq = five && qs.five_hour;
+  foldSum('cc-usage-card', !five || (fq.pct == null && !five.resets_at) ? '还没有数据'
+    : ((fq.pct != null ? (fq.est ? '≈' : '') + Math.round(fq.pct) + '% · ' : '') + resetText(five.resets_at)));
 }
 
 // ============ 排查记录 ============
@@ -129,7 +185,15 @@ async function loadCcRuns() {
       ? `<span class="run-ok">${esc(m.name)} ✓</span>` : `<span class="run-bad">${esc(m.name)} ✗(${esc(m.status)})</span>`).join(' · '));
     if ((r.tools || []).length) lines.push('调用工具：' + r.tools.map(n => esc(toolLabel(n))).join('、'));
     if (r.skipped_dup) lines.push(`跳过 ${r.skipped_dup} 条他已经收到过的消息（防重复）`);
-    if (r.tokens) lines.push(`token：新输入 ${fmtTok((r.tokens.in || 0) + (r.tokens.cw || 0))} · 读缓存 ${fmtTok(r.tokens.cr)} · 输出 ${fmtTok(r.tokens.out)}`);
+    if (r.tokens) {
+      const fresh = (r.tokens.in || 0) + (r.tokens.cw || 0), cr = r.tokens.cr || 0;
+      let hitTxt = '';
+      if (fresh + cr > 0) {
+        const hit = Math.round(cr / (fresh + cr) * 100);
+        hitTxt = ` · <span class="${hit >= 90 ? 'hit-good' : hit >= 70 ? 'hit-mid' : 'hit-bad'}">命中 ${hit}%</span>`;
+      }
+      lines.push(`token：新输入 ${fmtTok(fresh)} · 读缓存 ${fmtTok(cr)} · 输出 ${fmtTok(r.tokens.out)}${hitTxt}`);
+    }
     if (r.error) lines.push(`<span class="run-bad">错误：${esc(r.error)}</span>`);
     const box = document.createElement('div'); box.className = 'run-item';
     box.innerHTML = `<div class="run-h"><span>${t} · <span class="${cls}">${word}</span>${bad && r.outcome === 'done' ? ' · <span class="run-bad">有问题</span>' : ''}</span><span>${r.dur}s</span></div>${lines.map(x => `<div>${x}</div>`).join('')}`;

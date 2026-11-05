@@ -858,3 +858,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 
 /* 思考第二个框：翻译 */
 .thinking-wrap.thinking-trans{margin-top:4px;opacity:.95}
+.usage-q{font-size:13px;color:var(--text);margin-top:4px;line-height:1.5;}
+.usage-q.usage-rem{font-size:12px;color:var(--text-muted);margin-top:1px;}
+.tok-src{font-size:10px;color:var(--text-muted);font-weight:400;margin-left:2px;}
+.hit-good{color:#3a9a5b;} .hit-mid{color:#e0a23a;} .hit-bad{color:#e8506a;}

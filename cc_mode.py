@@ -339,9 +339,15 @@ def note_rate_limit(data_dir, info):
     if isinstance(util, (int, float)):
         item['pct'] = float(util) * 100 if util <= 1 else float(util)
     path = os.path.join(data_dir, 'cc_ratelimit.json')
+    acct = active_token(data_dir)[2]
     with _rec_lock:
         d = _jload(path, {})
-        d[kind] = item
+        if not isinstance(d, dict):
+            d = {}
+        # 按账号分开存：{账号键: {窗口: 记录}}。以前不分账号的老记录留在文件里，但不再被读
+        if not isinstance(d.get(acct), dict):
+            d[acct] = {}
+        d[acct][kind] = item
         _jsave(path, d)
 
 
@@ -353,7 +359,8 @@ def record_usage(data_dir, usage, model, tag):
     item = {'ts': int(now * 1000), 'model': (model or '')[:60], 'conv': tag,
             'in': int(usage.get('input_tokens') or 0), 'out': int(usage.get('output_tokens') or 0),
             'cr': int(usage.get('cache_read_input_tokens') or 0),
-            'cw': int(usage.get('cache_creation_input_tokens') or 0)}
+            'cw': int(usage.get('cache_creation_input_tokens') or 0),
+            'acct': active_token(data_dir)[2]}
     with _rec_lock:
         items = [x for x in _jload(path, []) if x.get('ts', 0) >= (now - USAGE_KEEP_SEC) * 1000]
         items.append(item)
@@ -372,12 +379,18 @@ def load_runs(data_dir):
     return list(reversed(_jload(os.path.join(data_dir, 'cc_runs.json'), [])))
 
 
-def load_usage(data_dir):
-    return _jload(os.path.join(data_dir, 'cc_usage.json'), [])
+def load_usage(data_dir, acct=None):
+    """给了 acct 就只要这个账号的记录（以前没记账号的老记录不算任何账号的）。"""
+    items = _jload(os.path.join(data_dir, 'cc_usage.json'), [])
+    if acct is None:
+        return items
+    return [x for x in items if isinstance(x, dict) and x.get('acct') == acct]
 
 
-def load_rate_limits(data_dir):
-    return _jload(os.path.join(data_dir, 'cc_ratelimit.json'), {})
+def load_rate_limits(data_dir, acct):
+    d = _jload(os.path.join(data_dir, 'cc_ratelimit.json'), {})
+    v = d.get(acct) if isinstance(d, dict) and acct else None
+    return v if isinstance(v, dict) else {}
 
 
 # ------------------------------------------------------------
@@ -997,6 +1010,46 @@ def _file_token(data_dir):
             return f.read().strip()
     except OSError:
         return ''
+
+
+ACCT_PREFIX = 'acct-'
+
+
+def _acct_key(raw):
+    return ACCT_PREFIX + hashlib.sha256(str(raw).encode('utf-8', 'ignore')).hexdigest()[:12]
+
+
+def _cred_account_id(base, oa):
+    """登录凭据是哪个账号：用 .claude.json 里的 accountUuid（访问令牌会定期刷新，不能拿它当账号）。"""
+    for p in (os.path.join(base, '.claude.json'), os.path.expanduser('~/.claude.json')):
+        acc = _jload(p, {})
+        acc = acc.get('oauthAccount') if isinstance(acc, dict) else None
+        if isinstance(acc, dict) and acc.get('accountUuid'):
+            return 'uuid:' + str(acc['accountUuid'])
+    return 'refresh:' + str(oa.get('refreshToken') or 'cred')
+
+
+def active_token(data_dir):
+    """聊天实际在用的那个令牌，顺序跟 child_env / claude 自己一致：
+    环境变量 CLAUDE_CODE_OAUTH_TOKEN → /cc-login 存的令牌 → 登录凭据文件。
+    返回 (来源, 令牌, 账号键)；令牌为空表示没有可用的。
+    账号键是哈希，只用来把记录按账号分开，不含令牌本身。"""
+    env_tok = (os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') or '').strip()
+    if env_tok:
+        return '环境变量令牌', env_tok, _acct_key('tok:' + env_tok)
+    ft = _file_token(data_dir)
+    if ft:
+        return '网页登录令牌', ft, _acct_key('tok:' + ft)
+    base = (os.environ.get('CLAUDE_CONFIG_DIR') or '').strip() or os.path.expanduser('~/.claude')
+    cred = _jload(os.path.join(base, '.credentials.json'), {})
+    oa = cred.get('claudeAiOauth') if isinstance(cred, dict) else None
+    if isinstance(oa, dict) and oa.get('accessToken'):
+        key = _acct_key(_cred_account_id(base, oa))
+        exp = oa.get('expiresAt')
+        if isinstance(exp, (int, float)) and exp < time.time() * 1000:
+            return '登录凭据（已过期）', '', key
+        return '登录凭据', oa['accessToken'], key
+    return '', '', ''
 
 
 def child_env(data_dir=None):
