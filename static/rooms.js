@@ -51,6 +51,17 @@ const foldSum = (cardId, text) => { const e = document.querySelector(`#${cardId}
 
 // ============ Claude 额度条 ============
 const fmtTok = n => { n = Number(n) || 0; return n < 1000 ? String(n) : n < 1e6 ? (n / 1000).toFixed(1) + 'k' : (n / 1e6).toFixed(2) + 'M'; };
+// 显示用的名字：纯本地备注，优先于人设里的 name（那个是发给他、进系统提示的，改了要重建缓存）
+function displayName() {
+  try { const v = localStorage.getItem('lin-name-local'); if (v) return v; } catch (e) { }
+  return CFG.name || '凛';
+}
+function applyDisplayName() {
+  const nm = displayName();
+  const ln = $('lin-name'); if (ln) ln.textContent = nm;
+  const at = $('avatar-text'); if (at) at.textContent = nm[0];
+  const cs = $('cs-name'); if (cs) cs.textContent = nm;
+}
 function resetText(ms) {
   if (!ms) return '重置时间未知';
   const left = ms - Date.now();
@@ -419,7 +430,7 @@ async function saveHighlight() {
 function annotHTML(a, kind) {
   const where = kind === 'book' ? '' : ` · ${fmtTime(a.pos)}`;
   return `<div class="annot ${a.author === 'user' ? 'mine' : ''}" data-aid="${a.id}">
-    <div class="annot-who">${a.author === 'user' ? '你' : (CFG.name || '凛')}${where}</div>
+    <div class="annot-who">${a.author === 'user' ? '你' : displayName()}${where}</div>
     ${a.quote ? `<div class="annot-quote">「${esc(a.quote)}」</div>` : ''}
     <div class="annot-text">${esc(a.text)}</div>
     <div class="annot-foot"><span data-reply="${a.id}">回一句</span><span data-del="${a.id}">撕掉</span></div>
@@ -1131,7 +1142,7 @@ async function openMailbox() {
   $('mail-sub').textContent = `${parts.length} 封`;
   el.innerHTML = parts.map(p => {
     const mine = /user|简雯慧|宝宝/.test(p.slice(0, 40));
-    return `<div class="letter"><div class="letter-from">${mine ? '你写的' : (CFG.name || '凛') + '写的'}</div>
+    return `<div class="letter"><div class="letter-from">${mine ? '你写的' : displayName() + '写的'}</div>
       <div class="letter-body">${esc(p.trim())}</div><div class="stamp">✉</div></div>`;
   }).join('');
 }
@@ -1376,7 +1387,7 @@ async function openDimPanel(key) {
     const t = new Date(m.ts);
     return `<div class="mv">
       <div class="mv-t">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
-      <div class="mv-b"><div class="mv-why">${esc(m.why)}${m.who !== 'sys' ? `<span class="mv-who">${m.who === 'lin' ? (CFG.name || '凛') : (CFG.call_user || '宝宝')}改的</span>` : ''}</div>
+      <div class="mv-b"><div class="mv-why">${esc(m.why)}${m.who !== 'sys' ? `<span class="mv-who">${m.who === 'lin' ? displayName() : (CFG.call_user || '宝宝')}改的</span>` : ''}</div>
         <div class="mv-d">${Math.round(c.from)} <b>${c.to > c.from ? '↑' : '↓'}</b> ${Math.round(c.to)}</div></div></div>`;
   }).join('') : '<div class="settings-sub">还没有变过</div>';
 }
@@ -1429,7 +1440,7 @@ async function openMoves() {
   if (!list.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有动过</div>'; return; }
   el.innerHTML = list.map(m => {
     const t = new Date(m.ts);
-    const who = m.who === 'lin' ? (CFG.name || '凛') : (m.who === 'user' ? (CFG.call_user || '宝宝') : '');
+    const who = m.who === 'lin' ? displayName() : (m.who === 'user' ? (CFG.call_user || '宝宝') : '');
     return `<div class="dispute">
       <div class="dp-head">${t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}${who ? ` · ${who}改的` : ''}</div>
       <div class="dp-why" style="border:none;padding:0;margin:0;">${esc(m.why)}</div>
@@ -1488,11 +1499,11 @@ async function startCall(who) {
   $('callscreen').classList.add('open');
   $('call-pill').classList.remove('on');
   CALL.mini = false;
-  $('cs-name').textContent = CFG.name || '凛';
+  $('cs-name').textContent = displayName();
   const av = localStorage.getItem('chat-avatar-ai');
   const ae = $('cs-avatar');
   if (av) { ae.classList.add('has-img'); ae.innerHTML = '<img src="' + av + '">'; }
-  else { ae.classList.remove('has-img'); ae.innerHTML = '<span>' + (CFG.name || '凛')[0] + '</span>'; }
+  else { ae.classList.remove('has-img'); ae.innerHTML = '<span>' + displayName()[0] + '</span>'; }
   ae.classList.add('ring');
   csState('正在接通…'); csCaption(''); $('cs-timer').textContent = '';
   csWave(0);
@@ -1976,7 +1987,7 @@ function doSearch() {
   Object.entries(byConv).forEach(([cid, list]) => {
     h += '<div class="sr-conv">' + esc(list[0].title) + '　<span>' + list.length + ' 条</span></div>';
     list.slice(0, 40).forEach(m => {
-      const who = m.role === 'user' ? (CFG.call_user || '宝宝') : (CFG.name || '凛');
+      const who = m.role === 'user' ? (CFG.call_user || '宝宝') : displayName();
       h += '<div class="sr-item" data-conv="' + cid + '" data-idx="' + m.idx + '">' +
         '<div class="sr-who">' + esc(who) + '</div>' +
         '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>';
@@ -2042,13 +2053,13 @@ async function openMoments() {
   items.forEach(p => {
     const mine = p.author === 'user';
     const av = mine ? avU : avL;
-    const nm = mine ? (CFG.call_user || '宝宝') : (CFG.name || '凛');
+    const nm = mine ? (CFG.call_user || '宝宝') : displayName();
     const d = document.createElement('div');
     d.className = 'post';
     const liked = (p.likes || []).includes('user');
     const cms = (p.comments || []).map(c =>
-      `<div class="post-cm" data-cid="${c.id}"><b>${c.author === 'user' ? esc(CFG.call_user || '宝宝') : esc(CFG.name || '凛')}</b>：${emojiHtml(c.text)}<span class="x" data-delcm="${c.id}">✕</span></div>`).join('');
-    const likeTxt = (p.likes || []).map(x => x === 'user' ? (CFG.call_user || '宝宝') : (CFG.name || '凛')).join('、');
+      `<div class="post-cm" data-cid="${c.id}"><b>${c.author === 'user' ? esc(CFG.call_user || '宝宝') : esc(displayName())}</b>：${emojiHtml(c.text)}<span class="x" data-delcm="${c.id}">✕</span></div>`).join('');
+    const likeTxt = (p.likes || []).map(x => x === 'user' ? (CFG.call_user || '宝宝') : displayName()).join('、');
     d.innerHTML = `
       <div class="post-av${av ? ' has-img' : ''}">${av ? `<img src="${av}">` : esc(nm[0])}</div>
       <div class="post-main">
@@ -2248,7 +2259,6 @@ let personaOrig = {};
 const PF = ['core', 'rhythm', 'lines', 'always'];
 function personaRead() {
   return {
-    name: $('p-name').value.trim(),
     core: $('p-core').value, rhythm: $('p-rhythm').value, lines: $('p-lines').value,
     always: $('p-always').value,
     call_user: $('p-call').value.trim(), call_serious: $('p-call2').value.trim(),
@@ -2259,7 +2269,6 @@ function personaRead() {
   };
 }
 function personaFill(p) {
-  $('p-name').value = p.name || '';
   $('p-core').value = p.core || ''; $('p-rhythm').value = p.rhythm || ''; $('p-lines').value = p.lines || '';
   $('p-always').value = p.always || '';
   $('p-call').value = p.call_user || ''; $('p-call2').value = p.call_serious || '';
@@ -2286,10 +2295,6 @@ async function savePersona() {
   const r = await jpost('/api/persona', d);
   if (r.error) { toast(r.error); return; }
   CFG = { ...CFG, ...d };
-  const nm = CFG.name || '凛';
-  $('lin-name').textContent = nm;
-  const at = $('avatar-text'); if (at) at.textContent = nm[0];
-  const cs = $('cs-name'); if (cs) cs.textContent = nm;
   personaOrig = personaRead(); personaMeter();
   toast('生效了，下一句就是新的他');
 }
@@ -2297,8 +2302,7 @@ async function savePersona() {
 // ============ 启动 ============
 async function boot() {
   try { CFG = await jget('/api/config'); } catch (e) { CFG = {}; }
-  $('lin-name').textContent = CFG.name || '凛';
-  const at0 = $('avatar-text'); if (at0) at0.textContent = (CFG.name || '凛')[0];
+  applyDisplayName();
   showLinState(CFG.lin_status);
   const theme = localStorage.getItem('theme') || '';
   document.body.className = theme ? 'theme-' + theme : '';
@@ -2553,13 +2557,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // 顶栏
   $('btn-theme').onclick = e => { e.stopPropagation(); $('theme-menu').classList.toggle('open'); $('avatar-menu').classList.remove('open'); };
   $('avatar').onclick = e => { e.stopPropagation(); $('avatar-menu').classList.toggle('open'); $('theme-menu').classList.remove('open'); };
-  // 长按名字改名字，跟长按表情是同一套手势
+  // 长按名字改名字：纯本地备注，不进人设、不发给他、不碰缓存——只是这边显示用哪个称呼
   {
     let nameTimer = null;
-    const openRename = async () => {
-      await openPersona();
-      const nm = $('p-name'); if (nm) { nm.scrollIntoView({ block: 'center' }); nm.focus(); }
+    const openRename = () => {
       if (navigator.vibrate) navigator.vibrate(12);
+      const cur = displayName();
+      const next = prompt('怎么称呼他？（只有你这边显示会变，不影响他自己、不会重新算缓存）', cur);
+      if (next === null) return;
+      const v = next.trim();
+      try {
+        if (v && v !== (CFG.name || '凛')) localStorage.setItem('lin-name-local', v);
+        else localStorage.removeItem('lin-name-local');
+      } catch (e) { }
+      applyDisplayName();
     };
     const nameEl = $('lin-name');
     if (nameEl) {

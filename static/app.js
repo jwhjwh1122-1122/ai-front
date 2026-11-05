@@ -830,7 +830,7 @@ function addCallBubble(info, idx, force) {
   const av = mine ? localStorage.getItem('chat-avatar-user') : localStorage.getItem('chat-avatar-ai');
   const ah = av
     ? `<div class="msg-avatar${mine ? '' : ' msg-avatar-lin'} has-img"><img src="${av}"></div>`
-    : `<div class="msg-avatar${mine ? '' : ' msg-avatar-lin'}">${mine ? '' : (CFG.name || '凛')[0]}</div>`;
+    : `<div class="msg-avatar${mine ? '' : ' msg-avatar-lin'}">${mine ? '' : displayName()[0]}</div>`;
   const ico = info.kind === 'missed'
     ? '<svg viewBox="0 0 24 24" class="cb-ico miss"><path d="M4 15c4-4 12-4 16 0l-2.5 2.5a1.5 1.5 0 0 1-2 .1l-1.6-1.3a1.5 1.5 0 0 0-1-.3h-2.8a1.5 1.5 0 0 0-1 .3l-1.6 1.3a1.5 1.5 0 0 1-2-.1z"/><path d="M15 9l5-5M20 9l-5-5" class="x"/></svg>'
     : '<svg viewBox="0 0 24 24" class="cb-ico"><path d="M4 15c4-4 12-4 16 0l-2.5 2.5a1.5 1.5 0 0 1-2 .1l-1.6-1.3a1.5 1.5 0 0 0-1-.3h-2.8a1.5 1.5 0 0 0-1 .3l-1.6 1.3a1.5 1.5 0 0 1-2-.1z"/></svg>';
@@ -904,7 +904,7 @@ function editMsg(row) {
 function startAiBubble(idx) {
   const av = localStorage.getItem('chat-avatar-ai');
   const ah = av ? `<div class="msg-avatar msg-avatar-lin has-img"><img src="${av}"></div>`
-    : `<div class="msg-avatar msg-avatar-lin">${(CFG.name || '凛')[0]}</div>`;
+    : `<div class="msg-avatar msg-avatar-lin">${displayName()[0]}</div>`;
   const row = document.createElement('div'); row.className = 'msg-row';
   if (idx !== undefined) row.dataset.msgIdx = idx;
   row.innerHTML = `${ah}<div class="bubble-wrap"></div>`;
