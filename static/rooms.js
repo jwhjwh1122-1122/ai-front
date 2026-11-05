@@ -2248,6 +2248,7 @@ let personaOrig = {};
 const PF = ['core', 'rhythm', 'lines', 'always'];
 function personaRead() {
   return {
+    name: $('p-name').value.trim(),
     core: $('p-core').value, rhythm: $('p-rhythm').value, lines: $('p-lines').value,
     always: $('p-always').value,
     call_user: $('p-call').value.trim(), call_serious: $('p-call2').value.trim(),
@@ -2258,6 +2259,7 @@ function personaRead() {
   };
 }
 function personaFill(p) {
+  $('p-name').value = p.name || '';
   $('p-core').value = p.core || ''; $('p-rhythm').value = p.rhythm || ''; $('p-lines').value = p.lines || '';
   $('p-always').value = p.always || '';
   $('p-call').value = p.call_user || ''; $('p-call2').value = p.call_serious || '';
@@ -2284,6 +2286,10 @@ async function savePersona() {
   const r = await jpost('/api/persona', d);
   if (r.error) { toast(r.error); return; }
   CFG = { ...CFG, ...d };
+  const nm = CFG.name || '凛';
+  $('lin-name').textContent = nm;
+  const at = $('avatar-text'); if (at) at.textContent = nm[0];
+  const cs = $('cs-name'); if (cs) cs.textContent = nm;
   personaOrig = personaRead(); personaMeter();
   toast('生效了，下一句就是新的他');
 }
@@ -2292,6 +2298,7 @@ async function savePersona() {
 async function boot() {
   try { CFG = await jget('/api/config'); } catch (e) { CFG = {}; }
   $('lin-name').textContent = CFG.name || '凛';
+  const at0 = $('avatar-text'); if (at0) at0.textContent = (CFG.name || '凛')[0];
   showLinState(CFG.lin_status);
   const theme = localStorage.getItem('theme') || '';
   document.body.className = theme ? 'theme-' + theme : '';
