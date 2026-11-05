@@ -778,11 +778,13 @@ function bumpUnread() {
   p.textContent = (unreadCount > 99 ? '99+' : unreadCount) + ' 条新消息 ↓';
   p.classList.add('show');
 }
+// 一条完整的消息真的落定了才算一条未读，不是流式更新尝试滚动多少次就算多少——
+// 不然一条回复流式吐几十次字，没数字意义全乱了，看着像跟「往上翻了多远/等了多久」挂钩
+function markUnreadIfAway() { if (!isNearBottom()) bumpUnread(); }
 // force=true：不管看没看到底，直接滚过去（自己发消息、刚打开聊天这些场景）
 function scrollBottom(force) {
   const m = msgBox(); if (!m) return;
   if (force || isNearBottom()) { m.scrollTop = m.scrollHeight; clearUnread(); }
-  else bumpUnread();
 }
 $('unread-pill')?.addEventListener('click', () => scrollBottom(true));
 document.addEventListener('scroll', e => {
@@ -840,6 +842,7 @@ function addCallBubble(info, idx, force) {
       <span class="msg-time">${info.time || ''}</span></div></div>`;
   row.querySelector('.call-b').onclick = () => { if (typeof openCallLog === 'function') openCallLog(); };
   msgBox().appendChild(row);
+  if (!mine && !force) markUnreadIfAway();   // 他那边的通话记录（比如未接来电）才算未读，自己这边的不算
   scrollBottom(force);
 }
 // imgs：一张就是字符串，多张传数组；null/空都算没有图。force：自己刚发的/刚打开对话，不管在不在最底下都滚过去
@@ -976,6 +979,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   wrap.appendChild(foot);
   const tl = tokLine(tokens);
   if (tl) { const tk = document.createElement('div'); tk.className = 'msg-tok'; tk.innerHTML = tl; wrap.appendChild(tk); }
+  markUnreadIfAway();   // 这条回复真的说完了，不在最底下就记一条未读——不是流式更新时记的
   scrollBottom();
 }
 // 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97%——跟排查记录那条 token 行同一套格式和配色
