@@ -1549,7 +1549,14 @@ async function fetchPending() {
   const last = messages[messages.length - 1];
   if (last && last.role === 'assistant') last.content = d.text;
   else messages.push({ role: 'assistant', content: d.text });
-  saveConv(); loadConv(currentConvId);
+  saveConv();
+  // loadConv 会整页重画、强制滚到底——锁屏/切后台回来找补消息时，
+  // 如果本来就在翻聊天记录，不该被这一下拽回底部，而是跟平时回复一样：不在底部就只冒未读
+  const box = msgBox();
+  const wasAway = !!box && !isNearBottom();
+  const oldTop = box ? box.scrollTop : 0;
+  loadConv(currentConvId);
+  if (wasAway && box) { box.scrollTop = oldTop; markUnreadIfAway(); }
   return true;
 }
 let pendingWatch = null;
