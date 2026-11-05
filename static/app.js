@@ -6,6 +6,8 @@ const CTX_WARN = 120000, CTX_SWITCH = 160000;   // 到这两个点，提醒该�
 
 let CFG = {};
 let messages = [], isTyping = false, totalTokens = 0, lastCacheRead = 0;
+let lastInTok = 0, lastOutTok = 0;   // 这一轮的进/出 token，算每条消息底下的 token/命中率用
+// 新输入 = inTok - cacheRead（inTok 本来就是 新输入 + 缓存写 + 缓存读 的总和，减掉读缓存那块剩下的都算新的）
 let pendingChatImgs = [], editingMsgIdx = null;
 let currentAudio = null, currentAudioBtn = null, voicePlayingEl = null;
 let currentModel = 'anthropic/claude-sonnet-4-6';
@@ -956,7 +958,6 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   const foot = document.createElement('div'); foot.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const time = document.createElement('span'); time.className = 'msg-time'; time.textContent = nowStr();
   foot.appendChild(time);
-  if (tokens > 0) { const tk = document.createElement('span'); tk.className = 'msg-time'; tk.textContent = `· ${tokens}`; foot.appendChild(tk); }
   const cap = rawText || text;
   const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 25, 'ฅ': 21, '⊞': 20, '♡': 21 };
   const mk = (label, title, fn) => {
@@ -972,7 +973,21 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
   mk('✎', '复制', () => copyText(cap));
   if (/<[a-z][\s\S]*>/i.test(cap) && cap.length > 200)
     mk('⊞', '收进抽屉', () => saveToDrawer(cap));
-  wrap.appendChild(foot); scrollBottom();
+  wrap.appendChild(foot);
+  const tl = tokLine(tokens);
+  if (tl) { const tk = document.createElement('div'); tk.className = 'msg-tok'; tk.innerHTML = tl; wrap.appendChild(tk); }
+  scrollBottom();
+}
+// 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97%——跟排查记录那条 token 行同一套格式和配色
+function tokLine(tk) {
+  if (!tk || (!tk.in && !tk.out)) return '';
+  const cr = tk.cr || 0, fresh = Math.max(0, (tk.in || 0) - cr), out = tk.out || 0;
+  let hit = '';
+  if (fresh + cr > 0) {
+    const pct = Math.round(cr / (fresh + cr) * 100);
+    hit = ` · <span class="${pct >= 90 ? 'hit-good' : pct >= 70 ? 'hit-mid' : 'hit-bad'}">命中 ${pct}%</span>`;
+  }
+  return `新输入 ${fmtTok(fresh)} · 读缓存 ${fmtTok(cr)} · 输出 ${fmtTok(out)}${hit}`;
 }
 async function showTrans(wrap, text) {
   let box = wrap.querySelector('.trans-box');
@@ -1243,6 +1258,7 @@ async function streamResponse(wrap, hist) {
   } catch (e) { if (e.name !== 'AbortError') throw e; }
   if (abortController === ac) abortController = null;
   totalTokens = inTok + outTok;
+  lastInTok = inTok; lastOutTok = outTok;
   drawTokens(inTok, outTok);
   // 记一笔，自己的账自己算
   if (inTok || outTok) {
@@ -1287,7 +1303,9 @@ async function streamResponse(wrap, hist) {
   if (responseText) {
     // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
     streamSegs(wrap, responseText, true);
-    updateBubble(wrap, responseText, true, responseText, currentAiRow, outTok);
+    const tokInfo = (lastInTok || lastOutTok) ? { in: lastInTok, out: lastOutTok, cr: lastCacheRead } : null;
+    updateBubble(wrap, responseText, true, responseText, currentAiRow, tokInfo);
+    if (tokInfo && messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1]._tok = tokInfo;
     saveConv();
   }
   return { text: responseText, toolUses, stopReason, contentBlocks };
@@ -1773,7 +1791,7 @@ function renderOneMsg(msg, i) {
             wrap.appendChild(b); currentBubble = b;
           });
         }
-        updateBubble(wrap, text, true, text, currentAiRow);
+        updateBubble(wrap, text, true, text, currentAiRow, msg._tok);
       }
       currentBubble = null; currentAiRow = null;
     }

@@ -110,6 +110,7 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .bubble-imgs-fold{display:none;margin-top:3px;font-size:12px;color:var(--text-muted);cursor:pointer;}
 .bubble-imgs.open .bubble-imgs-fold{display:inline-block;}
 .msg-time{font-size:10px;color:var(--text-muted);padding:0 3px;}
+.msg-tok{font-size:10px;color:var(--text-muted);padding:0 3px;margin-top:1px;}
 /* 图标：比原来大一圈，好点 */
 .msg-action-btn{font-size:17px;color:var(--text-muted);cursor:pointer;opacity:.62;padding:3px 5px;border-radius:5px;line-height:1;}
 .msg-action-btn:active{opacity:1;background:var(--border);}

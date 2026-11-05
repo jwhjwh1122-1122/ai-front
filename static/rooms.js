@@ -2553,6 +2553,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // 顶栏
   $('btn-theme').onclick = e => { e.stopPropagation(); $('theme-menu').classList.toggle('open'); $('avatar-menu').classList.remove('open'); };
   $('avatar').onclick = e => { e.stopPropagation(); $('avatar-menu').classList.toggle('open'); $('theme-menu').classList.remove('open'); };
+  // 长按名字改名字，跟长按表情是同一套手势
+  {
+    let nameTimer = null;
+    const openRename = async () => {
+      await openPersona();
+      const nm = $('p-name'); if (nm) { nm.scrollIntoView({ block: 'center' }); nm.focus(); }
+      if (navigator.vibrate) navigator.vibrate(12);
+    };
+    const nameEl = $('lin-name');
+    if (nameEl) {
+      nameEl.addEventListener('touchstart', () => { nameTimer = setTimeout(openRename, 550); }, { passive: true });
+      nameEl.addEventListener('touchend', () => clearTimeout(nameTimer));
+      nameEl.addEventListener('touchmove', () => clearTimeout(nameTimer), { passive: true });
+      nameEl.addEventListener('contextmenu', ev => { ev.preventDefault(); openRename(); });
+    }
+  }
   $('btn-convs').onclick = () => { renderConvs(); $('conv-panel').classList.add('open'); };
   document.addEventListener('click', () => { $('theme-menu').classList.remove('open'); $('avatar-menu').classList.remove('open'); });
   document.querySelectorAll('.theme-option').forEach(o => o.onclick = () => {
