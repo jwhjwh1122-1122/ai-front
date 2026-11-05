@@ -124,6 +124,14 @@ async function loadCcUsage(force) {
   if (!d || !d.ok) { body.innerHTML = `<div class="settings-sub">${esc((d && d.error) || '读不到额度')}</div>`; return; }
   const tk = d.tokens || {};
   ccAcct = d.account || '';
+  // 换账号了：删掉手机上别的账号（和以前不分账号时）存的总额度
+  try {
+    if (ccAcct && localStorage.getItem('cc-quota-acct') !== ccAcct) {
+      Object.keys(localStorage).filter(k => k.startsWith('cc-quota-total-') && !k.startsWith('cc-quota-total-' + ccAcct + '-'))
+        .forEach(k => localStorage.removeItem(k));
+      localStorage.setItem('cc-quota-acct', ccAcct);
+    }
+  } catch (e) { }
   const apiOk = d.source === 'api';
   const tokLine = (w, word) => w && w.count
     ? `${word} ${w.count} 次 · 耗 <b>${fmtTok(w.total)}</b> tok（新输入 ${fmtTok(w.in + w.cw)} · 读缓存 ${fmtTok(w.cr)} · 输出 ${fmtTok(w.out)}）${TOK_SRC}`

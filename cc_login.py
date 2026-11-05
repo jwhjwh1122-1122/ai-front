@@ -252,12 +252,19 @@ def register_cc_login(app, data_dir):
                 tok = _find_token(s['buf'])
                 if tok:
                     try:
+                        try:
+                            prev_acct = cc_mode.active_token(data_dir)[2]
+                        except Exception:
+                            prev_acct = ''
                         _save_token(data_dir, tok)
-                        try:   # 换了令牌：额度缓存作废，下次按新账号重新查
+                        try:   # 换了令牌：额度缓存作废；聊天真换了账号的话，删掉上一个账号的记录
                             import cc_usage
                             cc_usage.reset_cache()
-                        except Exception:
-                            pass
+                            new_acct = cc_mode.active_token(data_dir)[2]
+                            if prev_acct and prev_acct != new_acct:
+                                cc_mode.clear_account_records(data_dir, prev_acct)
+                        except Exception as e:
+                            print(f'[cc-login] 清旧账号记录失败: {type(e).__name__}', flush=True)
                     except Exception as e:
                         return _PAGE.format(body=f'<div class="msg err">拿到令牌但保存失败：'
                                             f'{html.escape(_mask(str(e)))}</div>')

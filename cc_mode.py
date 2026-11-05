@@ -393,6 +393,24 @@ def load_rate_limits(data_dir, acct):
     return v if isinstance(v, dict) else {}
 
 
+def clear_account_records(data_dir, acct):
+    """换账号时删掉上一个账号的用量记录和限额记录（/cc-login 存新令牌后调用）。"""
+    if not acct:
+        return
+    with _rec_lock:
+        up = os.path.join(data_dir, 'cc_usage.json')
+        items = _jload(up, None)
+        if isinstance(items, list):
+            keep = [x for x in items if not (isinstance(x, dict) and x.get('acct') == acct)]
+            if len(keep) != len(items):
+                _jsave(up, keep)
+        rp = os.path.join(data_dir, 'cc_ratelimit.json')
+        d = _jload(rp, None)
+        if isinstance(d, dict) and acct in d:
+            d.pop(acct, None)
+            _jsave(rp, d)
+
+
 # ------------------------------------------------------------
 # 前端会话 id  ->  claude session_id 的映射，存成 json 文件
 # ------------------------------------------------------------
