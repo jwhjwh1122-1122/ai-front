@@ -183,6 +183,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .settings-sub{font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.6;}
 .token-bar-wrap{height:4px;background:var(--border);border-radius:2px;margin:8px 0 4px;overflow:hidden;}
 .token-bar{height:100%;background:var(--accent);border-radius:2px;width:0;transition:width .4s;}
+.token-bar.warn{background:#e0a23a;}
+.token-bar.full{background:#e8506a;}
 .ctx-option{padding:6px 16px;border-radius:20px;border:1.5px solid var(--border);font-size:13px;cursor:pointer;background:var(--input-bg);color:var(--text);}
 .ctx-option.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .mini-input{width:100%;padding:8px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;}

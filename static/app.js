@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 const MCP_PROXY = '/api/mcp';
 const CONTEXT_LIMIT = 200000;
+const CTX_WARN = 120000, CTX_SWITCH = 160000;   // 到这两个点，提醒该考虑/该换新窗口了
 
 let CFG = {};
 let messages = [], isTyping = false, totalTokens = 0, lastCacheRead = 0;
@@ -521,19 +522,20 @@ function trimOld(m, isRecent) {
   }
   return touched ? { ...m, content: c } : m;
 }
-let recapDone = 0, recapBusy = false, recapFailN = 0, recapFailAt = 0;
+let recapDone = 0, recapBusy = false, recapFailN = 0;
 // 一次最多压这么多条，不然压缩失败一次（网络抖动、DeepSeek 超时）以后，
 // 没压的那段会越攒越大，越大越容易再失败，越失败越攒——卡死在那儿不会自己好
 const RECAP_CHUNK_MAX = 40;
-// 滑出窗口的那些不能直接丢，先送去压成前情提要
+// 滑出窗口的那些不能直接丢，先送去压成前情提要。只要还有没压的就一直压，不会因为失败过就歇着不试
 async function recapIfNeeded(msgs) {
   if (recapBusy || !ctxWindow || !currentConvId) return;
-  if (recapFailN >= 3 && Date.now() - recapFailAt < 60000) return;   // 连续失败先歇一会，别每句话都重试
   const cut = Math.min(Math.max(0, msgs.length - ctxWindow), recapDone + RECAP_CHUNK_MAX);
-  if (cut - recapDone < 6) return;   // 攒够几条再压，省得频繁调
+  // 上下文已经挺大了：攒 2 条就压，不等到 6 条，别让没压完的部分拖着上下文一起涨
+  const minGap = totalTokens >= CTX_WARN ? 2 : 6;
+  if (cut - recapDone < minGap) return;
   const chunk = msgs.slice(recapDone, cut)
     .filter(m => !m._internal && m.role !== 'tool' && !hasToolResult(m));
-  if (chunk.length < 4) { recapDone = cut; return; }
+  if (chunk.length < 2) { recapDone = cut; return; }
   recapBusy = true;
   try {
     const r = await jpost('/api/recap', {
@@ -549,10 +551,11 @@ async function recapIfNeeded(msgs) {
       localStorage.setItem('recap-done-' + currentConvId, String(cut));
       recapFailN = 0;
     } else {
-      recapFailN++; recapFailAt = Date.now();
-      if (recapFailN === 3) toast('前情提要压缩卡住了，等会儿会自动重试');
+      recapFailN++;
+      if (recapFailN === 3) toast('前情提要压缩卡住了，还在重试');
+      else if (recapFailN && recapFailN % 15 === 0) toast(`前情提要已经连续 ${recapFailN} 次没压成，还在试`);
     }
-  } catch (e) { recapFailN++; recapFailAt = Date.now(); }
+  } catch (e) { recapFailN++; }
   recapBusy = false;
 }
 function buildMsgs(msgs) {
@@ -1289,13 +1292,29 @@ async function streamResponse(wrap, hist) {
   }
   return { text: responseText, toolUses, stopReason, contentBlocks };
 }
+// 这一窗的上下文到没到该换的时候：120K 先提醒一声，160K 催着换，每个对话各记各的提醒过没有
+let ctxWarnedAt = { warn: false, switch: false };
+function checkCtxThreshold(inTok) {
+  if (inTok >= CTX_SWITCH && !ctxWarnedAt.switch) {
+    ctxWarnedAt.switch = true;
+    toast(`这窗上下文到 ${Math.round(inTok / 1000)}k 了，建议找个时间点「+新建」换个新窗口`);
+  } else if (inTok >= CTX_WARN && !ctxWarnedAt.warn) {
+    ctxWarnedAt.warn = true;
+    toast(`这窗上下文过 ${Math.round(inTok / 1000)}k 了，快到建议换窗的量了`);
+  }
+}
 function drawTokens(inTok, outTok) {
+  checkCtxThreshold(inTok);
   const u = $('token-used');
   if (!u) return;
   const fresh = Math.max(0, inTok - lastCacheRead);
   u.textContent = (inTok + outTok).toLocaleString();
   const bar = $('token-bar');
-  if (bar) bar.style.width = Math.min(100, (inTok + outTok) / CONTEXT_LIMIT * 100) + '%';
+  if (bar) {
+    bar.style.width = Math.min(100, (inTok + outTok) / CONTEXT_LIMIT * 100) + '%';
+    bar.classList.toggle('full', inTok >= CTX_SWITCH);
+    bar.classList.toggle('warn', inTok >= CTX_WARN && inTok < CTX_SWITCH);
+  }
   const r = $('token-remain');
   if (!r) return;
   // 缓存那部分只算十分之一，实付才是真正花的钱
@@ -1740,6 +1759,7 @@ function loadConv(id) {
   if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
+  ctxWarnedAt = { warn: false, switch: false };   // 换了个窗口，上下文量提醒重新算
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
@@ -1801,6 +1821,7 @@ function newConv(fresh) {
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
   recapDone = 0;
+  ctxWarnedAt = { warn: false, switch: false };
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
