@@ -1292,15 +1292,31 @@ async function streamResponse(wrap, hist) {
   }
   return { text: responseText, toolUses, stopReason, contentBlocks };
 }
-// 这一窗的上下文到没到该换的时候：120K 先提醒一声，160K 催着换，每个对话各记各的提醒过没有
+// 水位警戒线：跟当前这一刻的真实 token 量走，不是「提醒过一次就不管了」。
+// 过线就亮、提示一句；掉回线下就灭，下次再过线还会响——跟警铃一样，会响也会停。
+// inTok 是模型自己报的这一轮实际输入 token，本来就是 Claude Code 这个会话此刻的真实大小，
+// 不用再按「限了多少条 + 压缩了多少字」自己拼一遍——不管开没开上下文条数限制，这个数都是准的。
 let ctxWarnedAt = { warn: false, switch: false };
 function checkCtxThreshold(inTok) {
-  if (inTok >= CTX_SWITCH && !ctxWarnedAt.switch) {
-    ctxWarnedAt.switch = true;
-    toast(`这窗上下文到 ${Math.round(inTok / 1000)}k 了，建议找个时间点「+新建」换个新窗口`);
-  } else if (inTok >= CTX_WARN && !ctxWarnedAt.warn) {
-    ctxWarnedAt.warn = true;
-    toast(`这窗上下文过 ${Math.round(inTok / 1000)}k 了，快到建议换窗的量了`);
+  const pill = $('ctx-warn-pill');
+  if (inTok < CTX_WARN) {
+    ctxWarnedAt.warn = false; ctxWarnedAt.switch = false;
+    if (pill) pill.classList.remove('show', 'full');
+    return;
+  }
+  if (inTok >= CTX_SWITCH) {
+    if (pill) { pill.classList.add('show', 'full'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k · 该换窗了`; }
+    if (!ctxWarnedAt.switch) {
+      ctxWarnedAt.switch = true;
+      toast(`这窗上下文到 ${Math.round(inTok / 1000)}k 了，建议找个时间点「+新建」换个新窗口`);
+    }
+  } else {
+    ctxWarnedAt.switch = false;   // 退回预警区：下次真的过了 160K 还会再提一次
+    if (pill) { pill.classList.add('show'); pill.classList.remove('full'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k`; }
+    if (!ctxWarnedAt.warn) {
+      ctxWarnedAt.warn = true;
+      toast(`这窗上下文过 ${Math.round(inTok / 1000)}k 了，快到建议换窗的量了`);
+    }
   }
 }
 function drawTokens(inTok, outTok) {
@@ -1768,6 +1784,7 @@ function loadConv(id) {
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
   ctxWarnedAt = { warn: false, switch: false };   // 换了个窗口，上下文量提醒重新算
+  $('ctx-warn-pill')?.classList.remove('show', 'full');
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
@@ -1830,6 +1847,7 @@ function newConv(fresh) {
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
   recapDone = 0;
   ctxWarnedAt = { warn: false, switch: false };
+  $('ctx-warn-pill')?.classList.remove('show', 'full');
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
