@@ -978,19 +978,16 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
     mk('⊞', '收进抽屉', () => saveToDrawer(cap));
   wrap.appendChild(foot);
   const tl = tokLine(tokens);
-  if (tl) { const tk = document.createElement('div'); tk.className = 'msg-tok'; tk.innerHTML = tl; wrap.appendChild(tk); }
+  if (tl) { const tk = document.createElement('div'); tk.className = 'msg-tok'; tk.textContent = tl; wrap.appendChild(tk); }
   markUnreadIfAway();   // 这条回复真的说完了，不在最底下就记一条未读——不是流式更新时记的
   scrollBottom();
 }
-// 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97%——跟排查记录那条 token 行同一套格式和配色
+// 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97%——这行跟其它小字一个颜色，命中率不单独变色
 function tokLine(tk) {
   if (!tk || (!tk.in && !tk.out)) return '';
   const cr = tk.cr || 0, fresh = Math.max(0, (tk.in || 0) - cr), out = tk.out || 0;
   let hit = '';
-  if (fresh + cr > 0) {
-    const pct = Math.round(cr / (fresh + cr) * 100);
-    hit = ` · <span class="${pct >= 90 ? 'hit-good' : pct >= 70 ? 'hit-mid' : 'hit-bad'}">命中 ${pct}%</span>`;
-  }
+  if (fresh + cr > 0) hit = ` · 命中 ${Math.round(cr / (fresh + cr) * 100)}%`;
   return `新输入 ${fmtTok(fresh)} · 读缓存 ${fmtTok(cr)} · 输出 ${fmtTok(out)}${hit}`;
 }
 async function showTrans(wrap, text) {
