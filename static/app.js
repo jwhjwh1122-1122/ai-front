@@ -1328,12 +1328,20 @@ function drawTokens(inTok, outTok) {
     <br>其中工具占 ${toolTk}，历史约 ${Math.max(0, fresh - toolTk - 160).toLocaleString()}
     <br><span style="color:var(--accent)">这一轮实付约 ${paid.toLocaleString()} 个单位（出的字贵三倍）</span>`;
 }
+// 一轮结束就把思考、看过的图、调用过的工具都换成几个字——聊天里那行「调用了什么」
+// 是另外存的 _tools 字段，这里删了不影响显示，只是不让原始工具回执跟着存货、占地方、占上下文
 function sanitize(m) {
   if (!Array.isArray(m.content)) return m;
-  if (!m.content.some(c => c && (c.type === 'image' || c.type === 'image_url' || c.type === 'thinking'))) return m;
+  if (!m.content.some(c => c && (c.type === 'image' || c.type === 'image_url' || c.type === 'thinking' || c.type === 'tool_use' || c.type === 'tool_result'))) return m;
   return {
     ...m, content: m.content.filter(c => !(c && c.type === 'thinking'))
-      .map(c => c && (c.type === 'image' || c.type === 'image_url') ? { type: 'text', text: '（一张看过的画面）' } : c)
+      .map(c => {
+        if (!c) return c;
+        if (c.type === 'image' || c.type === 'image_url') return { type: 'text', text: '（一张看过的画面）' };
+        if (c.type === 'tool_use') return { type: 'text', text: `（调用了${typeof toolLabel === 'function' ? toolLabel(c.name) : (c.name || '工具')}）` };
+        if (c.type === 'tool_result') return { type: 'text', text: '（工具结果，不再保留原文）' };
+        return c;
+      })
   };
 }
 async function runToolLoop(wrap, origLen) {
