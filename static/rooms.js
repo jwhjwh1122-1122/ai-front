@@ -3102,7 +3102,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('auto-voice-toggle').onchange = e => localStorage.setItem('auto-voice', e.target.checked ? '1' : '0');
   $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(true); };
-  $('btn-new-conv').onclick = newConv;
+  // 「+新建」要的是真正空白的新对话，不带上一窗的任何内容（跟「清空对话」一样，都是 fresh）
+  $('btn-new-conv').onclick = () => newConv(true);
   $('btn-up-save').onclick = async () => {
     const r = await jpost('/api/upstream', upstreamBody());
     if (r.error) { toast(r.error); return; }
