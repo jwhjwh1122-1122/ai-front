@@ -666,7 +666,7 @@ def _split_list(s):
     return [x for x in s.replace(',', ' ').split() if x]
 
 
-DEFAULT_OB_URL = 'https://jwhjwh.zeabur.app/mcp'
+DEFAULT_OB_URL = ''   # 以前这里写死过一个人的 Zeabur 地址；那个人换了服务器后它就是个死链，谁也不该默认连它
 _OB_URL_FILE = None   # app.py 启动时设成 数据目录/ob_url.json（网页设置里的记忆库地址会同步进来）
 
 
