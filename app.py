@@ -4878,7 +4878,29 @@ def notebook_get():
 
 
 # ---------- 换窗口 / 会话换新：旧的压成「更早的事」 ----------
-def recap_merge_into(dst, base, msgs, upto_mid=''):
+def _recent_toxic(conv, n=6, min_bad=3, bad_ratio=0.5):
+    """最近几次运行是不是看着卡在报错/超时循环里，换窗时不该把这段原样压缩带过去。
+    判定很粗：最近 n 次里 outcome 是 error/timeout，或者 done 但带了错误信息的，占比过半、
+    且次数够多（不是偶尔一次网络抖动）才算。够不上这个条件，就按老规矩正常压缩。"""
+    if not conv:
+        return False
+    runs = [r for r in cc_mode.load_runs(DATA_DIR) if r.get('conv') == conv][:n]
+    if len(runs) < min_bad:
+        return False
+    bad = sum(1 for r in runs if r.get('outcome') in ('error', 'timeout') or r.get('error'))
+    return bad >= min_bad and bad / len(runs) >= bad_ratio
+
+
+def recap_merge_into(dst, base, msgs, upto_mid='', src=None):
+    if src and _recent_toxic(src):
+        # 这段窗口最近老是报错/超时，疑似卡在坏循环里：不压缩带过去，新窗口的「更早的事」留空，干净重开
+        print(f'[recap] {cc_mode._short(src)} 最近报错/超时太多，换窗时不压缩带过去，新窗口从空白开始', flush=True)
+        rec = load_recap(dst)
+        rec.update({'text': '', 'ts': int(time.time() * 1000), 'skipped_toxic': True})
+        if upto_mid:
+            rec['upto_mid'] = upto_mid
+        jwrite(_recap_file(dst), rec)
+        return rec
     text = _flatten(msgs or [])
     merged = base
     if len(text) >= 80:
@@ -4903,7 +4925,7 @@ def recap_handoff():
     if not dst:
         return jsonify({'error': 'no target'}), 400
     base = (load_recap(src).get('text') or '').strip() if src else ''
-    return jsonify({'ok': True, 'recap': recap_merge_into(dst, base, d.get('messages') or [])})
+    return jsonify({'ok': True, 'recap': recap_merge_into(dst, base, d.get('messages') or [], src=src)})
 
 
 @app.route('/api/wake/now', methods=['POST'])
