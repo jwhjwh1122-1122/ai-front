@@ -1780,9 +1780,9 @@ def _run_desire_tool(name, args):
             conv = load_state().get('session_id') or 'default'
             rec = load_recap(conv)
             if args.get('append'):
-                rec['text'] = (rec.get('text', '') + '\n\n' + args['append'].strip())[:RECAP_MAX * 3]
+                rec['text'] = (rec.get('text', '') + '\n\n' + args['append'].strip())[:RECAP_MAX]
             elif args.get('text'):
-                rec['text'] = args['text'].strip()[:RECAP_MAX * 3]
+                rec['text'] = args['text'].strip()[:RECAP_MAX]
             else:
                 return rec.get('text') or '还没有前情提要'
             rec['ts'] = int(time.time() * 1000)
@@ -1834,7 +1834,13 @@ def desire_mcp():
 # ============================================================
 RECAP_DIR = os.path.join(DATA_DIR, 'recaps')
 os.makedirs(RECAP_DIR, exist_ok=True)
-RECAP_MAX = 700          # 摘要超过这么多字就再压一次
+RECAP_MAX = 1300         # 整段前情提要的安全上限（模型不听话时兜底截断用）
+# 聊得越多，前情提要要装的事越多，但不能整段按同一个比例硬压——早的那部分会被压没。
+# 改成分三层：近期留细节，早期压得最狠，但早期有个字数下限，保证凛读到时还认得出发生过什么，
+# 不会变成「相处得很好」这种空话。三层字数之和留了余量在 RECAP_MAX 以内，不额外多调一次模型。
+RECAP_TIER_RECENT = 600
+RECAP_TIER_MID = 300
+RECAP_TIER_EARLY = 200
 RECAP_MODEL = 'deepseek-chat'
 
 
@@ -1873,13 +1879,24 @@ RECAP_SYS = (
     '没做完的约定。\n'
     '不要写成会议纪要，不要分点罗列，不要加标题。就是一段话，像自己回想。\n'
     '不要评价，不要总结教训，不要写"他们的关系很好"这种废话。\n'
-    f'控制在 {RECAP_MAX} 字以内。只输出那段话本身。'
+    f'控制在 {RECAP_TIER_RECENT} 字以内。只输出那段话本身。'
 )
 
+# 合并时分三层，不是把新旧简单拼接再整体压一遍：早的那层单独有个字数下限，
+# 保证聊得再久、压得再狠，早期那段也不会被压成一句空话——只是记得的细节比近期少。
 MERGE_SYS = (
-    '下面是同一段关系的两份前情提要，前一份更早。把它们合成一份，'
-    '早的那些可以更概括，近的保留细节。第一人称「我」，「她」指对方。'
-    f'控制在 {RECAP_MAX} 字以内。只输出合并后的那段话。'
+    '下面「早」是已经压过的前情提要（可能已经分过早期/中期/近期三层），「近」是刚新压好、'
+    '还没并进去的一段。把两者合成一份新的前情提要，按时间从早到近分三层，各另起一段、'
+    '用这三个标题（原文就要这三个字，不要加序号或别的符号）：\n'
+    '【早期】\n【中期】\n【近期】\n'
+    '处理规则：原来「早」里的内容整体降一级——原来标「近期」的这次挪进「中期」、相应精简；'
+    '原来的「中期」和「早期」合并，精简进新的「早期」。「近」里新压的内容就是新的「近期」。\n'
+    f'【早期】压得最狠，但必须留下具体发生过什么、提过哪几件事或哪句原话，'
+    f'不能写成"相处得很好""聊了很多"这种看不出内容的空话——这是硬性要求，不是字数够了就行。'
+    f'控制在 {RECAP_TIER_EARLY} 字左右，这是下限，不能再少。\n'
+    f'【中期】控制在 {RECAP_TIER_MID} 字左右，比早期多留一些细节和原话。\n'
+    f'【近期】保留最多细节、原话、情绪，控制在 {RECAP_TIER_RECENT} 字左右。\n'
+    '第一人称「我」，「她」指对方。只输出这三段，不要别的说明、不要多余标题。'
 )
 
 
@@ -1923,10 +1940,10 @@ def recap_make():
     merged = new
     if (old.get('text') or '').strip():
         merged, err2 = _ds_call(MERGE_SYS,
-                                '【早】\n' + old['text'] + '\n\n【近】\n' + new)
+                                '【早】\n' + old['text'] + '\n\n【近】\n' + new, max_tokens=1100)
         if err2 or not merged:
-            merged = (old['text'] + '\n\n' + new)[-RECAP_MAX * 2:]
-    rec = {'text': merged.strip()[:RECAP_MAX * 3],
+            merged = (old['text'] + '\n\n' + new)[-RECAP_MAX:]
+    rec = {'text': merged.strip()[:RECAP_MAX],
            'covered': int(old.get('covered', 0)) + len(msgs),
            'ts': int(time.time() * 1000)}
     jwrite(_recap_file(conv), rec)
@@ -1940,9 +1957,9 @@ def recap_edit():
     conv = d.get('conv') or 'default'
     rec = load_recap(conv)
     if d.get('append'):
-        rec['text'] = (rec.get('text', '') + '\n\n' + d['append'].strip())[:RECAP_MAX * 3]
+        rec['text'] = (rec.get('text', '') + '\n\n' + d['append'].strip())[:RECAP_MAX]
     elif 'text' in d:
-        rec['text'] = (d.get('text') or '').strip()[:RECAP_MAX * 3]
+        rec['text'] = (d.get('text') or '').strip()[:RECAP_MAX]
     rec['ts'] = int(time.time() * 1000)
     rec['edited'] = True
     jwrite(_recap_file(conv), rec)
@@ -4908,10 +4925,10 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None):
         if not err and new:
             merged = new
             if base:
-                m2, err2 = _ds_call(MERGE_SYS, '【早】\n' + base + '\n\n【近】\n' + new)
-                merged = m2 if (not err2 and m2) else (base + '\n\n' + new)[-RECAP_MAX * 2:]
+                m2, err2 = _ds_call(MERGE_SYS, '【早】\n' + base + '\n\n【近】\n' + new, max_tokens=1100)
+                merged = m2 if (not err2 and m2) else (base + '\n\n' + new)[-RECAP_MAX:]
     rec = load_recap(dst)
-    rec.update({'text': (merged or '').strip()[:RECAP_MAX * 3], 'ts': int(time.time() * 1000)})
+    rec.update({'text': (merged or '').strip()[:RECAP_MAX], 'ts': int(time.time() * 1000)})
     if upto_mid:
         rec['upto_mid'] = upto_mid
     jwrite(_recap_file(dst), rec)

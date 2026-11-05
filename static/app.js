@@ -521,11 +521,15 @@ function trimOld(m, isRecent) {
   }
   return touched ? { ...m, content: c } : m;
 }
-let recapDone = 0, recapBusy = false;
+let recapDone = 0, recapBusy = false, recapFailN = 0, recapFailAt = 0;
+// 一次最多压这么多条，不然压缩失败一次（网络抖动、DeepSeek 超时）以后，
+// 没压的那段会越攒越大，越大越容易再失败，越失败越攒——卡死在那儿不会自己好
+const RECAP_CHUNK_MAX = 40;
 // 滑出窗口的那些不能直接丢，先送去压成前情提要
 async function recapIfNeeded(msgs) {
   if (recapBusy || !ctxWindow || !currentConvId) return;
-  const cut = Math.max(0, msgs.length - ctxWindow);
+  if (recapFailN >= 3 && Date.now() - recapFailAt < 60000) return;   // 连续失败先歇一会，别每句话都重试
+  const cut = Math.min(Math.max(0, msgs.length - ctxWindow), recapDone + RECAP_CHUNK_MAX);
   if (cut - recapDone < 6) return;   // 攒够几条再压，省得频繁调
   const chunk = msgs.slice(recapDone, cut)
     .filter(m => !m._internal && m.role !== 'tool' && !hasToolResult(m));
@@ -543,8 +547,12 @@ async function recapIfNeeded(msgs) {
     if (!r.error) {
       recapDone = cut;
       localStorage.setItem('recap-done-' + currentConvId, String(cut));
+      recapFailN = 0;
+    } else {
+      recapFailN++; recapFailAt = Date.now();
+      if (recapFailN === 3) toast('前情提要压缩卡住了，等会儿会自动重试');
     }
-  } catch (e) { }
+  } catch (e) { recapFailN++; recapFailAt = Date.now(); }
   recapBusy = false;
 }
 function buildMsgs(msgs) {
