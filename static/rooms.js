@@ -66,6 +66,7 @@ function resetText(ms) {
 // 总额度 = 已用 token / 已用百分比；算出来记在手机上，会话和每周分开存
 const TOK_SRC = '<span class="tok-src">（本地统计）</span>';
 let ccAcct = '';   // 服务器给的账号键（哈希），总额度按账号分开存
+let ccScopeLimited = false;   // 当前令牌是不是天生没权限查用量（setup-token / 环境变量），不是临时故障
 const QUOTA_KEY = k => 'cc-quota-total-' + (ccAcct || 'none') + '-' + k;
 const fmtCap = n => { n = Number(n) || 0; return n < 1000 ? String(Math.round(n)) : n < 1e6 ? +(n / 1000).toPrecision(3) + 'k' : +(n / 1e6).toPrecision(3) + 'M'; };
 function quotaTotal(key, used, pct) {
@@ -98,8 +99,9 @@ function quotaOf(l, w, apiOk) {
   if (!apiOk) {
     // 用量接口这次没查到：明说查不到，不画进度条；只附一行按本账号本地统计的估算
     const pct = total ? used / total * 100 : null;
+    // scope_limited：这种令牌天生就没有查用量的权限，不是暂时的，别让人等它自己好
     return {
-      pct: null, est: !!total, estPct: pct, main: '暂时查不到',
+      pct: null, est: !!total, estPct: pct, main: ccScopeLimited ? '这个令牌查不到用量' : '暂时查不到',
       rem: total ? `本地估算 ≈${Math.round(pct)}% 已用 · ${fmtTok(used)} / ≈${fmtCap(total)} tok${TOK_SRC}`
         : (tracked && used ? `已用 ${fmtTok(used)} tok${TOK_SRC}` : ''),
     };
@@ -124,6 +126,7 @@ async function loadCcUsage(force) {
   if (!d || !d.ok) { body.innerHTML = `<div class="settings-sub">${esc((d && d.error) || '读不到额度')}</div>`; return; }
   const tk = d.tokens || {};
   ccAcct = d.account || '';
+  ccScopeLimited = !!d.scope_limited;
   // 换账号了：删掉手机上别的账号（和以前不分账号时）存的总额度
   try {
     if (ccAcct && localStorage.getItem('cc-quota-acct') !== ccAcct) {
@@ -142,7 +145,8 @@ async function loadCcUsage(force) {
     // 接口没查到时，Claude Code 自己报的限额事件里带的百分比也可能有，那是当前账号的、没过重置时间的，照常用
     const q = quotaOf(l, tk[l.key], apiOk || typeof l.pct === 'number');
     qs[l.key] = q;
-    const cls = q.pct == null ? '' : q.pct >= 100 ? 'full' : q.pct >= 80 ? 'warn' : '';
+    // 服务器在 limits 数组里给过颜色判断（sev_cls）就用它的，没有才用咱们自己按百分比画的档位
+    const cls = q.pct == null ? '' : (l.sev_cls != null ? l.sev_cls : (q.pct >= 100 ? 'full' : q.pct >= 80 ? 'warn' : ''));
     let sub = resetText(l.resets_at);
     if (l.key === 'five_hour') sub += ' · ' + tokLine(tk.five_hour, '这个窗口');
     else if (l.key === 'seven_day') sub += ' · ' + tokLine(tk.seven_day, '这周');
@@ -161,7 +165,7 @@ async function loadCcUsage(force) {
   body.innerHTML = html || '<div class="settings-sub">还没有数据，聊一句再来看</div>';
   $('cc-usage-src').textContent = d.source === 'api'
     ? '百分比来自 Claude 用量接口 · 刚刚更新'
-    : `百分比暂时查不到：${d.api_error || '未知原因'}。token 数是这边自己记的（只算当前账号）`;
+    : `${ccScopeLimited ? '百分比查不到' : '百分比暂时查不到'}：${d.api_error || '未知原因'}。token 数是这边自己记的（只算当前账号）`;
   const five = (d.limits || []).find(x => x.key === 'five_hour');
   const fq = five && qs.five_hour;
   foldSum('cc-usage-card', !five || (fq.pct == null && !five.resets_at) ? '还没有数据'
