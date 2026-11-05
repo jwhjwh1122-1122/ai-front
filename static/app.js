@@ -5,7 +5,7 @@ const CONTEXT_LIMIT = 200000;
 
 let CFG = {};
 let messages = [], isTyping = false, totalTokens = 0, lastCacheRead = 0;
-let pendingChatImg = null, editingMsgIdx = null;
+let pendingChatImgs = [], editingMsgIdx = null;
 let currentAudio = null, currentAudioBtn = null, voicePlayingEl = null;
 let currentModel = 'anthropic/claude-sonnet-4-6';
 let ctxWindow = 15, sendFrom = 0, currentConvId = null;
@@ -747,13 +747,40 @@ function msgBox() {
   if (roomCtx === 'netease') return $('split-msgs-netease');
   return $('messages');
 }
-function scrollBottom() { const m = msgBox(); if (m) m.scrollTop = m.scrollHeight; }
+// 只有正看着最底下时，他打字才跟着滚；往上翻着聊天记录的时候不打断，只在输入框边上冒未读条数
+const NEAR_BOTTOM_PX = 80;
+let unreadCount = 0;
+function isNearBottom() {
+  const m = msgBox(); if (!m) return true;
+  return m.scrollHeight - m.scrollTop - m.clientHeight < NEAR_BOTTOM_PX;
+}
+function clearUnread() {
+  unreadCount = 0;
+  const p = $('unread-pill'); if (p) p.classList.remove('show');
+}
+function bumpUnread() {
+  if (roomCtx) return;   // 房间那几个分区聊天先不搞这套，只管主聊天
+  unreadCount++;
+  const p = $('unread-pill'); if (!p) return;
+  p.textContent = (unreadCount > 99 ? '99+' : unreadCount) + ' 条新消息 ↓';
+  p.classList.add('show');
+}
+// force=true：不管看没看到底，直接滚过去（自己发消息、刚打开聊天这些场景）
+function scrollBottom(force) {
+  const m = msgBox(); if (!m) return;
+  if (force || isNearBottom()) { m.scrollTop = m.scrollHeight; clearUnread(); }
+  else bumpUnread();
+}
+$('unread-pill')?.addEventListener('click', () => scrollBottom(true));
+document.addEventListener('scroll', e => {
+  if (e.target === msgBox() && isNearBottom()) clearUnread();
+}, true);
 // 打开聊天：图片、表情是后加载的，加载完内容会变高，只滚一次会停在半截。
 // 这几秒里一直贴着最底下；她自己一动手指就不再管
 let pinUntil = 0;
 function pinBottom(ms = 3000) {
   pinUntil = Date.now() + ms;
-  const tick = () => { if (Date.now() > pinUntil) return; scrollBottom(); requestAnimationFrame(tick); };
+  const tick = () => { if (Date.now() > pinUntil) return; scrollBottom(true); requestAnimationFrame(tick); };
   tick();
 }
 ['touchstart', 'wheel'].forEach(ev => document.addEventListener(ev, e => {
@@ -782,7 +809,7 @@ function renderBubble(text) {
   return stickerize(renderMd(text));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
-function addCallBubble(info, idx) {
+function addCallBubble(info, idx, force) {
   const mine = info.side !== 'lin';
   const row = document.createElement('div');
   row.className = 'msg-row' + (mine ? ' user' : '');
@@ -800,15 +827,24 @@ function addCallBubble(info, idx) {
       <span class="msg-time">${info.time || ''}</span></div></div>`;
   row.querySelector('.call-b').onclick = () => { if (typeof openCallLog === 'function') openCallLog(); };
   msgBox().appendChild(row);
-  scrollBottom();
+  scrollBottom(force);
 }
-function addUserBubble(text, imgData, idx, audio) {
+// imgs：一张就是字符串，多张传数组；null/空都算没有图。force：自己刚发的/刚打开对话，不管在不在最底下都滚过去
+function addUserBubble(text, imgs, idx, audio, force) {
+  imgs = imgs ? (Array.isArray(imgs) ? imgs.filter(Boolean) : [imgs]) : [];
   const row = document.createElement('div'); row.className = 'msg-row user';
   if (idx !== undefined) row.dataset.msgIdx = idx;
   const uav = localStorage.getItem('chat-avatar-user');
   const av = uav ? `<div class="msg-avatar has-img"><img src="${uav}"></div>` : '';
   let c = '';
-  if (imgData) c += `<div class="bubble-img"><img src="${imgData}"></div>`;
+  if (imgs.length === 1) {
+    c += `<div class="bubble-img"><img src="${imgs[0]}"></div>`;
+  } else if (imgs.length > 1) {
+    // 2 张及以上：折叠成一叠，点开/点收起，不刷屏
+    c += `<div class="bubble-imgs"><div class="bubble-imgs-grid">${imgs.map((u, i) =>
+      `<div class="bubble-img-item"><img src="${u}">${i === 0 ? `<div class="bimg-badge">+${imgs.length - 1}</div>` : ''}</div>`).join('')
+      }</div><span class="bubble-imgs-fold">收起</span></div>`;
+  }
   // 她的也按空行拆成几条（只是显示，发给他的还是原样一整句）
   // 她的：换一行就拆一个气泡（手机上回车就是换行）
   if (text && !(audio && audio.url)) String(text).split(/\n+/).flatMap(l => l.trim() ? splitSay(l) : []).filter(Boolean).forEach(sg => {
@@ -825,15 +861,32 @@ function addUserBubble(text, imgData, idx, audio) {
   row.querySelector('[data-copy]').onclick = () => {
     const b = row.querySelector('.bubble.user'); copyText(b ? b.textContent : '');
   };
-  const im = row.querySelector('.bubble-img img'); if (im) im.onclick = () => openLightbox(im.src, '', '');
-  msgBox().appendChild(row); scrollBottom();
+  const single = row.querySelector('.bubble-img img');
+  if (single) single.onclick = () => openLightbox(single.src, '', '');
+  const cluster = row.querySelector('.bubble-imgs');
+  if (cluster) {
+    cluster.onclick = e => {
+      if (!cluster.classList.contains('open')) { cluster.classList.add('open'); return; }
+      if (e.target.closest('.bubble-imgs-fold')) { cluster.classList.remove('open'); return; }
+      const img = e.target.closest('.bubble-img-item')?.querySelector('img');
+      if (img) openLightbox(img.src, '', '');
+    };
+  }
+  msgBox().appendChild(row); scrollBottom(force);
 }
 function editMsg(row) {
   const idx = parseInt(row.dataset.msgIdx), msg = messages[idx]; if (!msg) return;
   const raw = typeof msg.content === 'string' ? msg.content
     : (Array.isArray(msg.content) ? (msg.content.find(c => c.type === 'text')?.text || '') : '');
+  const imgs = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'image_url').map(c => c.image_url?.url).filter(Boolean) : [];
   const inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
   inp.value = raw; autoResize(inp); inp.focus(); editingMsgIdx = idx;
+  // 带图的也一起接回来，不然重发一次图就没了
+  pendingChatImgs = imgs.map(u => ({ uploading: false, data: u }));
+  if (typeof renderImgPreview === 'function') renderImgPreview();
+  const eb = $('edit-bar'); if (eb) eb.classList.add('show');
+  document.querySelectorAll('.msg-row.editing').forEach(r => r.classList.remove('editing'));
+  row.classList.add('editing');
 }
 function startAiBubble(idx) {
   const av = localStorage.getItem('chat-avatar-ai');
@@ -1443,9 +1496,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !i
 const ccStop = () => { if (currentConvId) jpost('/api/cc/stop', { conv: currentConvId }).catch(() => { }); };
 async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
-  const text = inp.value.trim(), hasImg = !fromCtx && !!pendingChatImg;
+  const text = inp.value.trim(), hasImg = !fromCtx && pendingChatImgs.length > 0;
   if ((!text && !hasImg) || isTyping) return;
-  if (hasImg && pendingChatImg.uploading) { toast('图片还在上传，稍等一下'); return; }
+  if (hasImg && pendingChatImgs.some(im => im.uploading)) { toast('图片还在上传，稍等一下'); return; }
   inp.value = ''; inp.style.height = 'auto';
   const seq = beginTurn();
   if (editingMsgIdx !== null) {
@@ -1459,14 +1512,16 @@ async function sendMsg(fromCtx) {
     messages.splice(editingMsgIdx);
     [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= editingMsgIdx) r.remove(); });
     editingMsgIdx = null;
+    $('edit-bar')?.classList.remove('show');
   }
+  const imgUrls = hasImg ? pendingChatImgs.map(im => im.data) : [];
   const content = hasImg
-    ? [...(text ? [{ type: 'text', text }] : []), { type: 'image_url', image_url: { url: pendingChatImg.data } }]
+    ? [...(text ? [{ type: 'text', text }] : []), ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : text;
   messages.push({ role: 'user', content, _mid: genMid() });
-  addUserBubble(text, hasImg ? pendingChatImg.data : null, messages.length - 1);
+  addUserBubble(text, hasImg ? imgUrls : null, messages.length - 1, null, true);
   saveConv();
-  if (hasImg) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
+  if (hasImg) { pendingChatImgs = []; if (typeof renderImgPreview === 'function') renderImgPreview(); }
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
@@ -1489,7 +1544,7 @@ async function sendComposed(text, imgs, opts) {
   messages.push(msg);
   const myIdx = messages.length - 1;
   if (!roomCtx) showPage('chat');
-  addUserBubble(text, imgs[0] || null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null);
+  addUserBubble(text, imgs.length ? imgs : null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null, true);
   saveConv();
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
@@ -1643,8 +1698,8 @@ function renderOneMsg(msg, i) {
     if (msg.role === 'user' && Array.isArray(msg.content) && msg.content.some(c => c && c.type === 'tool_result')) return;
     if (msg.role === 'user') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : '');
-      const img = Array.isArray(msg.content) ? msg.content.find(c => c.type === 'image_url') : null;
-      addUserBubble(text, img?.image_url?.url || null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null);
+      const imgs = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'image_url').map(c => c.image_url?.url).filter(Boolean) : [];
+      addUserBubble(text, imgs.length ? imgs : null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null);
       if (msg._call) { const b = msgBox().lastElementChild?.querySelector('.bubble'); if (b) b.classList.add('in-call'); }
     } else if (msg.role === 'assistant') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
@@ -1674,6 +1729,7 @@ function renderOneMsg(msg, i) {
 }
 function loadConv(id) {
   const saved = localStorage.getItem('conv-' + id); if (!saved) return;
+  if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
@@ -1683,7 +1739,7 @@ function loadConv(id) {
   for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
   roomCtx = keep;
   updOlderHint();
-  scrollBottom(); localStorage.setItem('current-conv-id', id);
+  scrollBottom(true); localStorage.setItem('current-conv-id', id);
 }
 function updOlderHint() {
   const box = $('messages'); let h = $('older-hint');
@@ -1732,6 +1788,7 @@ document.addEventListener('scroll', e => {
 // 新窗口在 cc 里是新会话，不背旧会话的全部记录，最省。fresh=true（清空对话）就什么都不带。
 const CARRY_ROUNDS = 2;
 function newConv(fresh) {
+  if (typeof cancelEdit === 'function') cancelEdit();
   const prev = { id: currentConvId, msgs: messages };
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;

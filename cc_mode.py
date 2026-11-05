@@ -536,7 +536,7 @@ def _mid(m):
 # 图片：前端存在服务器上的 /chatimg/xxx、/stickers/xxx，或老的 data: URL
 # ------------------------------------------------------------
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
-MAX_TURN_IMAGES = 4   # 一轮最多送几张图进去（每张都会写进会话记录，越多越占内存）
+MAX_TURN_IMAGES = 12   # 一轮最多送几张图进去（每张都会写进会话记录，越多越占内存）；跟前端一次能选的张数对齐
 _MEDIA_PREFIX = {'/chatimg/': 'chatimg', '/stickers/': 'stickers'}
 _DATA_URL = re.compile(r'^data:(image/[a-zA-Z0-9.+-]+);base64,(.*)$', re.S)
 _MIME = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',

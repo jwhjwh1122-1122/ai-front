@@ -2433,6 +2433,51 @@ async function loadBalance() {
   } catch (e) { $('balance-val').textContent = '—'; }
 }
 
+// ============ 聊天配图：一次最多 12 张，折叠显示在气泡里 ============
+const CHAT_IMG_MAX = 12;
+function addChatImgFile(f) {
+  const local = URL.createObjectURL(f);
+  const mine = { uploading: true, data: '', local };
+  pendingChatImgs.push(mine);
+  renderImgPreview();
+  uploadChatImage(f).then(url => {
+    mine.data = url; mine.uploading = false;
+    renderImgPreview();
+  }).catch(err => {
+    const i = pendingChatImgs.indexOf(mine);
+    if (i >= 0) pendingChatImgs.splice(i, 1);
+    renderImgPreview();
+    toast(err.message || '图片没传上去');
+  }).finally(() => URL.revokeObjectURL(local));
+}
+function renderImgPreview() {
+  const bar = $('img-preview-bar'), list = $('img-preview-list'), cnt = $('img-preview-count');
+  if (!bar || !list) return;
+  list.innerHTML = '';
+  pendingChatImgs.forEach((im, i) => {
+    const d = document.createElement('div'); d.className = 'img-preview-item';
+    const img = document.createElement('img');
+    img.className = 'img-preview-thumb' + (im.uploading ? ' uploading' : '');
+    img.src = im.data || im.local;
+    const x = document.createElement('div'); x.className = 'img-preview-remove'; x.textContent = '✕';
+    x.onclick = () => { pendingChatImgs.splice(i, 1); renderImgPreview(); };
+    d.appendChild(img); d.appendChild(x);
+    list.appendChild(d);
+  });
+  bar.classList.toggle('show', pendingChatImgs.length > 0);
+  if (cnt) cnt.textContent = pendingChatImgs.length ? `${pendingChatImgs.length}/${CHAT_IMG_MAX}` : '';
+}
+// 编辑自己发过的消息：取消按钮一点，原样退出，不发也不改
+function cancelEdit() {
+  editingMsgIdx = null;
+  pendingChatImgs = [];
+  renderImgPreview();
+  const inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
+  if (inp) { inp.value = ''; autoResize(inp); }
+  const eb = $('edit-bar'); if (eb) eb.classList.remove('show');
+  $('messages')?.querySelectorAll('.msg-row.editing').forEach(r => r.classList.remove('editing'));
+}
+
 // ============ 事件 ============
 document.addEventListener('DOMContentLoaded', () => {
   // 锁屏
@@ -3243,25 +3288,20 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('emoji-act-cancel').onclick = () => $('emoji-act-modal').classList.remove('open');
 
-  // 聊天配图：压缩后传服务器，消息里只存地址（不再把整张图塞进浏览器存储）
-  $('btn-img').onclick = () => $('chat-img-input').click();
-  $('chat-img-input').onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    e.target.value = '';
-    const local = URL.createObjectURL(f);
-    const mine = { uploading: true, data: '' };
-    pendingChatImg = mine;
-    $('img-preview-thumb').src = local;
-    $('img-preview-bar').classList.add('show');
-    try {
-      mine.data = await uploadChatImage(f);
-      mine.uploading = false;
-    } catch (err) {
-      if (pendingChatImg === mine) { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); }
-      toast(err.message || '图片没传上去');
-    } finally { URL.revokeObjectURL(local); }
+  // 聊天配图：压缩后传服务器，消息里只存地址（不再把整张图塞进浏览器存储）；一次最多 CHAT_IMG_MAX 张
+  $('btn-img').onclick = () => {
+    if (pendingChatImgs.length >= CHAT_IMG_MAX) { toast(`最多一次发 ${CHAT_IMG_MAX} 张`); return; }
+    $('chat-img-input').click();
   };
-  $('img-preview-remove').onclick = () => { pendingChatImg = null; $('img-preview-bar').classList.remove('show'); };
+  $('chat-img-input').onchange = e => {
+    const files = [...e.target.files]; e.target.value = '';
+    if (!files.length) return;
+    const room = CHAT_IMG_MAX - pendingChatImgs.length;
+    if (room <= 0) { toast(`最多一次发 ${CHAT_IMG_MAX} 张`); return; }
+    if (files.length > room) toast(`最多一次发 ${CHAT_IMG_MAX} 张，超出的没加进去`);
+    files.slice(0, room).forEach(addChatImgFile);
+  };
+  $('edit-bar-cancel').onclick = cancelEdit;
 
   // 直达：网址带 #music / #listen 就直接打开一起听（给桌面图标用，点一下不经过聊天页）
   const openByHash = () => {
