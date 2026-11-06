@@ -16,6 +16,8 @@
   CC_PERMISSION_MODE   传给 --permission-mode
   CC_TIMEOUT           单次回复的超时秒数，默认 600（10 分钟）
   CC_CWD               claude 的工作目录，默认 <数据目录>/cc_workspace
+  CC_ADD_DIRS          额外放行读写的目录（传给 --add-dir，逗号或空格分隔多个）；
+                       默认不设，只能碰 CC_CWD 那一个工作目录
   CC_KEEP_API_KEY=1    默认会把 ANTHROPIC_API_KEY 等从子进程环境里去掉，
                        保证走订阅登录；设为 1 则保留
 
@@ -953,6 +955,10 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
     bt = (os.environ.get('CC_BUILTIN_TOOLS') or 'WebSearch,WebFetch').strip()
     if not _TOOLS_FLAG_BROKEN:
         cmd += ['--tools', '' if bt.lower() == 'none' else bt]
+    # 默认只能碰 CC_CWD 那一个工作目录；CC_ADD_DIRS 额外放行别的目录（给 --add-dir，
+    # 逗号或空格分隔多个），比如把前端代码目录挂进容器后，把挂载路径填进来才能读写
+    for d in _split_list(os.environ.get('CC_ADD_DIRS') or ''):
+        cmd += ['--add-dir', d]
     if image_input:
         # 这一轮有图片：stdin 改喂一行 stream-json（带图片 block），他就能真的看到图
         cmd += ['--input-format', 'stream-json']
