@@ -1462,8 +1462,13 @@ async function runToolLoop(wrap, origLen, turnConv) {
         }
     saveConv(); refreshHome();
   } else {
-    // 中途换到别的窗口了：这轮回的话是那个窗口自己的，存回它自己的存档，不碰现在正看着的这个
-    commitBackgroundReply(turnConv, origLen, extraMsgs, turnThinking, turnThinkZh, turnThinkTok);
+    // 中途换到别的窗口了：这轮回的话是那个窗口自己的，存回它自己的存档，不碰现在正看着的这个。
+    // extraMsgs 只有调工具那几轮的记录（如果调过的话）——最后一轮的纯文字回复，
+    // 在「还在看这个窗口」那条路上是 streamResponse 实时写进 messages 里的，
+    // 背着跑的时候那条路被跳过了（不然就写到别的窗口头上了），这里要把它原样补回来，
+    // 格式跟实时写的时候一样，就是一条纯字符串的 content，不然这段回复会直接消失。
+    const bgMsgs = finalText ? [...extraMsgs, { role: 'assistant', content: finalText }] : extraMsgs;
+    commitBackgroundReply(turnConv, origLen, bgMsgs, turnThinking, turnThinkZh, turnThinkTok);
   }
   return finalText;
 }
