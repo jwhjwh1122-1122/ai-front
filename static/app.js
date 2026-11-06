@@ -903,7 +903,12 @@ function editMsg(row) {
   const raw = typeof msg.content === 'string' ? msg.content
     : (Array.isArray(msg.content) ? (msg.content.find(c => c.type === 'text')?.text || '') : '');
   const imgs = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'image_url').map(c => c.image_url?.url).filter(Boolean) : [];
-  const inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
+  // 输入框跟着这条消息实际画在哪个容器走，别信全局 roomCtx——
+  // 它可能跟这条消息刚发出来的时候不一样了（比如发完之后换了房间、或者房间状态没来得及归位），
+  // 信了就会把字填进一个她根本看不见的隐藏输入框，自己看到的这个框就还是空的。
+  const splitBox = row.closest('.split-msgs');
+  const inp = splitBox ? document.querySelector(`.split-input[data-ctx="${splitBox.id.replace('split-msgs-', '')}"]`) : $('input');
+  if (!inp) return;
   inp.value = raw; autoResize(inp); inp.focus(); editingMsgIdx = idx;
   // 带图的也一起接回来，不然重发一次图就没了
   pendingChatImgs = imgs.map(u => ({ uploading: false, data: u }));

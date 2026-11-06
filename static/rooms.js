@@ -931,7 +931,6 @@ function playMedia(m, kind) {
   const stage = $('stage');
   stage.classList.add('open');
   stage.classList.toggle('audio', kind === 'music');
-  stage.style.background = kind === 'music' ? 'var(--room)' : '#000';
   $('stage-name').textContent = m.note || m.filename;
   const v = $('stage-video'), a = $('stage-audio'), aw = $('audio-wrap');
   if (kind === 'music') {
