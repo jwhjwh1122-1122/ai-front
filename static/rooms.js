@@ -1722,10 +1722,10 @@ async function callTurn(text, silentUser) {
   if (!CALL.on) return;
   CALL.turns++;
   if (!silentUser) {
-    messages.push({ role: 'user', content: text, _call: true, _mid: genMid() });
+    messages.push({ role: 'user', content: text, _call: true, _mid: genMid(), _ts: Date.now() });
     saveConv();
   } else {
-    messages.push({ role: 'user', content: text, _internal: true, _call: true, _mid: genMid() });
+    messages.push({ role: 'user', content: text, _internal: true, _call: true, _mid: genMid(), _ts: Date.now() });
   }
   csState('他在想…');
   let reply = '';
@@ -1769,7 +1769,7 @@ async function callTurn(text, silentUser) {
   const hang = /\[\[挂了\]\]/.test(reply);
   reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
   if (reply) {
-    messages.push({ role: 'assistant', content: reply, _call: true });
+    messages.push({ role: 'assistant', content: reply, _call: true, _ts: Date.now() });
     saveConv();
     csCaption(reply, false);
     await speakOut(reply);

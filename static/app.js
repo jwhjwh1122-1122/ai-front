@@ -15,7 +15,7 @@ let ctxWindow = 15, sendFrom = 0, currentConvId = null;
 let roomCtx = null;   // 'reader' | 'stage' | null —— 决定发哪组工具、气泡去哪
 
 const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const nowStr = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+const nowStr = ts => new Date(ts || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 // 每条用户消息一个 id：服务器据此知道哪条已经送到他那边，断线重发不会让他看到两遍
 const genMid = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -854,7 +854,7 @@ function addCallBubble(info, idx, force) {
   scrollBottom(force);
 }
 // imgs：一张就是字符串，多张传数组；null/空都算没有图。force：自己刚发的/刚打开对话，不管在不在最底下都滚过去
-function addUserBubble(text, imgs, idx, audio, force) {
+function addUserBubble(text, imgs, idx, audio, force, ts) {
   imgs = imgs ? (Array.isArray(imgs) ? imgs.filter(Boolean) : [imgs]) : [];
   const row = document.createElement('div'); row.className = 'msg-row user';
   if (idx !== undefined) row.dataset.msgIdx = idx;
@@ -876,7 +876,7 @@ function addUserBubble(text, imgs, idx, audio, force) {
   });
   row.innerHTML = `${av}<div class="bubble-wrap">${c}<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;">
     <span class="msg-action-btn" data-edit="1" title="编辑" style="font-size:21px">ฅ</span><span class="msg-action-btn" data-copy="1" title="复制" style="font-size:21px">✎</span>
-    <span class="msg-time">${nowStr()}</span></div></div>`;
+    <span class="msg-time">${nowStr(ts)}</span></div></div>`;
   if (audio && audio.url) {
     const w = row.querySelector('.bubble-wrap');
     w.insertBefore(voiceBubble(audio.url, audio.dur, text || ''), w.firstChild);
@@ -958,7 +958,7 @@ function thinkTransBlock(origWrap, text, label) {
   };
   origWrap.parentNode.insertBefore(t, origWrap.nextSibling);
 }
-function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
+function updateBubble(wrap, text, done, rawText, rowRef, tokens, ts) {
   if (!currentBubble) {
     const b = document.createElement('div'); b.className = 'bubble ai' + (done ? '' : ' typing-cursor');
     wrap.appendChild(b); currentBubble = b;
@@ -972,7 +972,7 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens) {
     currentBubble.classList.add('sticker-only');
   }
   const foot = document.createElement('div'); foot.style.cssText = 'display:flex;align-items:center;gap:4px;';
-  const time = document.createElement('span'); time.className = 'msg-time'; time.textContent = nowStr();
+  const time = document.createElement('span'); time.className = 'msg-time'; time.textContent = nowStr(ts);
   foot.appendChild(time);
   const cap = rawText || text;
   const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 25, 'ฅ': 21, '⊞': 20, '♡': 21 };
@@ -1248,7 +1248,7 @@ async function streamResponse(wrap, hist, turnConv) {
               if (isLive()) {
                 streamSegs(wrap, responseText, false);
                 if (messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1].content = responseText;
-                else messages.push({ role: 'assistant', content: responseText });
+                else messages.push({ role: 'assistant', content: responseText, _ts: Date.now() });
               }
             } else if (dl.type === 'thinking_delta') {
               blk.thinking += dl.thinking;
@@ -1332,8 +1332,9 @@ async function streamResponse(wrap, hist, turnConv) {
       // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
       streamSegs(wrap, responseText, true);
       const tokInfo = (lastInTok || lastOutTok) ? { in: lastInTok, out: lastOutTok, cr: lastCacheRead } : null;
-      updateBubble(wrap, responseText, true, responseText, currentAiRow, tokInfo);
-      if (tokInfo && messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1]._tok = tokInfo;
+      const lastMsg = messages.length ? messages[messages.length - 1] : null;
+      updateBubble(wrap, responseText, true, responseText, currentAiRow, tokInfo, lastMsg?._ts);
+      if (lastMsg && lastMsg.role === 'assistant') { if (tokInfo) lastMsg._tok = tokInfo; }
       saveConv();
     }
   }
@@ -1415,7 +1416,7 @@ async function runToolLoop(wrap, origLen, turnConv) {
     const { text, toolUses, stopReason, contentBlocks } = await streamResponse(wrap, work, turnConv);
     finalText = text;
     if (stopReason !== 'tool_use' || !toolUses.length) break;
-    work.push({ role: 'assistant', content: contentBlocks });
+    work.push({ role: 'assistant', content: contentBlocks, _ts: Date.now() });
     const results = [], extra = [];
     for (const tu of toolUses) {
       const result = await execAndStore(tu.name, tu.input);
@@ -1467,7 +1468,7 @@ async function runToolLoop(wrap, origLen, turnConv) {
     // 在「还在看这个窗口」那条路上是 streamResponse 实时写进 messages 里的，
     // 背着跑的时候那条路被跳过了（不然就写到别的窗口头上了），这里要把它原样补回来，
     // 格式跟实时写的时候一样，就是一条纯字符串的 content，不然这段回复会直接消失。
-    const bgMsgs = finalText ? [...extraMsgs, { role: 'assistant', content: finalText }] : extraMsgs;
+    const bgMsgs = finalText ? [...extraMsgs, { role: 'assistant', content: finalText, _ts: Date.now() }] : extraMsgs;
     commitBackgroundReply(turnConv, origLen, bgMsgs, turnThinking, turnThinkZh, turnThinkTok);
   }
   return finalText;
@@ -1640,7 +1641,7 @@ async function fetchPending(convId) {
   if (convId === currentConvId) {
     const last = messages[messages.length - 1];
     if (last && last.role === 'assistant') last.content = d.text;
-    else messages.push({ role: 'assistant', content: d.text });
+    else messages.push({ role: 'assistant', content: d.text, _ts: Date.now() });
     saveConv();
     // loadConv 会整页重画、强制滚到底——锁屏/切后台回来找补消息时，
     // 如果本来就在翻聊天记录，不该被这一下拽回底部，而是跟平时回复一样：不在底部就只冒未读
@@ -1655,7 +1656,7 @@ async function fetchPending(convId) {
     try { arr = JSON.parse(localStorage.getItem('conv-' + convId) || '[]'); } catch (e) { arr = []; }
     const last = arr[arr.length - 1];
     if (last && last.role === 'assistant') last.content = d.text;
-    else arr.push({ role: 'assistant', content: d.text });
+    else arr.push({ role: 'assistant', content: d.text, _ts: Date.now() });
     try { localStorage.setItem('conv-' + convId, JSON.stringify(arr)); } catch (e) { }
     const list = getConvs();
     const idx = list.findIndex(c => c.id === convId);
@@ -1702,8 +1703,9 @@ async function sendMsg(fromCtx) {
   const content = hasImg
     ? [...(text ? [{ type: 'text', text }] : []), ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : text;
-  messages.push({ role: 'user', content, _mid: genMid() });
-  addUserBubble(text, hasImg ? imgUrls : null, messages.length - 1, null, true);
+  const sentTs = Date.now();
+  messages.push({ role: 'user', content, _mid: genMid(), _ts: sentTs });
+  addUserBubble(text, hasImg ? imgUrls : null, messages.length - 1, null, true, sentTs);
   saveConv();
   if (hasImg) { pendingChatImgs = []; if (typeof renderImgPreview === 'function') renderImgPreview(); }
   const wrap = startAiBubble(messages.length);
@@ -1727,13 +1729,14 @@ async function sendComposed(text, imgs, opts) {
   }
   const turnConv = currentConvId;
   const seq = beginTurn(turnConv);
-  const msg = { role: 'user', content, _mid: genMid() };
+  const sentTs = Date.now();
+  const msg = { role: 'user', content, _mid: genMid(), _ts: sentTs };
   if (opts.audio) { msg._audio = opts.audio; msg._dur = opts.dur; }
   if (opts.internal) msg._internal = true;
   messages.push(msg);
   const myIdx = messages.length - 1;
   if (!roomCtx) showPage('chat');
-  if (!opts.internal) addUserBubble(text, imgs.length ? imgs : null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null, true);
+  if (!opts.internal) addUserBubble(text, imgs.length ? imgs : null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null, true, sentTs);
   // 真聊了一句，放映员的闹钟从这会儿重新倒数，别紧跟着又搭一句
   if (!opts.internal && roomCtx === 'stage' && curKind === 'video' && typeof restartNudge === 'function') restartNudge();
   saveConv();
@@ -1915,7 +1918,7 @@ function renderOneMsg(msg, i) {
     if (msg.role === 'user') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : '');
       const imgs = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'image_url').map(c => c.image_url?.url).filter(Boolean) : [];
-      addUserBubble(text, imgs.length ? imgs : null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null);
+      addUserBubble(text, imgs.length ? imgs : null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null, false, msg._ts);
       if (msg._call) { const b = msgBox().lastElementChild?.querySelector('.bubble'); if (b) b.classList.add('in-call'); }
     } else if (msg.role === 'assistant') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
@@ -1938,7 +1941,7 @@ function renderOneMsg(msg, i) {
             wrap.appendChild(b); currentBubble = b;
           });
         }
-        updateBubble(wrap, text, true, text, currentAiRow, msg._tok);
+        updateBubble(wrap, text, true, text, currentAiRow, msg._tok, msg._ts);
       }
       currentBubble = null; currentAiRow = null;
     }
@@ -2036,8 +2039,8 @@ function handoff(prev) {
   for (const m of prev.msgs.slice(cut)) {
     if (m._internal || m._callmark) continue;
     const t = textOf(m.content); if (!t) continue;
-    if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid() });
-    else if (m.role === 'assistant') carry.push({ role: 'assistant', content: t });
+    if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid(), _ts: m._ts });
+    else if (m.role === 'assistant') carry.push({ role: 'assistant', content: t, _ts: m._ts });
   }
   const older = prev.msgs.slice(Math.max(0, cut - 40), cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
     .map(m => ({ role: m.role, content: textOf(m.content) })).filter(m => m.content);
