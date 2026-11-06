@@ -439,10 +439,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .mood-chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .conv-item{background:var(--bubble-ai);border:1px solid var(--border);border-radius:14px;padding:12px 14px;cursor:pointer;position:relative;}
 .conv-item.active{border-color:var(--accent);}
-.conv-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:26px;}
+.conv-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:40px;}
 .conv-preview{font-size:12px;color:var(--text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .conv-time{font-size:10px;color:var(--text-muted);margin-top:2px;}
 .conv-delete{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.3);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+/* 这个窗口有新回复（它在别的窗口聊的时候回完了），或者他正在这边回着 */
+.conv-dot{position:absolute;top:16px;right:38px;width:8px;height:8px;border-radius:50%;background:var(--accent);}
 .mcp-server{background:var(--bubble-ai);border:1px solid var(--border);border-radius:14px;padding:12px 14px;position:relative;}
 .mcp-server.off{opacity:.5;}
 .mcp-name{font-size:14px;font-weight:600;padding-right:60px;}

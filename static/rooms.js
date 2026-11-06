@@ -2682,7 +2682,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const inp = $('input');
   inp.addEventListener('input', () => autoResize(inp));
   bindEnterSend(inp, () => sendMsg());
-  $('send-btn').onclick = () => { if (isTyping && abortController) { ccStop(); abortController.abort(); endTurn(); } else sendMsg(); };
+  $('send-btn').onclick = () => {
+    if (isTyping && typingConvId === currentConvId && abortController) { ccStop(); abortController.abort(); endTurn(); }
+    else if (isTyping) toast('他在另一个窗口里回着，等会儿再发');
+    else sendMsg();
+  };
   document.querySelectorAll('.split-input').forEach(el => {
     el.addEventListener('input', () => autoResize(el));
     bindEnterSend(el, () => {

@@ -1145,8 +1145,9 @@ async function sendAudio(blob, dur) {
   finally { btn.textContent = '◎'; }
   sendComposed(text, [], { audio: audioUrl, dur });
 }
-async function attachVoiceReply(wrap, text) {
-  if (localStorage.getItem('auto-voice') !== '1' || !text?.trim()) return;
+async function attachVoiceReply(wrap, text, turnConv) {
+  // 换到别的窗口了：这条回复现在不在眼前，不用特地生成语音
+  if ((turnConv !== undefined && currentConvId !== turnConv) || localStorage.getItem('auto-voice') !== '1' || !text?.trim()) return;
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
     const d = await jpost('/api/tts-save', { text: text.slice(0, 600), voice });
@@ -1161,7 +1162,12 @@ async function attachVoiceReply(wrap, text) {
 
 // ============ 流式 ============
 let abortController = null;
-async function streamResponse(wrap, hist) {
+async function streamResponse(wrap, hist, turnConv) {
+  if (turnConv === undefined) turnConv = currentConvId;
+  // 这轮是哪个窗口发出去的，中途换到别的窗口了就别再碰全局的 messages/currentBubble 那些东西——
+  // 那些现在指的是正看着的那个窗口，写进去就串台了。该存的东西都在 work/contentBlocks 里，
+  // 回来的时候 runToolLoop 自己会存回正确的那个窗口。
+  const isLive = () => currentConvId === turnConv;
   wrap._segEls = []; wrap._segTxt = [];   // 工具轮之后接着说，新起一组气泡
   const ccTools = {}, ccTrace = [];       // cc 模式下他在服务器上调用的工具
   let thinkTok = 0;                       // Claude Code 估算的思考 token
@@ -1211,25 +1217,27 @@ async function streamResponse(wrap, hist) {
         try {
           const d = JSON.parse(raw);
           if (d.type === 'message_start') absorb(d.message?.usage);
-          else if (d.type === 'cc_status') showCcStatus(wrap, d);
-          else if (d.type === 'cc_tool') onCcTool(wrap, d, ccTools, ccTrace);
+          else if (d.type === 'cc_status') { if (isLive()) showCcStatus(wrap, d); }
+          else if (d.type === 'cc_tool') { if (isLive()) onCcTool(wrap, d, ccTools, ccTrace); }
           else if (d.type === 'cc_think') thinkTok = Number(d.tokens) || 0;
           else if (d.type === 'cc_think_hide') { thinkHide = d.why || '没翻成'; }
           else if (d.type === 'cc_think_zh' && d.text) {
             // 服务器翻好了：原文留在上面那个框，翻译放在下面再开一个框
             thinkZhText = d.text; thinkZh = d.kind === 'voice' ? '已换成他自己的口吻' : '已译成中文';
-            thinkTransBlock(currentThinkWrap, thinkZhText, d.kind === 'voice' ? '他自己的口吻' : '翻译');
+            if (isLive()) thinkTransBlock(currentThinkWrap, thinkZhText, d.kind === 'voice' ? '他自己的口吻' : '翻译');
           }
           else if (d.type === 'content_block_start') {
             const b = d.content_block;
             if (b.type === 'tool_use') {
               blocks[d.index] = { type: 'tool_use', id: b.id, name: b.name, input: {}, _json: '', _rb: null };
-              const ind = document.createElement('div'); ind.className = 'tool-indicator';
-              ind.innerHTML = `<span class="tl"></span><span>${b.name}</span>`;
-              const rb = document.createElement('div'); rb.className = 'tool-result-block';
-              blocks[d.index]._rb = rb;
-              ind.onclick = () => rb.style.display = (rb.style.display === 'block') ? 'none' : 'block';
-              wrap.appendChild(ind); wrap.appendChild(rb); scrollBottom();
+              if (isLive()) {
+                const ind = document.createElement('div'); ind.className = 'tool-indicator';
+                ind.innerHTML = `<span class="tl"></span><span>${b.name}</span>`;
+                const rb = document.createElement('div'); rb.className = 'tool-result-block';
+                blocks[d.index]._rb = rb;
+                ind.onclick = () => rb.style.display = (rb.style.display === 'block') ? 'none' : 'block';
+                wrap.appendChild(ind); wrap.appendChild(rb); scrollBottom();
+              }
             } else if (b.type === 'text') blocks[d.index] = { type: 'text', text: '' };
             else if (b.type === 'thinking') blocks[d.index] = { type: 'thinking', thinking: '', signature: '' };
           } else if (d.type === 'content_block_delta') {
@@ -1237,26 +1245,29 @@ async function streamResponse(wrap, hist) {
             const dl = d.delta;
             if (dl.type === 'text_delta') {
               blk.text += dl.text; responseText += dl.text;
-              streamSegs(wrap, responseText, false);
-              if (messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1].content = responseText;
-              else messages.push({ role: 'assistant', content: responseText });
+              if (isLive()) {
+                streamSegs(wrap, responseText, false);
+                if (messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1].content = responseText;
+                else messages.push({ role: 'assistant', content: responseText });
+              }
             } else if (dl.type === 'thinking_delta') {
               blk.thinking += dl.thinking;
               if (!dl.thinking) continue;
-              if (!currentThinkWrap) thinkBlock(wrap, '', false);
               thinkingText += dl.thinking;
-              if (currentThinkContent) {
-                const all = thinkingText, cj = (all.match(/[\u4e00-\u9fff]/g) || []).length, la = (all.match(/[A-Za-z]/g) || []).length;
-                currentThinkContent.textContent = thinkingText;   // 原文直接显示，翻译想完了在下面另开一个框
-                currentThinkContent.classList.add('open');         // 流式时自动展开，换行正常显示
-              }
-              // 收起时也能看到他正在想的最后一句
-              const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');
-              if (hs) {
-                const ln = thinkingText.trim().split(/\n+/).pop() || '';
-                const cjk = (ln.match(/[\u4e00-\u9fff]/g) || []).length, lat = (ln.match(/[A-Za-z]/g) || []).length;
-                // 外文的思考先不露出来，等翻成中文
-                hs.textContent = cjk >= lat ? '思考中：' + ln.slice(-40) : '思考中…';
+              if (isLive()) {
+                if (!currentThinkWrap) thinkBlock(wrap, '', false);
+                if (currentThinkContent) {
+                  currentThinkContent.textContent = thinkingText;   // 原文直接显示，翻译想完了在下面另开一个框
+                  currentThinkContent.classList.add('open');         // 流式时自动展开，换行正常显示
+                }
+                // 收起时也能看到他正在想的最后一句
+                const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');
+                if (hs) {
+                  const ln = thinkingText.trim().split(/\n+/).pop() || '';
+                  const cjk = (ln.match(/[\u4e00-\u9fff]/g) || []).length, lat = (ln.match(/[A-Za-z]/g) || []).length;
+                  // 外文的思考先不露出来，等翻成中文
+                  hs.textContent = cjk >= lat ? '思考中：' + ln.slice(-40) : '思考中…';
+                }
               }
             } else if (dl.type === 'signature_delta') blk.signature = (blk.signature || '') + dl.signature;
             else if (dl.type === 'input_json_delta') blk._json += dl.partial_json;
@@ -1274,7 +1285,7 @@ async function streamResponse(wrap, hist) {
   if (abortController === ac) abortController = null;
   totalTokens = inTok + outTok;
   lastInTok = inTok; lastOutTok = outTok;
-  drawTokens(inTok, outTok);
+  if (isLive()) drawTokens(inTok, outTok);
   // 记一笔，自己的账自己算
   if (inTok || outTok) {
     jpost('/api/ledger', {
@@ -1282,46 +1293,49 @@ async function streamResponse(wrap, hist) {
       where: roomCtx ? 'room' : 'chat'
     }).catch(() => { });
   }
-  const hiddenEn = '';   // 原文一直保留；没翻成就只有原文那一个框
   if (thinkingText) turnThinking += (turnThinking ? '\n\n' : '') + thinkingText;
   if (thinkZhText) turnThinkZh += (turnThinkZh ? '\n\n' : '') + thinkZhText;
   const keys = Object.keys(blocks).map(Number).sort((a, b) => a - b);
   const contentBlocks = keys.map(k => { const { _json, _rb, ...c } = blocks[k]; return c; });
   const toolUses = keys.map(k => blocks[k]).filter(b => b.type === 'tool_use')
     .map(b => ({ id: b.id, name: b.name, input: b.input, rb: b._rb }));
-  // 想了但一个字摘要都没给（比如这个模型只给进度）：也建个框，说明想了多少
-  if (!currentThinkWrap && thinkTok > 0 && !thinkingText) {
-    thinkBlock(wrap, '', false);
-    const first = wrap.querySelector('.cc-tool, .bubble');
-    if (first && currentThinkWrap) wrap.insertBefore(currentThinkWrap, first);
-    if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
-  }
+  if (isLive()) {
+    // 想了但一个字摘要都没给（比如这个模型只给进度）：也建个框，说明想了多少
+    if (!currentThinkWrap && thinkTok > 0 && !thinkingText) {
+      thinkBlock(wrap, '', false);
+      const first = wrap.querySelector('.cc-tool, .bubble');
+      if (first && currentThinkWrap) wrap.insertBefore(currentThinkWrap, first);
+      if (currentThinkContent) currentThinkContent.textContent = '这轮思考没有返回文字，只知道大概想了多少。';
+    }
 
-  if (currentThinkWrap) {
-    // 关掉了翻译（CC_THINK_ZH=0）时没有任何翻译消息：把原文放回去，别一直挂着「稍后翻成中文」
-    if (currentThinkContent && !thinkZh && !thinkHide && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
-    const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
-    const sp = currentThinkWrap.querySelector('.thinking-header span');
-    if (sp) sp.textContent = '原文 · ' + thinkLabel(thinkingText, thinkTok) + (thinkHide ? ' · 这轮没翻成' : '');
+    if (currentThinkWrap) {
+      // 关掉了翻译（CC_THINK_ZH=0）时没有任何翻译消息：把原文放回去，别一直挂着「稍后翻成中文」
+      if (currentThinkContent && !thinkZh && !thinkHide && thinkingText && /想完会翻成中文/.test(currentThinkContent.textContent)) currentThinkContent.textContent = thinkingText;
+      const dot = currentThinkWrap.querySelector('.thinking-dot'); if (dot) dot.style.animation = 'none';
+      const sp = currentThinkWrap.querySelector('.thinking-header span');
+      if (sp) sp.textContent = '原文 · ' + thinkLabel(thinkingText, thinkTok) + (thinkHide ? ' · 这轮没翻成' : '');
+    }
   }
   turnThinkTok += thinkTok;
   const hadTool = Object.values(blocks).some(b => b.type === 'tool_use');
-  if (!responseText && !hadTool && stopReason !== 'tool_use' && !ac.signal.aborted) {
+  if (isLive() && !responseText && !hadTool && stopReason !== 'tool_use' && !ac.signal.aborted) {
     // 以前这里什么都不显示，气泡就空着。给句话，只显示不存进记录（重发不会让他看到两遍）
     currentBubble = null;
     updateBubble(wrap, gotDone ? '（他这次没出声，可以再说一句）' : '（连接断了，他可能没说完。直接再发一句就行）', true);
   }
-  if (ccTrace.length && messages.length && messages[messages.length - 1].role === 'assistant') {
-    const cut = x => x == null ? x : (x.length > 1500 ? x.slice(0, 1500) + '…' : x);
-    messages[messages.length - 1]._tools = ccTrace.map(t => ({ name: t.name, input: cut(t.input), result: cut(t.result), err: t.err }));
-  }
-  if (responseText) {
-    // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
-    streamSegs(wrap, responseText, true);
-    const tokInfo = (lastInTok || lastOutTok) ? { in: lastInTok, out: lastOutTok, cr: lastCacheRead } : null;
-    updateBubble(wrap, responseText, true, responseText, currentAiRow, tokInfo);
-    if (tokInfo && messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1]._tok = tokInfo;
-    saveConv();
+  if (isLive()) {
+    if (ccTrace.length && messages.length && messages[messages.length - 1].role === 'assistant') {
+      const cut = x => x == null ? x : (x.length > 1500 ? x.slice(0, 1500) + '…' : x);
+      messages[messages.length - 1]._tools = ccTrace.map(t => ({ name: t.name, input: cut(t.input), result: cut(t.result), err: t.err }));
+    }
+    if (responseText) {
+      // 收的时候已经拆好了，这里只收尾：去光标、加时间和按钮
+      streamSegs(wrap, responseText, true);
+      const tokInfo = (lastInTok || lastOutTok) ? { in: lastInTok, out: lastOutTok, cr: lastCacheRead } : null;
+      updateBubble(wrap, responseText, true, responseText, currentAiRow, tokInfo);
+      if (tokInfo && messages.length && messages[messages.length - 1].role === 'assistant') messages[messages.length - 1]._tok = tokInfo;
+      saveConv();
+    }
   }
   return { text: responseText, toolUses, stopReason, contentBlocks };
 }
@@ -1393,11 +1407,12 @@ function sanitize(m) {
       })
   };
 }
-async function runToolLoop(wrap, origLen) {
+async function runToolLoop(wrap, origLen, turnConv) {
+  if (turnConv === undefined) turnConv = currentConvId;
   let work = [...messages], finalText = '';
   moreRounds = 0; wantMore = false;
   while (true) {
-    const { text, toolUses, stopReason, contentBlocks } = await streamResponse(wrap, work);
+    const { text, toolUses, stopReason, contentBlocks } = await streamResponse(wrap, work, turnConv);
     finalText = text;
     if (stopReason !== 'tool_use' || !toolUses.length) break;
     work.push({ role: 'assistant', content: contentBlocks });
@@ -1420,13 +1435,13 @@ async function runToolLoop(wrap, origLen) {
       }
     }
     work.push({ role: 'user', _internal: true, content: [...results, ...extra] });
-    currentBubble = null;
+    if (currentConvId === turnConv) currentBubble = null;
     if (wantMore) {
       wantMore = false;
       if (moreRounds < MAX_MORE) {
         moreRounds++;
         await sleep(600);
-        currentThinkWrap = null; currentThinkContent = null;
+        if (currentConvId === turnConv) { currentThinkWrap = null; currentThinkContent = null; }
       } else {
         // 说够了，别没完没了
         work.push({ role: 'user', _internal: true, content: '（今天先说到这，剩下的留着当面说）' });
@@ -1434,28 +1449,80 @@ async function runToolLoop(wrap, origLen) {
     }
   }
   const extraMsgs = work.slice(origLen).map(sanitize);
-  if (extraMsgs.length) messages.splice(origLen, 0, ...extraMsgs);
-  if (turnThinking || turnThinkTok)
-    for (let i = messages.length - 1; i >= 0; i--)
-      if (messages[i].role === 'assistant' && messages[i].content) {
-        if (turnThinking) messages[i]._thinking = turnThinking.slice(0, 8000);
-        if (turnThinkZh) messages[i]._thinkZh = turnThinkZh.slice(0, 8000);
-        if (turnThinkTok) messages[i]._thinkTok = turnThinkTok;
+  if (currentConvId === turnConv) {
+    // 还在看这个窗口：跟以前一样，直接接进当前这份
+    if (extraMsgs.length) messages.splice(origLen, 0, ...extraMsgs);
+    if (turnThinking || turnThinkTok)
+      for (let i = messages.length - 1; i >= 0; i--)
+        if (messages[i].role === 'assistant' && messages[i].content) {
+          if (turnThinking) messages[i]._thinking = turnThinking.slice(0, 8000);
+          if (turnThinkZh) messages[i]._thinkZh = turnThinkZh.slice(0, 8000);
+          if (turnThinkTok) messages[i]._thinkTok = turnThinkTok;
+          break;
+        }
+    saveConv(); refreshHome();
+  } else {
+    // 中途换到别的窗口了：这轮回的话是那个窗口自己的，存回它自己的存档，不碰现在正看着的这个
+    commitBackgroundReply(turnConv, origLen, extraMsgs, turnThinking, turnThinkZh, turnThinkTok);
+  }
+  return finalText;
+}
+// 后台（不在当前窗口）跑完一轮：直接读写那个对话自己的本地存档，不动全局 messages/currentConvId
+function commitBackgroundReply(convId, origLen, extraMsgs, thinking, thinkZh, thinkTok) {
+  if (!extraMsgs.length) return;
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem('conv-' + convId) || '[]'); } catch (e) { arr = []; }
+  const at = Math.min(origLen, arr.length);
+  arr.splice(at, 0, ...extraMsgs);
+  if (thinking || thinkTok) {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i].role === 'assistant' && arr[i].content) {
+        if (thinking) arr[i]._thinking = thinking.slice(0, 8000);
+        if (thinkZh) arr[i]._thinkZh = thinkZh.slice(0, 8000);
+        if (thinkTok) arr[i]._thinkTok = thinkTok;
         break;
       }
-  saveConv(); refreshHome();
-  return finalText;
+    }
+  }
+  try { localStorage.setItem('conv-' + convId, JSON.stringify(arr)); } catch (e) { return; }
+  const list = getConvs();
+  const idx = list.findIndex(c => c.id === convId);
+  if (idx >= 0) {
+    const lm = arr[arr.length - 1];
+    const preview = typeof lm?.content === 'string' ? lm.content.slice(0, 30)
+      : (Array.isArray(lm?.content) ? lm.content.filter(c => c && c.type === 'text').map(c => c.text).join('').slice(0, 30) : '');
+    list[idx] = { ...list[idx], preview, updatedAt: Date.now(), unread: true };
+    saveConvs(list);
+  }
+  if (typeof renderConvs === 'function' && $('conv-panel')?.classList.contains('open')) renderConvs();
+  toast('他在另一个窗口里回完了');
+}
+// 同样道理：带图那条消息事后把图换成占位字，如果已经换到别的窗口了就改那个窗口自己存档里的那一条
+function stripImagesInBackgroundConv(convId, idx) {
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem('conv-' + convId) || '[]'); } catch (e) { return; }
+  const m = arr[idx];
+  if (!m || !Array.isArray(m.content)) return;
+  m.content = m.content.map(c => c && c.type === 'image_url' ? { type: 'text', text: '（一张看过的画面）' } : c);
+  try { localStorage.setItem('conv-' + convId, JSON.stringify(arr)); } catch (e) { }
 }
 
 // ============ 发送 ============
 // 每一轮一个编号。按「停」会直接结束当前轮并让编号作废，
 // 被停掉那轮稍后自己收尾时的 endTurn(旧编号) 就不会把新一轮的 isTyping 清掉，
 // 避免出现两条请求同时在跑、重复拉起 Claude Code。
-let turnSeq = 0;
-function beginTurn() {
+let turnSeq = 0, typingConvId = null;
+// 发送按钮显不显示「停」，只看现在正看着的这个窗口是不是真的在回——
+// 他在别的窗口里回着的时候，这个窗口该是能正常发消息的样子，不然会把那边的回复误停掉
+function syncSendBtns() {
+  const busy = isTyping && typingConvId === currentConvId;
+  document.querySelectorAll('.send-btn').forEach(b => b.textContent = busy ? '■' : '↑');
+}
+function beginTurn(convId) {
   lastTalk = Date.now();
   isTyping = true;
-  document.querySelectorAll('.send-btn').forEach(b => b.textContent = '■');
+  typingConvId = convId !== undefined ? convId : currentConvId;
+  syncSendBtns();
   showTypingTitle(true);
   return ++turnSeq;
 }
@@ -1463,7 +1530,8 @@ function endTurn(seq) {
   if (seq !== undefined && seq !== turnSeq) return;
   if (seq === undefined) turnSeq++;
   isTyping = false;
-  document.querySelectorAll('.send-btn').forEach(b => b.textContent = '↑');
+  typingConvId = null;
+  syncSendBtns();
   showTypingTitle(false);
 }
 // ============ 他调用工具：一行显示「调用了什么」，点开看参数和结果（像 Claude app 那样） ============
@@ -1547,39 +1615,57 @@ function showCcStatus(wrap, d) {
 function showTypingTitle(on) {
   const el = $('typing-title'); if (el) el.classList.toggle('show', !!on);
 }
-function turnError(wrap, e) {
+function turnError(wrap, e, turnConv) {
   if (e && e.name === 'AbortError') return;   // 自己按了停，不算出错
   console.error(e);
-  currentBubble = null;
-  updateBubble(wrap, (e && e.friendly) || '断开了一下，他还在那边接着说，说完会自己出现…', true);
-  watchPending(120);
+  if (turnConv === undefined || currentConvId === turnConv) {
+    currentBubble = null;
+    updateBubble(wrap, (e && e.friendly) || '断开了一下，他还在那边接着说，说完会自己出现…', true);
+  }
+  watchPending(120, turnConv);
 }
 // ============ 断线找回 ============
-// 锁屏 / 切后台 / 网闪一下，连接断了，他在服务器上照样把话说完、存起来；这里去取回来
-async function fetchPending() {
-  if (!currentConvId) return false;
-  let d; try { d = await jget('/api/cc/pending?conv=' + encodeURIComponent(currentConvId)); } catch (e) { return false; }
+// 锁屏 / 切后台 / 网闪一下，连接断了，他在服务器上照样把话说完、存起来；这里去取回来。
+// convId：断线那一刻是哪个窗口发出去的——中途可能已经换到别的窗口了，找回来的话要还给原来那个窗口，不能算进当前这个
+async function fetchPending(convId) {
+  if (convId === undefined) convId = currentConvId;
+  if (!convId) return false;
+  let d; try { d = await jget('/api/cc/pending?conv=' + encodeURIComponent(convId)); } catch (e) { return false; }
   if (!d || !d.text) return false;
-  const last = messages[messages.length - 1];
-  if (last && last.role === 'assistant') last.content = d.text;
-  else messages.push({ role: 'assistant', content: d.text });
-  saveConv();
-  // loadConv 会整页重画、强制滚到底——锁屏/切后台回来找补消息时，
-  // 如果本来就在翻聊天记录，不该被这一下拽回底部，而是跟平时回复一样：不在底部就只冒未读
-  const box = msgBox();
-  const wasAway = !!box && !isNearBottom();
-  const oldTop = box ? box.scrollTop : 0;
-  loadConv(currentConvId);
-  if (wasAway && box) { box.scrollTop = oldTop; markUnreadIfAway(); }
+  if (convId === currentConvId) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'assistant') last.content = d.text;
+    else messages.push({ role: 'assistant', content: d.text });
+    saveConv();
+    // loadConv 会整页重画、强制滚到底——锁屏/切后台回来找补消息时，
+    // 如果本来就在翻聊天记录，不该被这一下拽回底部，而是跟平时回复一样：不在底部就只冒未读
+    const box = msgBox();
+    const wasAway = !!box && !isNearBottom();
+    const oldTop = box ? box.scrollTop : 0;
+    loadConv(currentConvId);
+    if (wasAway && box) { box.scrollTop = oldTop; markUnreadIfAway(); }
+  } else {
+    // 不是现在看着的这个窗口：直接存回它自己的存档，不碰现在正看着的这个
+    let arr;
+    try { arr = JSON.parse(localStorage.getItem('conv-' + convId) || '[]'); } catch (e) { arr = []; }
+    const last = arr[arr.length - 1];
+    if (last && last.role === 'assistant') last.content = d.text;
+    else arr.push({ role: 'assistant', content: d.text });
+    try { localStorage.setItem('conv-' + convId, JSON.stringify(arr)); } catch (e) { }
+    const list = getConvs();
+    const idx = list.findIndex(c => c.id === convId);
+    if (idx >= 0) { list[idx] = { ...list[idx], preview: String(d.text).slice(0, 30), updatedAt: Date.now(), unread: true }; saveConvs(list); }
+    if (typeof renderConvs === 'function' && $('conv-panel')?.classList.contains('open')) renderConvs();
+  }
   return true;
 }
 let pendingWatch = null;
-function watchPending(sec) {
+function watchPending(sec, convId) {
   if (pendingWatch) clearInterval(pendingWatch);
   const end = Date.now() + sec * 1000;
   pendingWatch = setInterval(async () => {
-    if (isTyping) return;
-    if (await fetchPending() || Date.now() > end) { clearInterval(pendingWatch); pendingWatch = null; }
+    if (isTyping && typingConvId === convId) return;   // 这个窗口自己还在正常流式收着，不用抢着找回
+    if (await fetchPending(convId) || Date.now() > end) { clearInterval(pendingWatch); pendingWatch = null; }
   }, 5000);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !isTyping) fetchPending(); });
@@ -1588,10 +1674,12 @@ const ccStop = () => { if (currentConvId) jpost('/api/cc/stop', { conv: currentC
 async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && pendingChatImgs.length > 0;
-  if ((!text && !hasImg) || isTyping) return;
+  if (!text && !hasImg) return;
+  if (isTyping) { toast(typingConvId === currentConvId ? '等他说完这句' : '他正在另一个窗口里回着，等会儿再发'); return; }
   if (hasImg && pendingChatImgs.some(im => im.uploading)) { toast('图片还在上传，稍等一下'); return; }
   inp.value = ''; inp.style.height = 'auto';
-  const seq = beginTurn();
+  const turnConv = currentConvId;
+  const seq = beginTurn(turnConv);
   if (editingMsgIdx !== null) {
     // 编辑自己那句再发 = 从那句开始重来：告诉服务器原来那句是什么，它从那里切开
     const orig = messages[editingMsgIdx];
@@ -1616,20 +1704,24 @@ async function sendMsg(fromCtx) {
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
-  try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { turnError(wrap, e); }
-  await attachVoiceReply(wrap, reply);
+  try { reply = await runToolLoop(wrap, messages.length, turnConv); }
+  catch (e) { turnError(wrap, e, turnConv); }
+  await attachVoiceReply(wrap, reply, turnConv);
   endTurn(seq);
 }
 async function sendComposed(text, imgs, opts) {
-  if (isTyping) return;
   imgs = imgs || []; opts = opts || {};
+  if (isTyping) {
+    if (!opts.internal) toast(typingConvId === currentConvId ? '等他说完这句' : '他正在另一个窗口里回着，等会儿再发');
+    return;
+  }
   let content = text;
   if (imgs.length) {
     content = [{ type: 'text', text }];
     imgs.forEach(u => content.push({ type: 'image_url', image_url: { url: u } }));
   }
-  const seq = beginTurn();
+  const turnConv = currentConvId;
+  const seq = beginTurn(turnConv);
   const msg = { role: 'user', content, _mid: genMid() };
   if (opts.audio) { msg._audio = opts.audio; msg._dur = opts.dur; }
   if (opts.internal) msg._internal = true;
@@ -1643,12 +1735,18 @@ async function sendComposed(text, imgs, opts) {
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
-  try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { turnError(wrap, e); }
-  await attachVoiceReply(wrap, reply);
-  if (imgs.length && Array.isArray(messages[myIdx]?.content)) {
-    messages[myIdx].content = messages[myIdx].content.map(c => c && c.type === 'image_url' ? { type: 'text', text: '（一张看过的画面）' } : c);
-    saveConv();
+  try { reply = await runToolLoop(wrap, messages.length, turnConv); }
+  catch (e) { turnError(wrap, e, turnConv); }
+  await attachVoiceReply(wrap, reply, turnConv);
+  if (imgs.length) {
+    if (currentConvId === turnConv) {
+      if (Array.isArray(messages[myIdx]?.content)) {
+        messages[myIdx].content = messages[myIdx].content.map(c => c && c.type === 'image_url' ? { type: 'text', text: '（一张看过的画面）' } : c);
+        saveConv();
+      }
+    } else {
+      stripImagesInBackgroundConv(turnConv, myIdx);
+    }
   }
   endTurn(seq);
 }
@@ -1663,13 +1761,14 @@ async function regenAt(row) {
   messages.splice(idx);
   [...msgBox().querySelectorAll('.msg-row')].forEach(r => { if (parseInt(r.dataset.msgIdx) >= idx) r.remove(); });
   if (!messages.length || messages[messages.length - 1].role !== 'user') return;
+  const turnConv = currentConvId;
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
-  const seq = beginTurn();
+  const seq = beginTurn(turnConv);
   let reply = '';
-  try { reply = await runToolLoop(wrap, messages.length); }
-  catch (e) { turnError(wrap, e); }
-  await attachVoiceReply(wrap, reply);
+  try { reply = await runToolLoop(wrap, messages.length, turnConv); }
+  catch (e) { turnError(wrap, e, turnConv); }
+  await attachVoiceReply(wrap, reply, turnConv);
   endTurn(seq);
 }
 
@@ -1843,8 +1942,11 @@ function loadConv(id) {
   const saved = localStorage.getItem('conv-' + id); if (!saved) return;
   if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
-  const convEntry = getConvs().find(c => c.id === id);
+  syncSendBtns();   // 这个窗口是不是正在被回着，图标跟着换
+  const list = getConvs();
+  const convEntry = list.find(c => c.id === id);
   if (convEntry && convEntry.model) { currentModel = convEntry.model; localStorage.setItem('model', convEntry.model); }
+  if (convEntry && convEntry.unread) { convEntry.unread = false; saveConvs(list); }
   syncModelUI();
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
   ctxWarnedAt = { warn: false, switch: false };   // 换了个窗口，上下文量提醒重新算
@@ -1909,6 +2011,7 @@ function newConv(fresh) {
   const prev = { id: currentConvId, msgs: messages };
   if (messages.length) saveConv();
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
+  syncSendBtns();
   recapDone = 0;
   ctxWarnedAt = { warn: false, switch: false };
   $('ctx-warn-pill')?.classList.remove('show', 'full');
@@ -1950,7 +2053,8 @@ function renderConvs() {
     const d = document.createElement('div');
     d.className = 'conv-item' + (c.id === currentConvId ? ' active' : '');
     const dt = new Date(c.updatedAt);
-    d.innerHTML = `<div class="conv-title">${esc(c.title || '新对话')}</div>${c.preview ? `<div class="conv-preview">${esc(c.preview)}</div>` : ''}
+    const busyHere = isTyping && typingConvId === c.id;
+    d.innerHTML = `${c.unread || busyHere ? `<div class="conv-dot" title="${busyHere ? '他在这边回着' : '有新回复'}"></div>` : ''}<div class="conv-title">${esc(c.title || '新对话')}</div>${c.preview ? `<div class="conv-preview">${esc(c.preview)}</div>` : ''}
       <div class="conv-time">${dt.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${dt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
       <div class="conv-delete">✕</div>`;
     d.querySelector('.conv-delete').onclick = e => {
