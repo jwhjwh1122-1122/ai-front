@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=32">
+<link rel="stylesheet" href="/static/style.css?v=33">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -860,6 +860,10 @@ window.addEventListener('error', function (e) {
     <div class="split-top">
       <div class="stage-body" id="stage-body">
         <video id="stage-video" playsinline controls preload="metadata" style="display:none"></video>
+        <div class="stage-subs" id="stage-subs" style="display:none">
+          <div class="stage-subs-line" id="stage-subs-a"></div>
+          <div class="stage-subs-line stage-subs-b" id="stage-subs-b"></div>
+        </div>
         <div class="audio-wrap" id="audio-wrap" style="display:none">
           <div class="disc-big" id="disc-big"></div>
           <div class="shape" id="shape-bars"></div>
@@ -1321,7 +1325,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=51"></script>
-<script src="/static/rooms.js?v=46"></script>
+<script src="/static/app.js?v=52"></script>
+<script src="/static/rooms.js?v=47"></script>
 </body>
 </html>

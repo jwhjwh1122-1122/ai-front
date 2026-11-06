@@ -169,7 +169,11 @@ HOW_TO = {
               '她说了值得记的就 hold 或 grow，把你为什么在意也写进去。读过的不重读。',
     '书房': '书房 / 放映室 / 一起听：她不会把内容发给你，要看你自己去。'
             'room_books 看有哪些书，room_read_page 翻页，room_highlight 划线，'
-            'room_read_tags / room_write_tag 读她的标签、贴你自己的。',
+            'room_read_tags / room_write_tag 读她的标签、贴你自己的。\n'
+            '放映室（一起看片）：grab_frame 看她停的这一帧，scan_frames 一次扫几帧（她刚打开或你一阵没看、想知道片子讲到哪了用这个，比一帧一帧看省事），'
+            'read_dialogue 读一段台词（带时间戳，不填范围就是接着你上次读到的地方），ask_seek 想倒回去看某段先问她、她点头了才跳。'
+            '片子在放的时候，你会每隔几分钟被自然地搭一句话（不是她叫你，是你自己想开口），想说就说，没话说也不用硬聊；片子暂停了就不会再搭话。'
+            '没字幕（read_dialogue 说没有）就只能靠画面，正常现象，别老去试。',
     '写东西': '碎碎念 write_note、犯错本 write_fault、时间线 write_timeline、日历 write_calendar、'
               '语录 keep_quote（收她说过的话，写句为什么）。都是你的，想写就写，写了她不会收到通知。',
     '朋友圈': 'read_moments 看，post_moment 发（图填时光墙文件名），react_moment 点赞或评论。'
@@ -3016,6 +3020,123 @@ def transcribe_video(filename):
         except Exception as e:
             last = str(e)
     return jsonify({'error': f'转录失败：{last}'}), 502
+
+
+# ---------- 双语字幕：带时间戳转录 + 翻译，给播放器叠字幕、给凛读台词用 ----------
+_CJK_RE = re.compile(r'[一-鿿]')
+SUBS_JOBS = {}       # filename -> 'working' | 'done' | 'error'
+SUBS_JOBS_LOCK = threading.Lock()
+
+
+def _subs_file(safe):
+    return os.path.join(VIDEOS_DIR, safe.rsplit('.', 1)[0] + '.subs.json')
+
+
+def _join_word(acc, txt):
+    if not acc:
+        return txt
+    if _CJK_RE.search(txt) or _CJK_RE.search(acc[-1:]):
+        return acc + txt
+    return acc + (' ' if not acc.endswith(' ') else '') + txt
+
+
+def _words_to_segments(words):
+    """按停顿、标点、长度把一个个字/词聚成一条条字幕。"""
+    segs, cur = [], None
+    for w in words or []:
+        if (w.get('type') or 'word') == 'spacing':
+            continue
+        txt = (w.get('text') or '').strip()
+        if not txt:
+            continue
+        t0, t1 = w.get('start'), w.get('end')
+        if cur is None:
+            cur = {'t0': t0, 't1': t1, 'text': txt}
+            continue
+        gap = (t0 - cur['t1']) if (t0 is not None and cur['t1'] is not None) else 0
+        if gap > 1.0 or len(cur['text']) > 28 or cur['text'][-1:] in '。！？.!?':
+            segs.append(cur)
+            cur = {'t0': t0, 't1': t1, 'text': txt}
+        else:
+            cur['text'] = _join_word(cur['text'], txt)
+            cur['t1'] = t1
+    if cur and cur['text']:
+        segs.append(cur)
+    return segs
+
+
+def _translate_segments(segs, src_lang):
+    """整部片子的台词一次性批量翻译（分批请求），中文翻英文、其他一律翻中文。省钱也省时间。"""
+    to_zh = not (src_lang or '').lower().startswith('zh')
+    sys_p = ('把下面编号的台词逐条翻译成' + ('中文' if to_zh else '英文') +
+             '，保留编号，一行一条，不要加任何别的字。台词可能不完整或口语化，照原意译，别润色展开。')
+    BATCH = 40
+    for i in range(0, len(segs), BATCH):
+        chunk = segs[i:i + BATCH]
+        user_p = '\n'.join(f'{j+1}. {s["text"]}' for j, s in enumerate(chunk))
+        out, err = _ds_call(sys_p, user_p, max_tokens=2000)
+        if not out:
+            continue
+        lines = {}
+        for ln in out.strip().split('\n'):
+            m = re.match(r'\s*(\d+)[.、]\s*(.*)', ln)
+            if m:
+                lines[int(m.group(1))] = m.group(2).strip()
+        if len(lines) == len(chunk):
+            for j, s in enumerate(chunk):
+                s['trans'] = lines.get(j + 1, '')
+    return segs
+
+
+def _build_subs(filename):
+    safe = secure_filename(filename)
+    fp = os.path.join(VIDEOS_DIR, safe)
+    if not EL_KEY or not os.path.exists(fp) or os.path.getsize(fp) > 90 * 1024 * 1024:
+        with SUBS_JOBS_LOCK:
+            SUBS_JOBS[safe] = 'error'
+        return
+    try:
+        words, lang = None, ''
+        for model_id in ('scribe_v2', 'scribe_v1'):
+            with open(fp, 'rb') as vf:
+                r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
+                                  headers={'xi-api-key': EL_KEY},
+                                  files={'file': (safe, vf, 'video/mp4')},
+                                  data={'model_id': model_id}, timeout=300)
+            if r.status_code == 200:
+                d = r.json() or {}
+                words, lang = d.get('words') or [], d.get('language_code') or ''
+                break
+        if not words:
+            with SUBS_JOBS_LOCK:
+                SUBS_JOBS[safe] = 'error'
+            return
+        segs = _words_to_segments(words)
+        segs = _translate_segments(segs, lang)
+        jwrite(_subs_file(safe), {'lang': lang, 'segments': segs})
+        with SUBS_JOBS_LOCK:
+            SUBS_JOBS[safe] = 'done'
+    except Exception as e:
+        print(f'[subs] {safe} 出错：{e}', flush=True)
+        with SUBS_JOBS_LOCK:
+            SUBS_JOBS[safe] = 'error'
+
+
+@app.route('/api/videos/<filename>/subtitles', methods=['GET', 'POST'])
+def video_subtitles(filename):
+    safe = secure_filename(filename)
+    cached = jread(_subs_file(safe), None)
+    if cached is not None:
+        return jsonify({'status': 'done', **cached})
+    with SUBS_JOBS_LOCK:
+        state = SUBS_JOBS.get(safe)
+        if request.method == 'POST' and state not in ('working',):
+            SUBS_JOBS[safe] = 'working'
+            threading.Thread(target=_build_subs, args=(filename,), daemon=True).start()
+            state = 'working'
+    if not state:
+        return jsonify({'status': 'none'})
+    return jsonify({'status': state})
 
 
 # ============================================================

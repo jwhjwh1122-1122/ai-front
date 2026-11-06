@@ -1,5 +1,6 @@
 /* 凛 · 房间与交互 */
 let currentBook = null, currentPage = 0, curMedia = null, curKind = 'video';
+let curSubs = null, dialogueReadTo = 0, nudgeTimer = null, lastNudgeAt = 0;
 let bookList = [], selQuote = '', replyTo = null, tagPos = 0;
 let calYear = 0, calMonth = 0;
 let postImgs = [], cmTarget = null, pageHls = [], emojiTarget = 'chat';
@@ -948,8 +949,96 @@ function playMedia(m, kind) {
       if (v.readyState < 2) { try { v.currentTime = 0.1; } catch (e) { } }
     };
     setTimeout(loadMoments, 900);
+    setupSubs(m.filename);
+    setupNudge();
   }
   renderSplit('stage');
+}
+
+// ============ 双语字幕：拉取、轮询、叠在播放器上 ============
+async function setupSubs(filename) {
+  curSubs = null; dialogueReadTo = 0;
+  $('stage-subs').style.display = 'none';
+  const poll = async (started) => {
+    let d;
+    try { d = await jget(`/api/videos/${encodeURIComponent(filename)}/subtitles`); } catch (e) { return; }
+    if (curMedia?.filename !== filename) return;   // 这期间换片子了，别再管
+    if (d.status === 'done') {
+      curSubs = d.segments || [];
+      $('stage-subs').style.display = curSubs.length ? '' : 'none';
+      bindSubsRender();
+    } else if (d.status === 'working') {
+      setTimeout(() => poll(true), 4000);
+    } else if (d.status === 'none' && !started) {
+      jpost(`/api/videos/${encodeURIComponent(filename)}/subtitles`, {}).catch(() => { });
+      setTimeout(() => poll(true), 4000);
+    } else if (d.status === 'error') {
+      curSubs = [];   // 没字幕（没配语音识别、片子太大、识别失败……），别一直转圈
+    }
+  };
+  poll(false);
+}
+let subsBound = false;
+function bindSubsRender() {
+  if (subsBound) return;
+  subsBound = true;
+  const v = $('stage-video');
+  v.addEventListener('timeupdate', () => {
+    if (!curSubs || !curSubs.length) return;
+    const t = v.currentTime;
+    const s = curSubs.find(x => t >= x.t0 && t <= x.t1 + 0.15);
+    $('stage-subs-a').textContent = s ? s.text : '';
+    $('stage-subs-b').textContent = s ? (s.trans || '') : '';
+  });
+}
+
+// ============ 放映员：片子在放就每 5 分钟搭句话，暂停了不叫，片尾单独叫一次 ============
+const NUDGE_EVERY_MIN = 5;
+function setupNudge() {
+  clearNudge();
+  lastNudgeAt = 0;
+  const v = $('stage-video');
+  v.onplay = () => startNudge();
+  v.onpause = () => clearNudge();
+  v.onended = () => { clearNudge(); fireNudge(true); };
+  if (!v.paused) startNudge();
+}
+function startNudge() {
+  if (nudgeTimer) return;
+  nudgeTimer = setInterval(fireNudge, NUDGE_EVERY_MIN * 60 * 1000);
+}
+function clearNudge() {
+  if (nudgeTimer) { clearInterval(nudgeTimer); nudgeTimer = null; }
+}
+function restartNudge() {
+  if (!nudgeTimer) return;   // 没在放就不用管，startNudge 自己会在 play 时建
+  clearNudge(); startNudge();
+}
+function fireNudge(isEnd) {
+  if (!curMedia || curKind === 'music' || !$('stage').classList.contains('open')) { clearNudge(); return; }
+  if (isTyping) return;   // 他正在回别的话，这轮跳过，下个周期再说
+  const v = $('stage-video');
+  if (!isEnd && v.paused) { clearNudge(); return; }
+  const now = Date.now(), pos = stageTime();
+  const gapMin = lastNudgeAt ? (now - lastNudgeAt) / 60000 : 0;
+  lastNudgeAt = now;
+  let note;
+  if (isEnd) note = '（片子放完这一集了，你自己想说点什么就说，不想说也行）';
+  else if (!gapMin || gapMin > NUDGE_EVERY_MIN * 1.5)
+    note = `（你有一阵没看了，画面现在到 ${fmtTime(pos)}，想追一下就自己 scan_frames/read_dialogue 补上，再说说看）`;
+  else note = '（片子还在放，你自己看看、想说就说，不用等她先开口）';
+  roomCtx = 'stage';
+  sendComposed(note, [], { internal: true });
+}
+
+// ============ 读台词 ============
+function readDialogueRange(fromSec, toSec) {
+  if (!curSubs || !curSubs.length) return null;
+  const to = toSec != null ? toSec : stageTime();
+  const from = fromSec != null ? fromSec : dialogueReadTo;
+  const lines = curSubs.filter(s => s.t1 >= from && s.t0 <= to);
+  dialogueReadTo = Math.max(dialogueReadTo, to);
+  return lines;
 }
 // 歌的形状：本地算，存服务器
 let shapeCtx = null, shapeSrc = null, shapeAnalyser = null, shapeData = [], shapeTimer = null, shapeFor = '';
@@ -2860,6 +2949,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('stage-close').onclick = () => {
     $('stage').classList.remove('open'); roomCtx = null;
     $('stage-video').pause(); $('stage-audio').pause();
+    clearNudge();
     refreshHome();
   };
 

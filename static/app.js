@@ -94,6 +94,7 @@ const T = {
     { name: 'grab_frame', description: '看她停的这一帧，播放器要开着', input_schema: { type: 'object', properties: { seconds: { type: 'number' } } } },
     { name: 'scan_frames', description: '扫几帧看片子里有什么', input_schema: { type: 'object', properties: { count: { type: 'number' } } } },
     { name: 'ask_seek', description: '想看某个时间点先问她，她同意才跳', input_schema: { type: 'object', required: ['seconds', 'why'], properties: { seconds: { type: 'number' }, why: { type: 'string' } } } },
+    { name: 'read_dialogue', description: '读一段台词（带时间戳），不填范围就是「从你上次读到的地方到现在」，没字幕就说没有', input_schema: { type: 'object', properties: { from_seconds: { type: 'number' }, to_seconds: { type: 'number' } } } },
     { name: 'room_music_shape', description: '某首歌的形状：哪段密哪段空', input_schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } },
     { name: 'room_media', description: '放映室和听音房有什么。kind=video|music', input_schema: { type: 'object', properties: { kind: { type: 'string' } } } },
     { name: 'room_read_tags', description: '读标签。type=book|video|music', input_schema: { type: 'object', required: ['type', 'id'], properties: { type: { type: 'string' }, id: { type: 'string' }, pos: { type: 'number' } } } },
@@ -435,6 +436,13 @@ async function execTool(name, args) {
       const img = grabFrameNow(args.seconds);
       if (!img) return txt('她的播放器没开着，看不到画面。让她打开放映室再说。');
       return { content: [{ type: 'text', text: `这是她停在 ${fmtTime(img.t)} 的画面` }, { type: 'image_url', image_url: { url: img.data } }], _summary: `看了 ${fmtTime(img.t)} 那一帧` };
+    }
+    if (name === 'read_dialogue') {
+      if (!curMedia || curKind === 'music') return txt('没在放映室看片，没台词可读。');
+      if (curSubs === null) return txt('这部片子的字幕还在处理，等会儿再读（没配语音识别的话就一直没有）。');
+      const lines = readDialogueRange(args.from_seconds, args.to_seconds);
+      if (!lines || !lines.length) return txt('这段没有台词，或者还没放到这儿。');
+      return txt(lines.map(s => `[${fmtTime(s.t0)}] ${s.text}`).join('\n'));
     }
     if (name === 'room_read_tags') {
       const tags = await fetchTags(args.type, args.id, args.pos);
@@ -1619,10 +1627,13 @@ async function sendComposed(text, imgs, opts) {
   const seq = beginTurn();
   const msg = { role: 'user', content, _mid: genMid() };
   if (opts.audio) { msg._audio = opts.audio; msg._dur = opts.dur; }
+  if (opts.internal) msg._internal = true;
   messages.push(msg);
   const myIdx = messages.length - 1;
   if (!roomCtx) showPage('chat');
-  addUserBubble(text, imgs.length ? imgs : null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null, true);
+  if (!opts.internal) addUserBubble(text, imgs.length ? imgs : null, myIdx, opts.audio ? { url: opts.audio, dur: opts.dur } : null, true);
+  // 真聊了一句，放映员的闹钟从这会儿重新倒数，别紧跟着又搭一句
+  if (!opts.internal && roomCtx === 'stage' && curKind === 'video' && typeof restartNudge === 'function') restartNudge();
   saveConv();
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
