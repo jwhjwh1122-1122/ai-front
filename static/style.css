@@ -250,7 +250,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .mumble::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:2px;background:var(--room-deep);}
 .mumble-body{font-size:14px;line-height:1.95;color:var(--ink);white-space:pre-wrap;}
 .mumble-date{font-size:10px;color:var(--ink-soft);margin-top:8px;text-align:right;letter-spacing:1px;}
-.fault{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:14px 16px;}
+.fault{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:14px 16px 34px;}
 .fault-h{font-size:11px;color:var(--ink-soft);letter-spacing:2px;margin-bottom:4px;}
 .fault-b{font-size:14px;line-height:1.9;color:var(--ink);white-space:pre-wrap;margin-bottom:10px;}
 .fault-b:last-child{margin-bottom:0;}

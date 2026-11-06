@@ -622,9 +622,22 @@ def faults_api():
     return jsonify(_slist(FAULTS_FILE))
 
 
-@app.route('/api/faults/<iid>', methods=['DELETE'])
-def del_fault(iid):
-    _sdel(FAULTS_FILE, iid)
+@app.route('/api/faults/<iid>', methods=['PUT', 'DELETE'])
+def fault_item(iid):
+    if request.method == 'DELETE':
+        _sdel(FAULTS_FILE, iid)
+        return jsonify({'ok': True})
+    d = request.json or {}
+    items = jread(FAULTS_FILE, [])
+    for x in items:
+        if x.get('id') == iid:
+            x['what'] = (d.get('what') or x.get('what', ''))[:800]
+            x['sorry'] = d.get('sorry', x.get('sorry', ''))[:800]
+            x['how'] = d.get('how', x.get('how', ''))[:800]
+            break
+    else:
+        return jsonify({'error': 'not found'}), 404
+    jwrite(FAULTS_FILE, items)
     return jsonify({'ok': True})
 
 
@@ -4887,8 +4900,17 @@ def cc_pending():
 
 
 # ---------- 小本子 ----------
-@app.route('/api/notebook', methods=['GET'])
-def notebook_get():
+@app.route('/api/notebook', methods=['GET', 'POST'])
+def notebook_api():
+    if request.method == 'POST':
+        d = request.json or {}
+        t = (d.get('text') or '').strip()
+        if len(t) > NOTEBOOK_MAX:
+            return jsonify({'error': f'写不下了（{len(t)}/{NOTEBOOK_MAX} 字）'}), 400
+        nb = load_nb()
+        nb['pending'] = t
+        jwrite(_nb_file(), nb)
+        return jsonify({'ok': True, 'text': t, 'max': NOTEBOOK_MAX})
     nb = load_nb()
     cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
     return jsonify({'text': cur, 'max': NOTEBOOK_MAX})
