@@ -1947,19 +1947,17 @@ async function openUsage() {
 }
 
 // ============ 搜聊天记录 ============
-function allConvMessages() {
+// 每个窗口是独立的：搜索只在当前这一窗里找，不翻别的窗口
+function currentConvMessages() {
   const out = [];
-  getConvs().forEach(c => {
-    let msgs = [];
-    try { msgs = JSON.parse(localStorage.getItem('conv-' + c.id) || '[]'); } catch (e) { }
-    msgs.forEach((m, i) => {
-      if (m._internal || m.role === 'tool') return;
-      if (m.role === 'user' && Array.isArray(m.content) && m.content.some(x => x && x.type === 'tool_result')) return;
-      const t = typeof m.content === 'string' ? m.content
-        : (Array.isArray(m.content) ? m.content.filter(x => x && x.type === 'text').map(x => x.text).join(' ') : '');
-      if (!t.trim()) return;
-      out.push({ conv: c.id, title: c.title || '对话', idx: i, role: m.role, text: t });
-    });
+  const title = getConvs().find(c => c.id === currentConvId)?.title || '对话';
+  messages.forEach((m, i) => {
+    if (m._internal || m.role === 'tool') return;
+    if (m.role === 'user' && Array.isArray(m.content) && m.content.some(x => x && x.type === 'tool_result')) return;
+    const t = typeof m.content === 'string' ? m.content
+      : (Array.isArray(m.content) ? m.content.filter(x => x && x.type === 'text').map(x => x.text).join(' ') : '');
+    if (!t.trim()) return;
+    out.push({ conv: currentConvId, title, idx: i, role: m.role, text: t });
   });
   return out;
 }
@@ -1976,22 +1974,17 @@ function doSearch() {
   const q = $('search-input').value.trim();
   const el = $('search-result');
   if (!q) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">搜你们说过的话</div>'; return; }
-  const hits = allConvMessages().filter(m => m.text.toLowerCase().includes(q.toLowerCase()));
+  const hits = currentConvMessages().filter(m => m.text.toLowerCase().includes(q.toLowerCase()));
   if (!hits.length) {
     el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">没找到「' + esc(q) + '」</div>';
     return;
   }
-  const byConv = {};
-  hits.forEach(m => { (byConv[m.conv] = byConv[m.conv] || []).push(m); });
-  let h = '<div class="sr-total">共 <b>' + hits.length + '</b> 条相关聊天记录</div>';
-  Object.entries(byConv).forEach(([cid, list]) => {
-    h += '<div class="sr-conv">' + esc(list[0].title) + '　<span>' + list.length + ' 条</span></div>';
-    list.slice(0, 40).forEach(m => {
-      const who = m.role === 'user' ? (CFG.call_user || '宝宝') : displayName();
-      h += '<div class="sr-item" data-conv="' + cid + '" data-idx="' + m.idx + '">' +
-        '<div class="sr-who">' + esc(who) + '</div>' +
-        '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>';
-    });
+  let h = '<div class="sr-total">这个窗口里共 <b>' + hits.length + '</b> 条相关聊天记录</div>';
+  hits.slice(0, 60).forEach(m => {
+    const who = m.role === 'user' ? (CFG.call_user || '宝宝') : displayName();
+    h += '<div class="sr-item" data-conv="' + m.conv + '" data-idx="' + m.idx + '">' +
+      '<div class="sr-who">' + esc(who) + '</div>' +
+      '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>';
   });
   el.innerHTML = h;
   el.querySelectorAll('[data-conv]').forEach(it => it.onclick = () => {
