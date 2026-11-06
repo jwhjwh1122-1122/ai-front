@@ -3139,7 +3139,13 @@ document.addEventListener('DOMContentLoaded', () => {
         currentModel = mo; localStorage.setItem('model', mo);
         [...el.children].forEach(x => x.classList.remove('active'));
         d.classList.add('active');
-        $('model-sub').textContent = '下一句用 ' + d.textContent;
+        $('model-sub').textContent = '这个窗口用 ' + d.textContent;
+        // 立刻记到这个窗口自己头上，不用等发完下一句才存
+        if (currentConvId) {
+          const list = getConvs();
+          const idx = list.findIndex(c => c.id === currentConvId);
+          if (idx >= 0) { list[idx].model = mo; saveConvs(list); }
+        }
       };
       el.appendChild(d);
     });

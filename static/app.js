@@ -1750,15 +1750,33 @@ function saveConv() {
   }
   const list = getConvs();
   const idx = list.findIndex(c => c.id === currentConvId);
+  const prev = idx >= 0 ? list[idx] : null;
   const fu = messages.find(m => m.role === 'user' && !m._internal);
-  const title = typeof fu?.content === 'string' ? fu.content.slice(0, 20)
+  const autoTitle = typeof fu?.content === 'string' ? fu.content.slice(0, 20)
     : (Array.isArray(fu?.content) ? (fu.content.find(c => c.type === 'text')?.text || '对话').slice(0, 20) : '对话');
   const lm = messages[messages.length - 1];
   const preview = typeof lm?.content === 'string' ? lm.content.slice(0, 30)
     : (Array.isArray(lm?.content) ? lm.content.filter(c => c && c.type === 'text').map(c => c.text).join('').slice(0, 30) : '');
-  const entry = { id: currentConvId, title, preview, updatedAt: Date.now() };
+  const entry = { id: currentConvId, title: prev?.customTitle || autoTitle, preview, updatedAt: Date.now(), model: currentModel };
+  if (prev?.customTitle) entry.customTitle = prev.customTitle;
   if (idx >= 0) list[idx] = entry; else list.unshift(entry);
   saveConvs(list);
+}
+// 每个窗口自己记自己的名字：手动改过之后就不再被自动摘要的标题覆盖
+function renameConv(id, name) {
+  const list = getConvs();
+  const idx = list.findIndex(c => c.id === id);
+  if (idx < 0) return;
+  name = (name || '').trim();
+  if (name) { list[idx].title = name; list[idx].customTitle = name; }
+  else { delete list[idx].customTitle; }
+  saveConvs(list);
+}
+// 每个窗口自己记自己用的模型，切过去就跟着换
+function syncModelUI() {
+  const el = $('model-list'); if (!el || !currentModel) return;
+  [...el.children].forEach(x => x.classList.toggle('active', x.title === currentModel));
+  const sub = $('model-sub'); if (sub) sub.textContent = '这个窗口用 ' + currentModel.split('/').pop();
 }
 // 长对话一次全画出来手机会卡死：打开时只画最近 RENDER_CHUNK 条，翻到顶再往前补
 const RENDER_CHUNK = 60;
@@ -1809,6 +1827,9 @@ function loadConv(id) {
   const saved = localStorage.getItem('conv-' + id); if (!saved) return;
   if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
+  const convEntry = getConvs().find(c => c.id === id);
+  if (convEntry && convEntry.model) { currentModel = convEntry.model; localStorage.setItem('model', convEntry.model); }
+  syncModelUI();
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
   ctxWarnedAt = { warn: false, switch: false };   // 换了个窗口，上下文量提醒重新算
   $('ctx-warn-pill')?.classList.remove('show', 'full');
@@ -1924,7 +1945,23 @@ function renderConvs() {
       if (currentConvId === c.id) { if (nl.length) loadConv(nl[0].id); else newConv(true); }
       renderConvs();
     };
-    d.onclick = () => { if (messages.length) saveConv(); loadConv(c.id); renderConvs(); $('conv-panel').classList.remove('open'); showPage('chat'); };
+    // 长按/右键这个窗口的名字，单独给它改个名：只改这一个窗口，不影响别的
+    let renameTimer = null, justRenamed = false;
+    const openConvRename = () => {
+      if (navigator.vibrate) navigator.vibrate(12);
+      justRenamed = true;
+      const next = prompt('给这个窗口起个名字（留空就恢复自动摘要的标题）', c.customTitle || c.title || '');
+      if (next !== null) { renameConv(c.id, next); renderConvs(); }
+    };
+    const titleEl = d.querySelector('.conv-title');
+    titleEl.addEventListener('touchstart', e => { e.stopPropagation(); justRenamed = false; renameTimer = setTimeout(openConvRename, 550); }, { passive: true });
+    titleEl.addEventListener('touchend', () => clearTimeout(renameTimer));
+    titleEl.addEventListener('touchmove', () => clearTimeout(renameTimer), { passive: true });
+    titleEl.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); openConvRename(); });
+    d.onclick = () => {
+      if (justRenamed) { justRenamed = false; return; }
+      if (messages.length) saveConv(); loadConv(c.id); renderConvs(); $('conv-panel').classList.remove('open'); showPage('chat');
+    };
     el.appendChild(d);
   });
 }
