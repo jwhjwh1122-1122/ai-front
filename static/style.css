@@ -192,7 +192,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .ctx-option.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .mini-input{width:100%;padding:8px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;font-family:inherit;outline:none;}
 .mini-input:focus{border-color:var(--accent);}
-.toast{display:none;position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;font-size:13px;padding:8px 18px;border-radius:20px;z-index:900;white-space:nowrap;max-width:80%;text-align:center;}
+.toast{display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;font-size:11px;font-weight:600;padding:4px 14px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.18);z-index:999;white-space:nowrap;max-width:80%;text-align:center;pointer-events:none;}
 .toast.show{display:block;animation:fadeToast 2.2s ease forwards;}
 @keyframes fadeToast{0%{opacity:0}12%{opacity:1}80%{opacity:1}100%{opacity:0}}
 .prog-wrap{display:none;position:fixed;left:20px;right:20px;bottom:120px;z-index:900;background:var(--bg2);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:14px;padding:12px 16px;}
@@ -250,10 +250,25 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .mumble::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:2px;background:var(--room-deep);}
 .mumble-body{font-size:14px;line-height:1.95;color:var(--ink);white-space:pre-wrap;}
 .mumble-date{font-size:10px;color:var(--ink-soft);margin-top:8px;text-align:right;letter-spacing:1px;}
-.fault{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:14px 16px 34px;}
+.fault{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:14px 16px;}
 .fault-h{font-size:11px;color:var(--ink-soft);letter-spacing:2px;margin-bottom:4px;}
 .fault-b{font-size:14px;line-height:1.9;color:var(--ink);white-space:pre-wrap;margin-bottom:10px;}
 .fault-b:last-child{margin-bottom:0;}
+/* 犯错本：两个人都能改 */
+.fault-add{font-size:12px;padding:6px 12px;border-radius:16px;border:1px solid var(--room-deep);color:var(--ink);background:var(--paper);cursor:pointer;white-space:nowrap;}
+.fault-add:active{opacity:.6;}
+.fault-ops{display:flex;gap:14px;justify-content:flex-end;margin-top:4px;}
+.fault-op{font-size:11px;color:var(--ink-soft);letter-spacing:1px;cursor:pointer;}
+.fault-op.go{color:#c0607f;}
+.fault-in{width:100%;box-sizing:border-box;font:inherit;font-size:14px;line-height:1.9;color:var(--ink);background:rgba(0,0,0,.03);border:1px solid var(--room-deep);border-radius:3px;padding:7px 9px;margin-bottom:10px;resize:vertical;min-height:52px;}
+.fault-in:focus{outline:none;border-color:#c0607f;}
+.fault-who{font-size:10px;color:var(--ink-soft);letter-spacing:1px;}
+/* 小本子：她也能改 */
+.nb-edit{width:100%;box-sizing:border-box;margin-top:9px;min-height:200px;font:inherit;font-size:13px;line-height:1.75;color:var(--text);background:var(--input-bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;resize:vertical;}
+.nb-edit:focus{outline:none;border-color:var(--accent);}
+.nb-btn{padding:6px 14px;border-radius:18px;border:1.5px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;cursor:pointer;white-space:nowrap;}
+.nb-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+.nb-btn.over{opacity:.45;pointer-events:none;}
 
 /* ===== 房间 ===== */
 .room{display:none;position:fixed;inset:0;z-index:210;background:var(--room);flex-direction:column;}

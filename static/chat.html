@@ -213,7 +213,7 @@ window.addEventListener('error', function (e) {
     <div class="tcard" data-t="fault">
       <div class="tcard-ico"><svg width="46" height="46" viewBox="0 0 48 48"><path class="ic" d="M24 8 L41 38 H7 Z"/><path class="ic thin" d="M24 19 V28"/><circle class="ic" cx="24" cy="33" r="1.2"/></svg></div>
       <div class="tcard-t">犯错本</div>
-      <div class="tcard-d">他觉得自己做错了会写，你也能记一笔。</div>
+      <div class="tcard-d">他觉得自己做错了才写。</div>
       <div class="tcard-n" id="n-fault"></div>
     </div>
   </div>
@@ -277,25 +277,11 @@ window.addEventListener('error', function (e) {
 
 <div class="full" id="tp-fault">
   <div class="full-head"><div><div class="full-title">犯错本</div><div class="full-count" id="fault-count"></div></div>
-    <div class="full-btns"><button class="mem-upload-btn" id="btn-add-fault">+ 记一笔</button>
-    <div class="mem-close-btn" data-close-full="tp-fault">✕</div></div></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="fault-add" id="fault-add">＋ 记一页</div>
+      <div class="mem-close-btn" data-close-full="tp-fault">✕</div>
+    </div></div>
   <div class="list-wrap" id="fault-list"></div>
-</div>
-
-<div class="sheet" id="fault-modal">
-  <div class="sheet-inner">
-    <div class="sheet-title" id="fault-modal-title">记一笔</div>
-    <div class="settings-label">错在哪</div>
-    <textarea class="note-input" id="fault-what" placeholder="做错了什么…" style="height:80px;margin-top:6px;"></textarea>
-    <div class="settings-label" style="margin-top:12px;">对不起</div>
-    <textarea class="note-input" id="fault-sorry" placeholder="（可以不写）" style="height:60px;margin-top:6px;"></textarea>
-    <div class="settings-label" style="margin-top:12px;">以后</div>
-    <textarea class="note-input" id="fault-how" placeholder="（可以不写）" style="height:60px;margin-top:6px;"></textarea>
-    <div class="sheet-btns">
-      <button class="btn-ghost" data-close-sheet="fault-modal">算了</button>
-      <button class="btn-solid" id="btn-save-fault">记上</button>
-    </div>
-  </div>
 </div>
 
 <!-- ============ 设置 ============ -->
@@ -425,11 +411,17 @@ window.addEventListener('error', function (e) {
     </div>
 
     <div class="settings-card">
-      <div class="settings-label">小本子</div>
-      <div class="settings-sub">必须记住的事。一直放在他眼前，不会被压缩，换会话、重新生成都不丢。他自己会写，你也能改。</div>
-      <textarea class="note-input" id="nb-text" style="margin-top:9px;height:110px;font-size:13px;line-height:1.75;"></textarea>
-      <div class="settings-sub" id="nb-count" style="margin-top:6px;"></div>
-      <button class="btn-ghost" id="btn-nb-save" style="width:100%;margin-top:8px;font-size:13px;padding:9px;">保存</button>
+      <div class="settings-label">他的小本子</div>
+      <div class="settings-sub">他自己写给自己、必须记住的事。一直放在他眼前，不会被压缩，换会话、重新生成都不丢。你也能直接改这一本。</div>
+      <div id="nb-text" style="margin-top:9px;font-size:13px;line-height:1.75;white-space:pre-wrap;"></div>
+      <textarea id="nb-edit" class="nb-edit" style="display:none" spellcheck="false"></textarea>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <div class="settings-sub" id="nb-count" style="flex:1;margin:0;"></div>
+        <div class="nb-btn" id="nb-do">改</div>
+        <div class="nb-btn" id="nb-cancel" style="display:none">算了</div>
+        <div class="nb-btn primary" id="nb-save" style="display:none">存下</div>
+        <div class="nb-btn primary" id="nb-save-now" style="display:none">存下·立刻生效</div>
+      </div>
     </div>
 
     <div class="settings-card">
@@ -1329,7 +1321,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 
-<script src="/static/app.js?v=49"></script>
+<script src="/static/app.js?v=50"></script>
 <script src="/static/rooms.js?v=44"></script>
 </body>
 </html>

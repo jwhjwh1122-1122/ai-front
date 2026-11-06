@@ -1235,6 +1235,7 @@ async function streamResponse(wrap, hist) {
               if (currentThinkContent) {
                 const all = thinkingText, cj = (all.match(/[\u4e00-\u9fff]/g) || []).length, la = (all.match(/[A-Za-z]/g) || []).length;
                 currentThinkContent.textContent = thinkingText;   // 原文直接显示，翻译想完了在下面另开一个框
+                currentThinkContent.classList.add('open');         // 流式时自动展开，换行正常显示
               }
               // 收起时也能看到他正在想的最后一句
               const hs = currentThinkWrap && currentThinkWrap.querySelector('.thinking-header > span:not(.thinking-arrow)');

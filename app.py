@@ -618,26 +618,34 @@ def faults_api():
             return jsonify({'error': '空的'}), 400
         return jsonify(_sadd(FAULTS_FILE, {'what': d.get('what', '')[:800],
                                            'sorry': d.get('sorry', '')[:800],
-                                           'how': d.get('how', '')[:800]}))
+                                           'how': d.get('how', '')[:800],
+                                           'by': 'user' if d.get('by') == 'user' else 'lin'}))
     return jsonify(_slist(FAULTS_FILE))
 
 
-@app.route('/api/faults/<iid>', methods=['PUT', 'DELETE'])
-def fault_item(iid):
-    if request.method == 'DELETE':
-        _sdel(FAULTS_FILE, iid)
-        return jsonify({'ok': True})
-    d = request.json or {}
-    items = jread(FAULTS_FILE, [])
-    for x in items:
-        if x.get('id') == iid:
-            x['what'] = (d.get('what') or x.get('what', ''))[:800]
-            x['sorry'] = d.get('sorry', x.get('sorry', ''))[:800]
-            x['how'] = d.get('how', x.get('how', ''))[:800]
-            break
-    else:
-        return jsonify({'error': 'not found'}), 404
-    jwrite(FAULTS_FILE, items)
+@app.route('/api/faults/<iid>', methods=['DELETE', 'PATCH'])
+def del_fault(iid):
+    """犯错本两个人都能改：他自己写，宝宝也能改、也能删。"""
+    if request.method == 'PATCH':
+        d = request.json or {}
+        items = jread(FAULTS_FILE, [])
+        hit = None
+        for x in items:
+            if x.get('id') == iid:
+                hit = x
+                break
+        if hit is None:
+            return jsonify({'error': '没这一页'}), 404
+        for k in ('what', 'sorry', 'how'):
+            if k in d:
+                hit[k] = (d.get(k) or '')[:800]
+        if not (hit.get('what') or '').strip():
+            return jsonify({'error': '「错在哪」不能空'}), 400
+        hit['edited'] = int(time.time() * 1000)
+        hit['edited_by'] = 'user' if (d.get('by') or 'user') == 'user' else 'lin'
+        jwrite(FAULTS_FILE, items)
+        return jsonify(hit)
+    _sdel(FAULTS_FILE, iid)
     return jsonify({'ok': True})
 
 
@@ -4901,19 +4909,26 @@ def cc_pending():
 
 # ---------- 小本子 ----------
 @app.route('/api/notebook', methods=['GET', 'POST'])
-def notebook_api():
+def notebook_get():
+    """同一本：他自己 notebook 工具写，宝宝在设置里也能直接改。
+    改完先挂在 pending 上，和他自己写一样 —— 平时不为这个断掉提示缓存；
+    传 now=1 就立刻换进 system（下一句就带新的，代价是这轮缓存作废）。"""
+    nb = load_nb()
     if request.method == 'POST':
         d = request.json or {}
         t = (d.get('text') or '').strip()
         if len(t) > NOTEBOOK_MAX:
             return jsonify({'error': f'写不下了（{len(t)}/{NOTEBOOK_MAX} 字）'}), 400
-        nb = load_nb()
-        nb['pending'] = t
+        if d.get('now'):
+            nb['text'], nb['pending'] = t, None
+        else:
+            nb['pending'] = t
         jwrite(_nb_file(), nb)
-        return jsonify({'ok': True, 'text': t, 'max': NOTEBOOK_MAX})
-    nb = load_nb()
+        return jsonify({'text': t, 'max': NOTEBOOK_MAX,
+                        'live': bool(d.get('now')), 'len': len(t)})
     cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
-    return jsonify({'text': cur, 'max': NOTEBOOK_MAX})
+    return jsonify({'text': cur, 'max': NOTEBOOK_MAX,
+                    'pending': nb.get('pending') is not None})
 
 
 # ---------- 换窗口 / 会话换新：旧的压成「更早的事」 ----------

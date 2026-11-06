@@ -2222,33 +2222,90 @@ async function renderMumbles() {
     </div>`;
   }).join('');
 }
-let editFaultId = null;
-async function renderFaults() {
+// 犯错本：他自己写，宝宝也能改、也能删、也能替他记一页
+let faultItems = [];
+let faultEdit = null;   // 正在改的那一页 id，'new' = 正在新记一页
+
+const FF = [['what', '错 在 哪'], ['sorry', '对 不 起'], ['how', '以 后']];
+
+function faultCard(x) {
+  const d = new Date(x.ts);
+  const ed = (x.by === 'user' ? ' · 你记的' : '')
+    + (x.edited ? ` · ${x.edited_by === 'lin' ? '他' : '你'}改过` : '');
+  if (faultEdit === x.id) {
+    return `<div class="fault" data-id="${x.id}">
+      ${FF.map(([k, h]) => `<div class="fault-h">${h}</div>
+        <textarea class="fault-in" data-f="${k}" placeholder="${k === 'what' ? '这一栏不能空' : '不写就不显示'}">${esc(x[k] || '')}</textarea>`).join('')}
+      <div class="fault-ops">
+        <div class="fault-op" data-a="cancel">算了</div>
+        <div class="fault-op go" data-a="save">存下</div>
+      </div></div>`;
+  }
+  return `<div class="fault" data-id="${x.id}">
+    <div class="fault-h">错 在 哪</div><div class="fault-b">${esc(x.what)}</div>
+    ${x.sorry ? `<div class="fault-h">对 不 起</div><div class="fault-b">${esc(x.sorry)}</div>` : ''}
+    ${x.how ? `<div class="fault-h">以 后</div><div class="fault-b">${esc(x.how)}</div>` : ''}
+    <div class="fault-ops">
+      <div class="fault-who">${d.toLocaleDateString('zh-CN')}${ed}</div>
+      <div style="flex:1"></div>
+      <div class="fault-op" data-a="edit">改</div>
+      <div class="fault-op" data-a="del">撕掉</div>
+    </div></div>`;
+}
+
+function paintFaults() {
   const el = $('fault-list');
-  const items = await jget('/api/faults');
-  $('fault-count').textContent = items.length ? `${items.length} 条` : '';
-  if (!items.length) { el.innerHTML = '<div class="room-empty">还是空的<br>他觉得自己做错了会写，你也能记一笔</div>'; return; }
-  el.innerHTML = items.map(x => {
-    const d = new Date(x.ts);
-    return `<div class="fault" style="position:relative;">
-      <div class="fault-h">错 在 哪</div><div class="fault-b">${esc(x.what)}</div>
-      ${x.sorry ? `<div class="fault-h">对 不 起</div><div class="fault-b">${esc(x.sorry)}</div>` : ''}
-      ${x.how ? `<div class="fault-h">以 后</div><div class="fault-b">${esc(x.how)}</div>` : ''}
-      <div class="mumble-date">${d.toLocaleDateString('zh-CN')}</div>
-      <div class="qdel" data-edit="${x.id}" style="right:46px;">改</div>
-      <div class="qdel" data-del="${x.id}">✕</div></div>`;
-  }).join('');
-  el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
-    const x = items.find(v => v.id === b.dataset.edit); if (!x) return;
-    editFaultId = x.id;
-    $('fault-modal-title').textContent = '改一笔';
-    $('fault-what').value = x.what || ''; $('fault-sorry').value = x.sorry || ''; $('fault-how').value = x.how || '';
-    $('fault-modal').classList.add('open');
-  });
-  el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-    if (!confirm('删掉这页？')) return;
-    await fetch(`/api/faults/${b.dataset.del}`, { method: 'DELETE' });
-    renderFaults();
+  const cnt = $('fault-count');
+  if (cnt) cnt.textContent = faultItems.length ? `${faultItems.length} 页` : '';
+  let html = faultEdit === 'new'
+    ? faultCard({ id: 'new', ts: Date.now(), what: '', sorry: '', how: '' })
+    : '';
+  if (!faultItems.length && faultEdit !== 'new') {
+    html = '<div class="room-empty">还是空的<br>他觉得自己做错了才会写<br><span style="font-size:11px">你也可以替他记一页</span></div>';
+  } else {
+    html += faultItems.map(faultCard).join('');
+  }
+  el.innerHTML = html;
+  const box = el.querySelector(`.fault[data-id="${faultEdit}"] textarea[data-f="what"]`);
+  if (box) box.focus();
+}
+
+async function renderFaults() {
+  faultEdit = null;
+  faultItems = await jget('/api/faults');
+  paintFaults();
+}
+
+function setupFaults() {
+  const el = $('fault-list'); if (!el || el.dataset.wired) return;
+  el.dataset.wired = '1';
+  const add = $('fault-add');
+  if (add) add.onclick = () => { faultEdit = faultEdit === 'new' ? null : 'new'; paintFaults(); };
+  el.addEventListener('click', async e => {
+    const op = e.target.closest('[data-a]'); if (!op) return;
+    const card = op.closest('.fault'), id = card.dataset.id, a = op.dataset.a;
+    if (a === 'cancel') { faultEdit = null; paintFaults(); return; }
+    if (a === 'edit') { faultEdit = id; paintFaults(); return; }
+    if (a === 'del') {
+      if (!confirm('把这一页撕掉？撕了就没了')) return;
+      await fetch('/api/faults/' + id, { method: 'DELETE' });
+      faultItems = faultItems.filter(x => x.id !== id);
+      paintFaults(); toast('撕掉了');
+      return;
+    }
+    if (a === 'save') {
+      const v = {};
+      card.querySelectorAll('textarea[data-f]').forEach(t => v[t.dataset.f] = t.value.trim());
+      if (!v.what) { toast('「错在哪」总得写一句'); return; }
+      op.textContent = '…';
+      const r = id === 'new'
+        ? await jpost('/api/faults', { ...v, by: 'user' })
+        : await jpost('/api/faults/' + id, { ...v, by: 'user' }, 'PATCH');
+      if (r.error) { toast(r.error); op.textContent = '存下'; return; }
+      if (id === 'new') faultItems.unshift(r);
+      else faultItems = faultItems.map(x => x.id === id ? r : x);
+      faultEdit = null; paintFaults(); toast('记上了');
+    }
   });
 }
 
@@ -2361,7 +2418,6 @@ async function boot() {
   bindSplit('reader'); bindSplit('stage'); bindSplit('coread'); bindSplit('netease');
   startKeepalive();
   setupSettingsFold();
-  setupNotebook();
   $('btn-cc-usage').onclick = e => { e.stopPropagation(); loadCcUsage(true); };
   $('btn-cc-runs').onclick = () => loadCcRuns();
   if (localStorage.getItem('cur-page') === 'settings') { loadCcUsage(); loadCcRuns(); }
@@ -2537,7 +2593,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (t === 'wall') { $('tp-wall').classList.add('open'); renderMemories(); }
     else if (t === 'mumble') { $('tp-mumble').classList.add('open'); renderMumbles(); }
     else if (t === 'cal') { $('tp-cal').classList.add('open'); renderCalendar(); }
-    else if (t === 'fault') { $('tp-fault').classList.add('open'); renderFaults(); }
+    else if (t === 'fault') { $('tp-fault').classList.add('open'); setupFaults(); renderFaults(); }
     else if (t === 'days') { renderDaysModal(); $('days-modal').classList.add('open'); }
   });
 
@@ -2935,24 +2991,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const d = await jpost('/api/quotes/user', { text, why: $('q-why').value.trim() });
     if (d.error) { toast(d.error); return; }
     $('quote-modal').classList.remove('open'); openQuotes('user'); refreshTimeCounts();
-  };
-
-  // 犯错本
-  $('btn-add-fault').onclick = () => {
-    editFaultId = null;
-    $('fault-modal-title').textContent = '记一笔';
-    $('fault-what').value = ''; $('fault-sorry').value = ''; $('fault-how').value = '';
-    $('fault-modal').classList.add('open');
-  };
-  $('btn-save-fault').onclick = async () => {
-    const what = $('fault-what').value.trim();
-    if (!what) { toast('还没写'); return; }
-    const body = { what, sorry: $('fault-sorry').value.trim(), how: $('fault-how').value.trim() };
-    const d = editFaultId
-      ? await jpost(`/api/faults/${editFaultId}`, body, 'PUT')
-      : await jpost('/api/faults', body);
-    if (d.error) { toast(d.error); return; }
-    $('fault-modal').classList.remove('open'); renderFaults(); refreshTimeCounts();
   };
 
   // 时光墙
@@ -3583,27 +3621,53 @@ async function renderWakeExtra() {
   });
 }
 
-// ============ 小本子 ============
-let nbMax = 800;
+// ============ 小本子（同一本：他自己写，你也能改） ============
+let nbMax = 800, nbCur = '', nbEditing = false;
+
+function nbShow(on) {
+  nbEditing = on;
+  const ids = { 'nb-text': !on, 'nb-edit': on, 'nb-do': !on, 'nb-cancel': on, 'nb-save': on, 'nb-save-now': on };
+  Object.entries(ids).forEach(([k, v]) => { const e = $(k); if (e) e.style.display = v ? '' : 'none'; });
+  if (on) { const t = $('nb-edit'); t.value = nbCur; t.focus(); }
+  nbCount();
+}
+function nbCount() {
+  const c = $('nb-count'); if (!c) return;
+  const n = nbEditing ? ($('nb-edit').value || '').length : nbCur.length;
+  const over = n > nbMax;
+  c.textContent = nbCur || nbEditing ? `${n} / ${nbMax} 字${over ? ' · 写不下了' : ''}` : '';
+  c.style.color = over ? '#c0607f' : 'var(--text-muted)';
+  ['nb-save', 'nb-save-now'].forEach(k => { const b = $(k); if (b) b.classList.toggle('over', over); });
+}
+async function nbSave(now) {
+  const t = ($('nb-edit').value || '').trim();
+  const r = await jpost('/api/notebook', { text: t, now: now ? 1 : 0 });
+  if (r.error) { toast(r.error); return; }
+  nbCur = r.text;
+  $('nb-text').textContent = nbCur || '还是空的';
+  $('nb-text').style.color = nbCur ? 'var(--text)' : 'var(--text-muted)';
+  nbShow(false);
+  toast(now ? '存下了，他下一句就看得见' : '存下了，过一会儿换进他眼前');
+}
 async function renderNotebook() {
   const el = $('nb-text'); if (!el) return;
   try {
     const d = await jget('/api/notebook');
-    el.value = d.text || '';
-    nbMax = d.max || nbMax;
-    $('nb-count').textContent = `${(d.text || '').length} / ${nbMax} 字`;
-  } catch (e) { $('nb-count').textContent = '—'; }
-}
-function setupNotebook() {
-  const el = $('nb-text'); const save = $('btn-nb-save'); if (!el || !save) return;
-  el.addEventListener('input', () => { $('nb-count').textContent = `${el.value.length} / ${nbMax} 字`; });
-  save.onclick = async () => {
-    const t = el.value;
-    if (t.length > nbMax) { toast(`写不下了（${t.length}/${nbMax} 字）`); return; }
-    await jpost('/api/notebook', { text: t });
-    toast('存好了');
-    renderNotebook();
-  };
+    nbCur = d.text || ''; nbMax = d.max || 800;
+    el.textContent = nbCur || '还是空的';
+    el.style.color = nbCur ? 'var(--text)' : 'var(--text-muted)';
+    if (nbEditing) nbShow(false);
+    nbCount();
+  } catch (e) { el.textContent = '—'; }
+  const btn = $('nb-do');
+  if (btn && !btn.dataset.wired) {
+    btn.dataset.wired = '1';
+    btn.onclick = () => nbShow(true);
+    $('nb-cancel').onclick = () => nbShow(false);
+    $('nb-save').onclick = () => nbSave(false);
+    $('nb-save-now').onclick = () => nbSave(true);
+    $('nb-edit').addEventListener('input', nbCount);
+  }
 }
 
 // ============ 上下文窗口 ============
