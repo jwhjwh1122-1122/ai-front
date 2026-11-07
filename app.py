@@ -3829,7 +3829,7 @@ def tts_save():
     try:
         r = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{_voice_id(data, load_persona())}',
                           headers={'xi-api-key': el_key(), 'Content-Type': 'application/json'},
-                          json={'text': text, 'model_id': 'eleven_multilingual_v2',
+                          json={'text': text, 'model_id': 'eleven_v4',
                                 'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
                           timeout=90)
     except Exception as e:
@@ -3852,7 +3852,7 @@ def tts():
         return jsonify({'error': 'no text'}), 400
     r = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{_voice_id(data, load_persona())}/stream',
                       headers={'xi-api-key': el_key(), 'Content-Type': 'application/json'},
-                      json={'text': text, 'model_id': 'eleven_multilingual_v2',
+                      json={'text': text, 'model_id': 'eleven_v4',
                             'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
                       stream=True, timeout=30)
     if r.status_code != 200:
