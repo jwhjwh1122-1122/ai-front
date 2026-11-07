@@ -1756,10 +1756,9 @@ async function callTurn(text, silentUser) {
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。'
           + (callEn()
-            ? '这通电话你说英文——她喜欢你的英文声音。英文要像嘴里说出来的，口语、带缩写、短句，'
-              + '不是书面英文。整条说完之后另起一行写 ||| ，再把同样的意思写成中文，'
-              + '那是给她看的字幕，照着你英文的语气翻，别翻得像说明书。||| 只用一次，'
-              + '前面全英文、后面全中文。念出来的只有英文那半。[[挂了]] 写在最后面。'
+            ? '这通电话你说英文——她喜欢你的英文声音。英文要像嘴里说出来的，口语、带缩写、'
+              + '短句，不是书面英文。只写英文，中文字幕有人替你翻，你不用自己写。'
+              + '[[挂了]] 写在最后面。'
             : ''),
         extra_stable: emojiNames(), _ctx: ctxWindow,   // 跟聊天发一样的，system 才一字不差、缓存不断
         _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking()
@@ -1797,6 +1796,13 @@ async function callTurn(text, silentUser) {
     messages.push({ role: 'assistant', content: bi.zh ? bi.en + '\n' + bi.zh : reply, _call: true, _ts: Date.now() });
     saveConv();
     if (bi.zh) csCaptionBi(bi.en, bi.zh); else csCaption(reply, false);
+    // 他只说英文，中文字幕交给小模型翻：一边念一边翻，翻回来就贴在底下
+    if (callEn() && !bi.zh && bi.en) {
+      const myTurn = CALL.turns;
+      jpost('/api/translate', { text: bi.en }).then(d => {
+        if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(bi.en, d.text);
+      }).catch(() => { });
+    }
     await speakOut(bi.en || reply);
     if (CALL.cutOff) {
       // 被打断了，让他知道自己话没说完
