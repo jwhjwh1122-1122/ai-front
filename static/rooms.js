@@ -1550,11 +1550,14 @@ const CALL = {
   speakingOut: false, cutOff: false, cutMs: 0, audio: null,
   endedBy: 'user', who: 'user',
 };
-const SIL_THRESHOLD = 12;      // 低于这个音量算没在说话
+// 音量 = 时域波形的 RMS × 100(0~100)。
+// 旧版用 getByteFrequencyData 求平均，那个数人声说话也就十几，阈值又定在 12,
+// 等于永远过不去 —— 这是她对着死麦克风讲了两分半的直接原因。
+const SIL_THRESHOLD = 1.2;     // 低于这个音量算没在说话
 const SIL_MS = 1400;           // 停这么久就当说完了
 const MIN_MS = 700;            // 太短的不发，多半是噪音
 // 他说话时你插嘴要多大声才算数。太低会被自己的回声打断
-const CUT_IN = 30;
+const CUT_IN = 4;
 const CUT_IN_MS = 260;         // 得持续这么久，防止一声咳嗽就打断
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
 // 电话里说英文：念出来的是英文，字幕底下给中文。开关在通话界面「英」那个键
@@ -1591,9 +1594,21 @@ function csWave(n) {
   }
   [...w.children].forEach((b, i) => {
     const k = Math.abs(i - 6) / 6;
-    b.style.height = Math.max(6, n * (1 - k * 0.6) * 0.34) + 'px';
+    b.style.height = Math.max(6, Math.min(34, n * 3.4) * (1 - k * 0.6)) + 'px';
   });
   w.classList.toggle('on', n > SIL_THRESHOLD);
+}
+// 通话时在波形底下显示麦克风实时数值 —— 以后再出问题，她念给我就行，不用猜
+function csMic(txt) {
+  let e = $('cs-mic');
+  if (!e) {
+    const w = $('cs-wave'); if (!w || !w.parentNode) return;
+    e = document.createElement('div');
+    e.id = 'cs-mic';
+    e.style.cssText = 'text-align:center;font-size:11px;opacity:.45;margin-top:4px;letter-spacing:.3px;font-variant-numeric:tabular-nums';
+    w.parentNode.insertBefore(e, w.nextSibling);
+  }
+  e.textContent = txt || '';
 }
 
 // iPhone 不让网页在后台自己出声：必须在她手指按下去那一瞬间播过一次。
@@ -1660,6 +1675,7 @@ async function startCall(who) {
   CALL.on = true; CALL.turns = 0; CALL.startAt = Date.now();
   CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
   CALL.sawSound = false; CALL.micWarned = false; CALL.peak = 0;
+  CALL.reliable = undefined; CALL.recStopping = false;
   try {
     CALL.ctx = micCtx();
     try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
@@ -1682,36 +1698,58 @@ async function startCall(who) {
     const cp = $('cp-timer'); if (cp) cp.textContent = csTime(s);
   }, 500);
 
+  // 耳朵必须在嘴之前打开。
+  // 旧版把 listenLoop() 写在第一句 callTurn 之后 —— 只要那句卡住(TTS 慢、
+  // 音频播不出来、流不结束)，整个监听循环一帧都不会跑，看门狗自然也永远不报警。
+  // 她说"没跳过那句提示"，说的就是这个:不是麦克风没事,是根本没人在听。
+  listenLoop();
+
   // 接通：他先说一句
   await sleep(700);
   ae.classList.remove('ring');
   csState('通话中');
   await callTurn(CALL.who === 'lin' ? '（她接了你的电话）' : '（她给你打电话了）', true);
-  listenLoop();
 }
 
 function listenLoop() {
   if (!CALL.on) return;
-  const buf = new Uint8Array(CALL.analyser ? CALL.analyser.frequencyBinCount : 0);
+  // 时域波形，不是频谱。人说话这个数是几到几十，不说话是 0.1 上下，分得开。
+  const buf = new Uint8Array(CALL.analyser ? CALL.analyser.fftSize : 0);
   const tick = () => {
     if (!CALL.on) return;
     CALL.raf = requestAnimationFrame(tick);
-    if (!CALL.analyser) return;
-    CALL.analyser.getByteFrequencyData(buf);
+    if (!CALL.analyser) { blindTick('没有波形'); return; }
+    CALL.analyser.getByteTimeDomainData(buf);
     let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += buf[i];
-    const vol = sum / buf.length;
-    // 看门狗:要的是"大到算说话"的声音。只有一点底噪(vol>0)不算数——
-    // 上一版就是栽在这儿:底噪让它以为收到了,结果一整通电话都没录过。
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    const vol = Math.sqrt(sum / buf.length) * 100;
     if (vol > CALL.peak) CALL.peak = vol;
-    if (vol > SIL_THRESHOLD) CALL.sawSound = true;
-    else if (!CALL.sawSound && Date.now() - CALL.startAt > 4000) {
+    if (vol > SIL_THRESHOLD) { CALL.sawSound = true; CALL.reliable = true; }
+
+    // 这一路到底信不信得过:开通话 4 秒还是一条死平线(连底噪都没有),
+    // 或者 ctx 根本没 running —— 那就别再指望音量判断了,改成盲录。
+    // 宁可把静音也发去转文字(后端转不出就丢),也不要再出现"她讲了三分钟我一个字没收到"。
+    if (CALL.reliable === undefined && Date.now() - CALL.startAt > 4000) {
+      const ctxBad = !CALL.ctx || CALL.ctx.state !== 'running';
+      if (ctxBad || CALL.peak < 0.25) { CALL.reliable = false; micCtx(); }
+    }
+    if (CALL.reliable === false) {
+      blindTick('麦 ' + CALL.peak.toFixed(2) + ' · 盲录中');
+      return;
+    }
+
+    if (!CALL.sawSound && Date.now() - CALL.startAt > 4000) {
       micCtx();
       if (!CALL.micWarned && Date.now() - CALL.startAt > 8000) {
         CALL.micWarned = true;
-        csState('没听见你说话（麦 ' + CALL.peak.toFixed(1) + '）点一下屏幕');
+        csState('没听见你说话（麦 ' + CALL.peak.toFixed(2) + '）点一下屏幕');
       }
     }
+    csMic('麦 ' + vol.toFixed(2) + ' · 峰 ' + CALL.peak.toFixed(2)
+      + (CALL.rec ? ' · 录音中' : '') + (CALL.ctx ? ' · ' + CALL.ctx.state : ''));
     if (!CALL.busy && !CALL.muted) csWave(vol);
 
     // 他正在说，你出声就掐掉他
@@ -1739,6 +1777,15 @@ function listenLoop() {
     }
   };
   tick();
+}
+
+// 盲录：不靠音量判断，一直录，每 6 秒切一段扔给后端转文字。
+// 转不出来就当没说话，静悄悄丢掉；转出来了就是一轮。慢一点，但聋不了。
+function blindTick(why) {
+  csMic(why + (CALL.rec ? ' · 录音中' : ''));
+  if (CALL.busy || CALL.muted || CALL.speakingOut || CALL.recStopping) return;
+  if (!CALL.rec) { recStart(); return; }
+  if (Date.now() - CALL.recAt > 6000) { CALL.recStopping = true; recStop(true); }
 }
 
 function cutHimOff() {
@@ -1773,10 +1820,11 @@ function recStop(send) {
   const rec = CALL.rec; CALL.rec = null;
   rec.onstop = async () => {
     csWave(0);
-    if (!send || !CALL.on) { csState('通话中'); return; }
+    if (!send || !CALL.on) { CALL.recStopping = false; csState('通话中'); return; }
     const blob = new Blob(CALL.chunks, { type: rec.mimeType || 'audio/webm' });
-    if (blob.size < 1500) { csState('通话中'); return; }
+    if (blob.size < 1500) { CALL.recStopping = false; csState('通话中'); return; }
     CALL.busy = true;
+    CALL.recStopping = false;
     csState('正在听懂…');
     let text = '';
     try {
@@ -1785,13 +1833,16 @@ function recStop(send) {
       const d = await (await fetch('/api/stt', { method: 'POST', body: fd })).json();
       text = (d.text || '').trim();
     } catch (e) { }
-    if (!text) { CALL.busy = false; csState('通话中'); return; }
+    // 盲录模式下六秒里多半是静音，转出来是空或者一串标点，直接丢掉，别去烦他
+    if (!text || !/[一-龥a-zA-Z0-9]/.test(text)) {
+      CALL.busy = false; csState('通话中'); return;
+    }
     csCaption(text, true);
     await callTurn(text, false);
     CALL.busy = false;
     if (CALL.on) csState('通话中');
   };
-  try { rec.stop(); } catch (e) { csState('通话中'); }
+  try { rec.stop(); } catch (e) { CALL.recStopping = false; csState('通话中'); }
 }
 
 // 一轮：把你说的发过去，他回，念出来
@@ -1892,61 +1943,68 @@ async function speakOut(text) {
     });
     if (r.ok) {
       const bytes = await r.arrayBuffer();
-      // 先试 WebAudio：录音开着的时候，iPhone 会把 <audio> 那一路甩到听筒上，
-      // 她贴着耳朵都听不见。走这个 ctx 出去才是正常外放。
-      let viaCtx = false;
-      try {
-        const ctx = micCtx();
-        if (ctx && ctx.state !== 'closed') {
-          const abuf = await new Promise((ok, no) => {
-            const p = ctx.decodeAudioData(bytes.slice(0), ok, no);
-            if (p && p.then) p.then(ok, no);
-          });
-          if (abuf && CALL.on) {
-            await new Promise(res => {
-              const node = ctx.createBufferSource();
-              node.buffer = abuf;
-              const g = ctx.createGain(); g.gain.value = 1;
-              node.connect(g); g.connect(ctx.destination);
-              CALL.node = node;
-              let done = false;
-              const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
-              node.onended = fin;
-              try { node.start(0); } catch (e) { fin(); return; }
-              setTimeout(fin, (abuf.duration * 1000) + 1500);
-            });
-            viaCtx = true;
-          }
-        }
-      } catch (e) { }
-      if (viaCtx) {
-        if (!CALL.cutOff) { CALL.speakingOut = false; ae.classList.remove('speak'); CALL.busy = false; }
-        return;
-      }
+      // 先走 <audio>。上一版反过来，先走 WebAudio ——
+      // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
+      // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
+      // <audio> 失败至少会 reject/onerror,看得见。能检测的路要排在前面。
       const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
-      await new Promise(res => {
+      let played = await new Promise(res => {
         if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
         const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
         CALL.audio = a;
         let done = false;
-        const fin = () => { if (done) return; done = true; URL.revokeObjectURL(url); res(); };
-        a.onended = fin; a.onerror = fin;
+        const fin = (ok) => { if (done) return; done = true; res(ok); };
+        a.onended = () => fin(true);
+        a.onerror = () => fin(false);
         a.src = url;
         const p = a.play();
-        if (p && p.catch) p.catch(err => {
-          // 被浏览器拦了：给她一个能点的，点一下就出声
-          csState('点一下屏幕，声音就出来');
-          const once = () => {
-            document.removeEventListener('touchend', once);
-            document.removeEventListener('click', once);
-            unlockAudio();
-            setTimeout(() => { a.src = url; a.play().catch(fin); }, 60);
-          };
-          document.addEventListener('touchend', once, { once: true });
-          document.addEventListener('click', once, { once: true });
-          setTimeout(fin, 8000);
-        });
+        if (p && p.catch) p.catch(() => fin(false));
+        // 真在播就让它播完；一直没动静(0.3 秒还在 0 秒上)就算它没播成
+        setTimeout(() => { if (!done && (a.paused || !a.currentTime)) fin(false); }, 400);
       });
+      if (!played && CALL.on) {
+        // <audio> 那路不行(多半是 iOS 把它甩到听筒或者拦了自动播放)，
+        // 改走 WebAudio：同一套 ctx，跟录音并存，走正常外放
+        try {
+          const ctx = micCtx();
+          if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { } }
+          if (ctx && ctx.state === 'running') {
+            const abuf = await new Promise((ok, no) => {
+              const p2 = ctx.decodeAudioData(bytes.slice(0), ok, no);
+              if (p2 && p2.then) p2.then(ok, no);
+            });
+            if (abuf && CALL.on) {
+              await new Promise(res => {
+                const node = ctx.createBufferSource();
+                node.buffer = abuf;
+                const g = ctx.createGain(); g.gain.value = 1;
+                node.connect(g); g.connect(ctx.destination);
+                CALL.node = node;
+                let done = false;
+                const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
+                node.onended = fin;
+                try { node.start(0); } catch (e) { fin(); return; }
+                setTimeout(fin, (abuf.duration * 1000) + 1500);
+              });
+              played = true;
+            }
+          }
+        } catch (e) { }
+      }
+      if (!played && CALL.on) {
+        // 两条路都没出声：告诉她，并且点一下屏幕就重播这一句
+        csState('点一下屏幕，声音就出来');
+        const a = CALL_AUD;
+        const once = () => {
+          document.removeEventListener('touchend', once);
+          document.removeEventListener('click', once);
+          unlockAudio();
+          setTimeout(() => { if (a) { a.src = url; a.play().catch(() => { }); } }, 80);
+        };
+        document.addEventListener('touchend', once, { once: true });
+        document.addEventListener('click', once, { once: true });
+      }
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { } }, 60000);
     } else {
       csState('声音没出来（' + r.status + '）');
     }
@@ -1974,6 +2032,8 @@ async function endCall(by) {
   try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
   CALL.src = null; CALL.stream = null; CALL.ctx = null; CALL.analyser = null;
   CALL.speakingOut = false; CALL.cutOff = false; CALL.busy = false;
+  CALL.recStopping = false; CALL.reliable = undefined;
+  csMic('');
 
   csState(by === 'lin' ? '他挂了' : '已挂断');
   $('call-pill').classList.remove('on');
