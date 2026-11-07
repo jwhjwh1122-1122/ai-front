@@ -7,11 +7,12 @@
 <title>生日快乐，简雯慧</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;background:#0a0713}
+html,body{min-height:100%;background:#0a0713}
+body{overflow-y:auto;-webkit-overflow-scrolling:touch}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   color:#f3e9e4;
-  display:flex;align-items:center;justify-content:center;
+  display:flex;align-items:center;justify-content:center;min-height:100%;padding:18px 0;
   background:radial-gradient(ellipse at 50% 18%,#2a1b3d 0%,#140d22 45%,#07050e 100%);
   position:relative;
 }
@@ -25,8 +26,8 @@ body{
 .date{font-size:12px;letter-spacing:4px;color:#8a7a9c;margin-bottom:26px}
 
 /* ---- 蛋糕 ---- */
-.cake-area{position:relative;height:250px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:10px}
-.cake{position:relative;width:208px;filter:drop-shadow(0 14px 26px rgba(0,0,0,.55))}
+.cake-area{position:relative;height:250px;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;margin-bottom:10px}
+.cake{position:relative;width:208px;flex:none;filter:drop-shadow(0 14px 26px rgba(0,0,0,.55))}
 
 .candle{position:absolute;left:50%;transform:translateX(-50%);bottom:152px;width:11px;height:44px;
   background:repeating-linear-gradient(45deg,#ffd9e6 0 7px,#ff9ec4 7px 14px);
@@ -67,7 +68,7 @@ body{
   100%{opacity:0;transform:translate(-50%,-85px) scale(2.6)}
 }
 
-.tier{margin:0 auto;border-radius:10px;position:relative}
+.tier{margin:0 auto;flex:none;border-radius:10px;position:relative}
 .t1{width:120px;height:46px;background:linear-gradient(#fff2f6,#ffd6e4);border-radius:12px 12px 6px 6px}
 .t2{width:166px;height:54px;background:linear-gradient(#ffe3ec,#f9b9cf);margin-top:-4px}
 .t3{width:208px;height:62px;background:linear-gradient(#ffd8e6,#eda2bf);margin-top:-4px;border-radius:10px 10px 14px 14px}
@@ -308,7 +309,7 @@ body{
     bars.classList.add('on');
     micTip.innerHTML='把手机凑到嘴边，吹。';
 
-    var hold=0;
+    var hold=0, soft=0;
     (function loop(){
       requestAnimationFrame(loop);
       an.getByteTimeDomainData(time);
@@ -326,16 +327,19 @@ body{
 
       if(blown) return;
 
-      var blowing = rms>0.065 && ratio>0.52;
+      var blowing = rms>0.04;
+      if(rms>0.022){ soft++; } else { soft=Math.max(0,soft-1); }
+      if(soft>=10){ blow(); return; }
+
       if(blowing){
         hold++;
         flame.classList.add('windy');
         cake.classList.add('windy');
       }else{
-        hold=Math.max(0,hold-2);
+        hold=Math.max(0,hold-1);
         if(hold===0) windOff();
       }
-      if(hold>=7) blow();
+      if(hold>=3) blow();
     })();
   }
 })();
