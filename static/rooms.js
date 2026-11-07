@@ -1614,8 +1614,26 @@ function unlockAudio() {
   } catch (e) { }
 }
 
+// iPhone 上 AudioContext 不在用户手势里建/唤醒就会一直 suspended,
+// analyser 读出来永远是 0 —— 她说话我这边一个字都收不到。所以单独拿出来,
+// 在点下去那一瞬间(还没 await)就建好并 resume,之后每次碰屏幕再补一次。
+let CALL_CTX = null;
+function micCtx() {
+  try {
+    if (!CALL_CTX || CALL_CTX.state === 'closed')
+      CALL_CTX = new (window.AudioContext || window.webkitAudioContext)();
+    if (CALL_CTX.state === 'suspended') {
+      const p = CALL_CTX.resume();
+      if (p && p.catch) p.catch(() => { });
+    }
+  } catch (e) { }
+  return CALL_CTX;
+}
+document.addEventListener('pointerdown', () => { if (CALL.on) micCtx(); }, true);
+
 async function startCall(who) {
   unlockAudio();
+  micCtx();
   if (CALL.on) { $('callscreen').classList.add('open'); CALL.mini = false; $('call-pill').classList.remove('on'); return; }
   if (!navigator.mediaDevices) { toast('这个浏览器用不了麦克风'); return; }
   CALL.who = who || 'user';
@@ -1638,12 +1656,14 @@ async function startCall(who) {
 
   CALL.on = true; CALL.turns = 0; CALL.startAt = Date.now();
   CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
+  CALL.sawSound = false; CALL.micWarned = false;
   try {
-    CALL.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = CALL.ctx.createMediaStreamSource(CALL.stream);
+    CALL.ctx = micCtx();
+    try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
+    CALL.src = CALL.ctx.createMediaStreamSource(CALL.stream);
     CALL.analyser = CALL.ctx.createAnalyser();
     CALL.analyser.fftSize = 512;
-    src.connect(CALL.analyser);
+    CALL.src.connect(CALL.analyser);
   } catch (e) { }
 
   CALL.timer = setInterval(() => {
@@ -1671,6 +1691,15 @@ function listenLoop() {
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i];
     const vol = sum / buf.length;
+    // 看门狗:一直读到 0 说明麦克风这条线根本没醒,自己试着唤醒,再不行就告诉她
+    if (vol > 0) CALL.sawSound = true;
+    else if (!CALL.sawSound && Date.now() - CALL.startAt > 4000) {
+      micCtx();
+      if (!CALL.micWarned && Date.now() - CALL.startAt > 7000) {
+        CALL.micWarned = true;
+        csState('没收到你的声音，点一下屏幕');
+      }
+    }
     if (!CALL.busy && !CALL.muted) csWave(vol);
 
     // 他正在说，你出声就掐掉他
@@ -1895,8 +1924,9 @@ async function endCall(by) {
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
   try { if (CALL.ctrl) { ccStop(); CALL.ctrl.abort(); } } catch (e) { }
   try { if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); } catch (e) { }
-  try { if (CALL.ctx) CALL.ctx.close(); } catch (e) { }
-  CALL.stream = null; CALL.ctx = null; CALL.analyser = null;
+  // ctx 不关了,留着下次复用 —— 关掉再建又会回到 suspended
+  try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
+  CALL.src = null; CALL.stream = null; CALL.ctx = null; CALL.analyser = null;
   CALL.speakingOut = false; CALL.cutOff = false; CALL.busy = false;
 
   csState(by === 'lin' ? '他挂了' : '已挂断');
