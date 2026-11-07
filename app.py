@@ -61,7 +61,25 @@ def upstream_url():
 def upstream_headers():
     return {'Authorization': f"Bearer {load_upstream()['key']}",
             'Content-Type': 'application/json'}
-EL_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
+EL_KEY_FILE = None     # 下面 DATA_DIR 定好之后再赋值
+
+
+def el_key():
+    """ElevenLabs 的钥匙。先看挂载盘里的 elevenlabs_key.txt，没有再用环境变量。
+    放文件里是为了换 key 不用重启容器——写完文件下一次请求就生效。
+    注意：真钥匙是 sk_ 开头那一长串，只在创建/rotate 的那一下显示。
+    后台列表里看到的那串 64 位十六进制是 key 的 ID，不是钥匙，拿去调接口会 400。"""
+    try:
+        if EL_KEY_FILE and os.path.exists(EL_KEY_FILE):
+            with open(EL_KEY_FILE, 'r', encoding='utf-8') as f:
+                k = f.read().strip()
+            if k:
+                return k
+    except Exception:
+        pass
+    return os.environ.get('ELEVENLABS_API_KEY', '')
+
+
 DS_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 MCP_URL = 'https://jwhjwh.zeabur.app/mcp'
 
@@ -100,6 +118,7 @@ VOICES_DIR = os.path.join(MEDIA_DIR, 'voices')
 BOOKS_DIR = os.path.join(DATA_DIR, 'books')
 TMP_DIR = os.path.join(BASE, 'tmp_uploads')
 UPSTREAM_FILE = os.path.join(DATA_DIR, 'upstream.json')
+EL_KEY_FILE = os.path.join(DATA_DIR, 'elevenlabs_key.txt')
 for _d in (MEDIA_DIR, MEMORIES_DIR, VIDEOS_DIR, MUSIC_DIR, VOICES_DIR, BOOKS_DIR, DATA_DIR, TMP_DIR):
     os.makedirs(_d, exist_ok=True)
 # 老版本存在 static/ 下的，搬过来一次
@@ -2999,7 +3018,7 @@ def transcribe_video(filename):
     if os.path.exists(cache):
         with open(cache, 'r', encoding='utf-8') as f:
             return jsonify({'text': f.read(), 'cached': True})
-    if not EL_KEY:
+    if not el_key():
         return jsonify({'error': '语音识别未配置'}), 500
     if os.path.getsize(fp) > 90 * 1024 * 1024:
         return jsonify({'error': '视频太大了（90MB 以内）'}), 400
@@ -3008,7 +3027,7 @@ def transcribe_video(filename):
         try:
             with open(fp, 'rb') as vf:
                 r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
-                                  headers={'xi-api-key': EL_KEY},
+                                  headers={'xi-api-key': el_key()},
                                   files={'file': (safe, vf, 'video/mp4')},
                                   data={'model_id': model_id}, timeout=300)
             if r.status_code == 200:
@@ -3091,7 +3110,7 @@ def _translate_segments(segs, src_lang):
 def _build_subs(filename):
     safe = secure_filename(filename)
     fp = os.path.join(VIDEOS_DIR, safe)
-    if not EL_KEY or not os.path.exists(fp) or os.path.getsize(fp) > 90 * 1024 * 1024:
+    if not el_key() or not os.path.exists(fp) or os.path.getsize(fp) > 90 * 1024 * 1024:
         with SUBS_JOBS_LOCK:
             SUBS_JOBS[safe] = 'error'
         return
@@ -3100,7 +3119,7 @@ def _build_subs(filename):
         for model_id in ('scribe_v2', 'scribe_v1'):
             with open(fp, 'rb') as vf:
                 r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
-                                  headers={'xi-api-key': EL_KEY},
+                                  headers={'xi-api-key': el_key()},
                                   files={'file': (safe, vf, 'video/mp4')},
                                   data={'model_id': model_id}, timeout=300)
             if r.status_code == 200:
@@ -3753,7 +3772,7 @@ def call_log():
 # ============================================================
 @app.route('/api/stt', methods=['POST'])
 def stt():
-    if not EL_KEY:
+    if not el_key():
         return jsonify({'error': '语音识别未配置'}), 500
     if 'file' not in request.files:
         return jsonify({'error': 'no file'}), 400
@@ -3765,7 +3784,7 @@ def stt():
     for model_id in ('scribe_v2', 'scribe_v1'):
         try:
             r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
-                              headers={'xi-api-key': EL_KEY},
+                              headers={'xi-api-key': el_key()},
                               files={'file': (f.filename or 'a.webm', audio, f.mimetype or 'audio/webm')},
                               data={'model_id': model_id}, timeout=90)
             if r.status_code == 200:
@@ -3801,7 +3820,7 @@ def _voice_id(data, p):
 
 @app.route('/api/tts-save', methods=['POST'])
 def tts_save():
-    if not EL_KEY:
+    if not el_key():
         return jsonify({'error': 'ElevenLabs key not set'}), 500
     data = request.json or {}
     text = (data.get('text') or '').strip()[:600]
@@ -3809,7 +3828,7 @@ def tts_save():
         return jsonify({'error': 'no text'}), 400
     try:
         r = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{_voice_id(data, load_persona())}',
-                          headers={'xi-api-key': EL_KEY, 'Content-Type': 'application/json'},
+                          headers={'xi-api-key': el_key(), 'Content-Type': 'application/json'},
                           json={'text': text, 'model_id': 'eleven_multilingual_v2',
                                 'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
                           timeout=90)
@@ -3825,14 +3844,14 @@ def tts_save():
 
 @app.route('/api/tts', methods=['POST'])
 def tts():
-    if not EL_KEY:
+    if not el_key():
         return jsonify({'error': 'ElevenLabs key not set'}), 500
     data = request.json or {}
     text = (data.get('text') or '').strip()[:500]
     if not text:
         return jsonify({'error': 'no text'}), 400
     r = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{_voice_id(data, load_persona())}/stream',
-                      headers={'xi-api-key': EL_KEY, 'Content-Type': 'application/json'},
+                      headers={'xi-api-key': el_key(), 'Content-Type': 'application/json'},
                       json={'text': text, 'model_id': 'eleven_multilingual_v2',
                             'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
                       stream=True, timeout=30)
