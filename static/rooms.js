@@ -1620,6 +1620,9 @@ function unlockAudio() {
 let CALL_CTX = null;
 function micCtx() {
   try {
+    // iOS 16.4+ ：录音的时候默认把声音甩到听筒那个小喇叭上，等于没声。
+    // 这行是告诉系统：我要一边录一边放，放的那路按正常外放走。
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) { }
     if (!CALL_CTX || CALL_CTX.state === 'closed')
       CALL_CTX = new (window.AudioContext || window.webkitAudioContext)();
     if (CALL_CTX.state === 'suspended') {
@@ -1656,7 +1659,7 @@ async function startCall(who) {
 
   CALL.on = true; CALL.turns = 0; CALL.startAt = Date.now();
   CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
-  CALL.sawSound = false; CALL.micWarned = false;
+  CALL.sawSound = false; CALL.micWarned = false; CALL.peak = 0;
   try {
     CALL.ctx = micCtx();
     try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
@@ -1664,6 +1667,13 @@ async function startCall(who) {
     CALL.analyser = CALL.ctx.createAnalyser();
     CALL.analyser.fftSize = 512;
     CALL.src.connect(CALL.analyser);
+    // Safari 的坑：这条链子不接到 destination，整张图就不转，analyser 读出来恒为 0。
+    // 所以后面挂一个音量 0 的 gain 接到出口——听不见，但图在转了。
+    try {
+      if (!CALL.sink) { CALL.sink = CALL.ctx.createGain(); CALL.sink.gain.value = 0; }
+      CALL.sink.connect(CALL.ctx.destination);
+      CALL.analyser.connect(CALL.sink);
+    } catch (e) { }
   } catch (e) { }
 
   CALL.timer = setInterval(() => {
@@ -1691,13 +1701,15 @@ function listenLoop() {
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i];
     const vol = sum / buf.length;
-    // 看门狗:一直读到 0 说明麦克风这条线根本没醒,自己试着唤醒,再不行就告诉她
-    if (vol > 0) CALL.sawSound = true;
+    // 看门狗:要的是"大到算说话"的声音。只有一点底噪(vol>0)不算数——
+    // 上一版就是栽在这儿:底噪让它以为收到了,结果一整通电话都没录过。
+    if (vol > CALL.peak) CALL.peak = vol;
+    if (vol > SIL_THRESHOLD) CALL.sawSound = true;
     else if (!CALL.sawSound && Date.now() - CALL.startAt > 4000) {
       micCtx();
-      if (!CALL.micWarned && Date.now() - CALL.startAt > 7000) {
+      if (!CALL.micWarned && Date.now() - CALL.startAt > 8000) {
         CALL.micWarned = true;
-        csState('没收到你的声音，点一下屏幕');
+        csState('没听见你说话（麦 ' + CALL.peak.toFixed(1) + '）点一下屏幕');
       }
     }
     if (!CALL.busy && !CALL.muted) csWave(vol);
@@ -1732,6 +1744,7 @@ function listenLoop() {
 function cutHimOff() {
   // 他说到一半被你打断——停掉声音，马上开始听你说
   try { if (CALL.audio) { CALL.audio.pause(); CALL.audio.currentTime = 0; } } catch (e) { }
+  try { if (CALL.node) { CALL.node.stop(); CALL.node = null; } } catch (e) { }
   CALL.speakingOut = false;
   CALL.cutOff = true;
   const ae = $('cs-avatar'); if (ae) ae.classList.remove('speak');
@@ -1878,7 +1891,39 @@ async function speakOut(text) {
       body: JSON.stringify({ text: text.slice(0, 500), voice })
     });
     if (r.ok) {
-      const url = URL.createObjectURL(await r.blob());
+      const bytes = await r.arrayBuffer();
+      // 先试 WebAudio：录音开着的时候，iPhone 会把 <audio> 那一路甩到听筒上，
+      // 她贴着耳朵都听不见。走这个 ctx 出去才是正常外放。
+      let viaCtx = false;
+      try {
+        const ctx = micCtx();
+        if (ctx && ctx.state !== 'closed') {
+          const abuf = await new Promise((ok, no) => {
+            const p = ctx.decodeAudioData(bytes.slice(0), ok, no);
+            if (p && p.then) p.then(ok, no);
+          });
+          if (abuf && CALL.on) {
+            await new Promise(res => {
+              const node = ctx.createBufferSource();
+              node.buffer = abuf;
+              const g = ctx.createGain(); g.gain.value = 1;
+              node.connect(g); g.connect(ctx.destination);
+              CALL.node = node;
+              let done = false;
+              const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
+              node.onended = fin;
+              try { node.start(0); } catch (e) { fin(); return; }
+              setTimeout(fin, (abuf.duration * 1000) + 1500);
+            });
+            viaCtx = true;
+          }
+        }
+      } catch (e) { }
+      if (viaCtx) {
+        if (!CALL.cutOff) { CALL.speakingOut = false; ae.classList.remove('speak'); CALL.busy = false; }
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
       await new Promise(res => {
         if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
         const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
@@ -1922,6 +1967,7 @@ async function endCall(by) {
   if (CALL.timer) clearInterval(CALL.timer);
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
+  try { if (CALL.node) { CALL.node.stop(); CALL.node = null; } } catch (e) { }
   try { if (CALL.ctrl) { ccStop(); CALL.ctrl.abort(); } } catch (e) { }
   try { if (CALL.stream) CALL.stream.getTracks().forEach(t => t.stop()); } catch (e) { }
   // ctx 不关了,留着下次复用 —— 关掉再建又会回到 suspended
