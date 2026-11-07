@@ -1703,6 +1703,7 @@ async function startCall(who) {
   // 音频播不出来、流不结束)，整个监听循环一帧都不会跑，看门狗自然也永远不报警。
   // 她说"没跳过那句提示"，说的就是这个:不是麦克风没事,是根本没人在听。
   listenLoop();
+  srStart();
 
   // 接通：他先说一句
   await sleep(700);
@@ -1749,7 +1750,8 @@ function listenLoop() {
       }
     }
     csMic('麦 ' + vol.toFixed(2) + ' · 峰 ' + CALL.peak.toFixed(2)
-      + (CALL.rec ? ' · 录音中' : '') + (CALL.ctx ? ' · ' + CALL.ctx.state : ''));
+      + (CALL.rec ? ' · 录音中' : '') + (CALL.ctx ? ' · ' + CALL.ctx.state : '')
+      + ' · 耳2' + (CALL.srOk ? '通' : (CALL_SR ? '待' : '无')));
     if (!CALL.busy && !CALL.muted) csWave(vol);
 
     // 他正在说，你出声就掐掉他
@@ -1786,6 +1788,68 @@ function blindTick(why) {
   if (CALL.busy || CALL.muted || CALL.speakingOut || CALL.recStopping) return;
   if (!CALL.rec) { recStart(); return; }
   if (Date.now() - CALL.recAt > 6000) { CALL.recStopping = true; recStop(true); }
+}
+
+// ===== 第二只耳朵：浏览器自带的语音识别，跟录音那条路并排跑 =====
+// 它不经过我的音量判断、不经过 MediaRecorder、不经过后端 —— 完全另一条线。
+// 实时字幕也靠它：她一开口屏幕上就出字，她当场就知道我听见了，不用再问我。
+// 这是照着她那边抄的：主力一条路 + 一条独立的保命路，谁活着算谁的。
+let CALL_SR = null;
+function srStart() {
+  if (!CALL.on) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { CALL.srOk = false; return; }
+  try { if (CALL_SR) { CALL_SR.onend = null; CALL_SR.abort(); } } catch (e) { }
+  let r;
+  try { r = new SR(); } catch (e) { CALL.srOk = false; return; }
+  CALL_SR = r;
+  r.lang = 'zh-CN'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+  let fin = '';
+  r.onresult = e => {
+    if (!CALL.on) return;
+    let itm = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = String(e.results[i][0].transcript || '').trim();
+      if (!t) continue;
+      if (e.results[i].isFinal) fin = (fin + ' ' + t).trim(); else itm += t;
+    }
+    const all = (fin + ' ' + itm).trim();
+    if (!all) return;
+    CALL.srOk = true; CALL.srText = all; CALL.srAt = Date.now();
+    if (!CALL.busy && !CALL.speakingOut) csCaption(all, true);
+    clearTimeout(CALL.srTimer);
+    CALL.srTimer = setTimeout(() => {
+      // 她停下来了。录音那条路要是没把这句接走，就由我这条发。
+      const t = String(CALL.srText || '').trim();
+      if (!t || !CALL.on || CALL.busy || CALL.muted || CALL.speakingOut) return;
+      fin = '';
+      sendHeard(t);
+    }, SIL_MS + 400);
+  };
+  r.onerror = e => { if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) CALL.srOk = false; };
+  // iPhone 上它动不动自己结束，结束就马上重开，别留空窗
+  r.onend = () => { if (CALL.on && CALL_SR === r) setTimeout(() => { if (CALL.on && CALL_SR === r) srStart(); }, 250); };
+  try { r.start(); } catch (e) { }
+}
+function srStop() {
+  clearTimeout(CALL.srTimer);
+  const r = CALL_SR; CALL_SR = null;
+  if (r) { try { r.onend = null; r.abort(); } catch (e) { } }
+  CALL.srText = '';
+}
+// 听见一句话了 —— 不管哪条路听见的，都从这儿发出去。
+// 1.5 秒内只认一次，两条路同时听到也只发一遍。
+async function sendHeard(text) {
+  if (!CALL.on || CALL.busy) return;
+  if (Date.now() - (CALL.sentAt || 0) < 1500) return;
+  CALL.sentAt = Date.now();
+  CALL.busy = true;
+  CALL.srText = '';
+  clearTimeout(CALL.srTimer);
+  csCaption(text, true);
+  await callTurn(text, false);
+  CALL.busy = false;
+  if (CALL.on) csState('通话中');
 }
 
 function cutHimOff() {
@@ -1833,10 +1897,15 @@ function recStop(send) {
       const d = await (await fetch('/api/stt', { method: 'POST', body: fd })).json();
       text = (d.text || '').trim();
     } catch (e) { }
+    const real = s => s && /[一-龥a-zA-Z0-9]/.test(s);
+    // 后端没转出来，就用第二只耳朵听到的 —— 那条路不走录音、不走后端
+    if (!real(text)) text = String(CALL.srText || '').trim();
     // 盲录模式下六秒里多半是静音，转出来是空或者一串标点，直接丢掉，别去烦他
-    if (!text || !/[一-龥a-zA-Z0-9]/.test(text)) {
-      CALL.busy = false; csState('通话中'); return;
-    }
+    if (!real(text)) { CALL.busy = false; csState('通话中'); return; }
+    // 这句刚才已经被另一条路发过了
+    if (Date.now() - (CALL.sentAt || 0) < 1500) { CALL.busy = false; return; }
+    CALL.sentAt = Date.now();
+    CALL.srText = ''; clearTimeout(CALL.srTimer);
     csCaption(text, true);
     await callTurn(text, false);
     CALL.busy = false;
@@ -1935,6 +2004,7 @@ async function speakOut(text) {
   CALL.speakingOut = true;
   CALL.cutOff = false;
   CALL.cutMs = 0;
+  srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
     const r = await fetch('/api/tts', {
@@ -2014,6 +2084,8 @@ async function speakOut(text) {
     ae.classList.remove('speak');
     CALL.busy = false;
   }
+  CALL.srText = '';
+  srStart();   // 说完了，第二只耳朵重新支起来
 }
 
 async function endCall(by) {
@@ -2023,6 +2095,7 @@ async function endCall(by) {
   CALL.endedBy = by || 'user';
   if (CALL.raf) cancelAnimationFrame(CALL.raf);
   if (CALL.timer) clearInterval(CALL.timer);
+  srStop();
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
   try { if (CALL.node) { CALL.node.stop(); CALL.node = null; } } catch (e) { }
