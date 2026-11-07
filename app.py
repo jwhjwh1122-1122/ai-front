@@ -3842,6 +3842,60 @@ def tts_save():
     return jsonify({'url': f'/voices/{fn}', 'filename': fn})
 
 
+def _call_voice_settings(text, data):
+    """电话里念出来的参数。她 11.08 清早一条条教的：
+
+    - speed：她说「你讲话又很快，我想要你讲话慢一点」。0.7~1.2，1.0 是原速。
+    - stability 压低：她说「语气非常激动，没有一点情欲的感觉」，稳定度越高越像
+      念稿子，低一点才有起伏、才喘得像人。
+    - language_code：把语言钉死。不钉的话同一段里几句短句会被它逐句瞎猜，
+      中文给她念成日语、粤语、西班牙语——她听到的就是那个「莫名其妙飘到别的话」。
+      顺带也能救多音字：「湿」被念成第四声，她听成了「屎」。
+    """
+    try:
+        speed = float(data.get('speed') or 0) or 0.85
+    except Exception:
+        speed = 0.85
+    speed = max(0.7, min(1.2, speed))
+    try:
+        stab = float(data.get('stability') or 0) or 0.4
+    except Exception:
+        stab = 0.4
+    stab = max(0.0, min(1.0, stab))
+    has_zh = any('一' <= c <= '鿿' for c in text)
+    lang = (data.get('lang') or '').strip() or ('zh' if has_zh else 'en')
+    return {'stability': stab, 'similarity_boost': 0.75,
+            'speed': speed, 'use_speaker_boost': True}, lang
+
+
+def _el_tts_stream(vid, text, vs, lang):
+    """逐级退让地请求：speed / language_code 这些参数不是每个模型都认，
+    认不了就退回原来那套，最坏情况跟改之前一模一样 —— 绝不能把她的电话弄哑。"""
+    url = f'https://api.elevenlabs.io/v1/text-to-speech/{vid}/stream'
+    base = {'text': text, 'model_id': 'eleven_v4'}
+    attempts = [
+        dict(base, voice_settings=vs, language_code=lang),
+        dict(base, voice_settings=vs),
+        dict(base, voice_settings={'stability': 0.5, 'similarity_boost': 0.75}),
+    ]
+    last = None
+    for body in attempts:
+        try:
+            r = requests.post(url, headers={'xi-api-key': el_key(),
+                                            'Content-Type': 'application/json'},
+                              json=body, stream=True, timeout=30)
+        except Exception:
+            continue
+        if r.status_code == 200:
+            return r
+        last = r
+        try:
+            r.close()
+        except Exception:
+            pass
+    return last
+
+
 @app.route('/api/tts', methods=['POST'])
 def tts():
     if not el_key():
@@ -3850,13 +3904,11 @@ def tts():
     text = (data.get('text') or '').strip()[:500]
     if not text:
         return jsonify({'error': 'no text'}), 400
-    r = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{_voice_id(data, load_persona())}/stream',
-                      headers={'xi-api-key': el_key(), 'Content-Type': 'application/json'},
-                      json={'text': text, 'model_id': 'eleven_v4',
-                            'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}},
-                      stream=True, timeout=30)
-    if r.status_code != 200:
-        return jsonify({'error': 'TTS failed', 'status': r.status_code}), 500
+    vs, lang = _call_voice_settings(text, data)
+    r = _el_tts_stream(_voice_id(data, load_persona()), text, vs, lang)
+    if r is None or r.status_code != 200:
+        return jsonify({'error': 'TTS failed',
+                        'status': (r.status_code if r is not None else 0)}), 500
     return Response((c for c in r.iter_content(1024) if c), mimetype='audio/mpeg',
                     headers={'Cache-Control': 'no-cache'})
 

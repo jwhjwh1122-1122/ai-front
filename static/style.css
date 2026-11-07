@@ -771,7 +771,9 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .cs-wave{display:flex;align-items:center;gap:4px;height:34px;}
 .cs-wave i{width:4px;border-radius:2px;background:var(--accent);opacity:.35;height:7px;transition:height .12s;}
 .cs-wave.on i{opacity:.95;}
-.cs-caption{font-size:15px;line-height:1.85;color:var(--text);text-align:center;max-width:82%;min-height:3.4em;white-space:pre-wrap;}
+.cs-caption{font-size:15px;line-height:1.85;color:var(--text);text-align:center;max-width:82%;min-height:3.4em;white-space:pre-wrap;max-height:100%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}
+.cs-caption::-webkit-scrollbar{width:3px;}
+.cs-caption::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 .cs-caption.me{color:var(--text-muted);font-size:14px;}
 .cs-acts{position:relative;display:flex;justify-content:center;flex-wrap:wrap;gap:14px 18px;padding:0 14px max(40px,env(safe-area-inset-bottom));flex-shrink:0;}
 .cs-btn{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;}

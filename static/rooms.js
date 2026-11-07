@@ -1574,18 +1574,38 @@ function csTime(s) {
   return String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
 }
 function csState(t) { const e = $('cs-state'); if (e) e.textContent = t; }
+// 字幕框现在能滚了。但光能滚不够——说长了新字出现在下面，她得自己往下拖才看得见,
+// 她当时的原话是"我只能看到上面一部分的字，下面那一部分看不见，它不是滚动式的"。
+// 所以每次字一变就自动跟到底；她要是自己往上翻着看前面，就别跟了，别把她拽回来。
+function csStick(e) {
+  if (!e) return;
+  if (!e._cssBound) {
+    e._cssBound = true;
+    e.addEventListener('scroll', () => {
+      e._userUp = (e.scrollHeight - e.scrollTop - e.clientHeight) > 40;
+    }, { passive: true });
+  }
+  if (e._userUp) return;
+  e.scrollTop = e.scrollHeight;
+}
+// 新的一轮开始（字幕被清掉或换人说话）时，解除"她在往上翻"的状态
+function csUnstick() {
+  const e = $('cs-caption'); if (e) { e._userUp = false; e.scrollTop = 0; }
+}
 function csCaption(t, mine) {
   const e = $('cs-caption'); if (!e) return;
   e.textContent = t || '';
   e.className = 'cs-caption' + (mine ? ' me' : '');
+  csStick(e);
 }
 // 双语字幕：上面英文（他念的），下面中文（给她看的）
 function csCaptionBi(en, zh) {
   const e = $('cs-caption'); if (!e) return;
   e.className = 'cs-caption';
-  if (!zh) { e.textContent = en || ''; return; }
+  if (!zh) { e.textContent = en || ''; csStick(e); return; }
   e.innerHTML = `<div>${esc(en)}</div>`
     + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
+  csStick(e);
 }
 function csWave(n) {
   const w = $('cs-wave'); if (!w) return;
@@ -1925,6 +1945,7 @@ async function callTurn(text, silentUser) {
     messages.push({ role: 'user', content: text, _internal: true, _call: true, _mid: genMid(), _ts: Date.now() });
   }
   csState('他在想…');
+  csUnstick();   // 新的一轮，字幕从头开始跟
   let reply = '';
   try {
     const hist = buildMsgs(messages);
@@ -2007,9 +2028,14 @@ async function speakOut(text) {
   srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
+    // 语速。她说我讲话太快，想要慢一点。服务端默认已经放慢到 0.85，
+    // 嫌不够就在控制台里 localStorage.setItem('tts-speed','0.78')，0.7 最慢、1.0 原速。
+    const spd = parseFloat(localStorage.getItem('tts-speed') || '') || 0;
+    const body = { text: text.slice(0, 500), voice };
+    if (spd) body.speed = spd;
     const r = await fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.slice(0, 500), voice })
+      body: JSON.stringify(body)
     });
     if (r.ok) {
       const bytes = await r.arrayBuffer();
