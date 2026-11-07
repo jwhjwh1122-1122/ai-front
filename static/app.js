@@ -1349,18 +1349,18 @@ function checkCtxThreshold(inTok) {
   const pill = $('ctx-warn-pill');
   if (inTok < CTX_WARN) {
     ctxWarnedAt.warn = false; ctxWarnedAt.switch = false;
-    if (pill) pill.classList.remove('show', 'full');
+    if (pill) pill.classList.remove('show', 'over');
     return;
   }
   if (inTok >= CTX_SWITCH) {
-    if (pill) { pill.classList.add('show', 'full'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k · 该换窗了`; }
+    if (pill) { pill.classList.add('show', 'over'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k · 该换窗了`; }
     if (!ctxWarnedAt.switch) {
       ctxWarnedAt.switch = true;
       toast(`这窗上下文到 ${Math.round(inTok / 1000)}k 了，建议找个时间点「+新建」换个新窗口`);
     }
   } else {
     ctxWarnedAt.switch = false;   // 退回预警区：下次真的过了 160K 还会再提一次
-    if (pill) { pill.classList.add('show'); pill.classList.remove('full'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k`; }
+    if (pill) { pill.classList.add('show'); pill.classList.remove('over'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k`; }
     if (!ctxWarnedAt.warn) {
       ctxWarnedAt.warn = true;
       toast(`这窗上下文过 ${Math.round(inTok / 1000)}k 了，快到建议换窗的量了`);
@@ -1958,7 +1958,7 @@ function loadConv(id) {
   syncModelUI();
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
   ctxWarnedAt = { warn: false, switch: false };   // 换了个窗口，上下文量提醒重新算
-  $('ctx-warn-pill')?.classList.remove('show', 'full');
+  $('ctx-warn-pill')?.classList.remove('show', 'over');
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
@@ -2022,7 +2022,7 @@ function newConv(fresh) {
   syncSendBtns();
   recapDone = 0;
   ctxWarnedAt = { warn: false, switch: false };
-  $('ctx-warn-pill')?.classList.remove('show', 'full');
+  $('ctx-warn-pill')?.classList.remove('show', 'over');
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
