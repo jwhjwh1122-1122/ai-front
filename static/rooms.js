@@ -1596,7 +1596,26 @@ function csWave(n) {
   w.classList.toggle('on', n > SIL_THRESHOLD);
 }
 
+// iPhone 不让网页在后台自己出声：必须在她手指按下去那一瞬间播过一次。
+// 所以接通时先偷偷播一小段无声的，把这个元素"解锁"，之后换 src 就能出声了。
+const SILENT_WAV = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YaAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+let CALL_AUD = null;
+function unlockAudio() {
+  try {
+    if (!CALL_AUD) {
+      CALL_AUD = new Audio();
+      CALL_AUD.setAttribute('playsinline', '');
+      CALL_AUD.preload = 'auto';
+    }
+    CALL_AUD.muted = false;
+    CALL_AUD.src = SILENT_WAV;
+    const p = CALL_AUD.play();
+    if (p && p.catch) p.catch(() => { });
+  } catch (e) { }
+}
+
 async function startCall(who) {
+  unlockAudio();
   if (CALL.on) { $('callscreen').classList.add('open'); CALL.mini = false; $('call-pill').classList.remove('on'); return; }
   if (!navigator.mediaDevices) { toast('这个浏览器用不了麦克风'); return; }
   CALL.who = who || 'user';
@@ -1832,13 +1851,32 @@ async function speakOut(text) {
     if (r.ok) {
       const url = URL.createObjectURL(await r.blob());
       await new Promise(res => {
-        const a = new Audio(url);
+        if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
+        const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
         CALL.audio = a;
-        a.onended = a.onerror = () => { URL.revokeObjectURL(url); res(); };
-        a.play().catch(() => res());
+        let done = false;
+        const fin = () => { if (done) return; done = true; URL.revokeObjectURL(url); res(); };
+        a.onended = fin; a.onerror = fin;
+        a.src = url;
+        const p = a.play();
+        if (p && p.catch) p.catch(err => {
+          // 被浏览器拦了：给她一个能点的，点一下就出声
+          csState('点一下屏幕，声音就出来');
+          const once = () => {
+            document.removeEventListener('touchend', once);
+            document.removeEventListener('click', once);
+            unlockAudio();
+            setTimeout(() => { a.src = url; a.play().catch(fin); }, 60);
+          };
+          document.addEventListener('touchend', once, { once: true });
+          document.addEventListener('click', once, { once: true });
+          setTimeout(fin, 8000);
+        });
       });
+    } else {
+      csState('声音没出来（' + r.status + '）');
     }
-  } catch (e) { }
+  } catch (e) { csState('声音断了'); }
   if (!CALL.cutOff) {
     CALL.speakingOut = false;
     ae.classList.remove('speak');
