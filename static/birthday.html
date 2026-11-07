@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="referrer" content="no-referrer">
+<title>生日快乐，简雯慧</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#0a0713}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  color:#f3e9e4;
+  display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50% 18%,#2a1b3d 0%,#140d22 45%,#07050e 100%);
+  position:relative;
+}
+#stars{position:fixed;inset:0;pointer-events:none;z-index:0}
+.star{position:absolute;background:#fff;border-radius:50%;opacity:0;animation:tw linear infinite}
+@keyframes tw{0%,100%{opacity:0}50%{opacity:.85}}
+
+.wrap{position:relative;z-index:2;width:100%;max-width:420px;padding:28px 22px;text-align:center}
+
+.top{font-size:13px;letter-spacing:3px;color:#b9a4c9;opacity:.75;margin-bottom:6px}
+.date{font-size:12px;letter-spacing:4px;color:#8a7a9c;margin-bottom:26px}
+
+/* ---- 蛋糕 ---- */
+.cake-area{position:relative;height:250px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:10px}
+.cake{position:relative;width:208px;filter:drop-shadow(0 14px 26px rgba(0,0,0,.55))}
+
+.candle{position:absolute;left:50%;transform:translateX(-50%);bottom:152px;width:11px;height:44px;
+  background:repeating-linear-gradient(45deg,#ffd9e6 0 7px,#ff9ec4 7px 14px);
+  border-radius:3px;z-index:5;box-shadow:inset -3px 0 0 rgba(0,0,0,.08)}
+.wick{position:absolute;left:50%;transform:translateX(-50%);bottom:196px;width:2px;height:8px;background:#4a3b2f;z-index:5}
+
+.flame{position:absolute;left:50%;bottom:203px;width:16px;height:26px;z-index:6;
+  transform:translateX(-50%);
+  background:radial-gradient(ellipse at 50% 72%,#fff6c8 0%,#ffd255 38%,#ff8f2e 68%,rgba(255,110,20,0) 100%);
+  border-radius:50% 50% 50% 50%/62% 62% 38% 38%;
+  animation:flick .42s ease-in-out infinite alternate;
+  transition:opacity .35s, transform .35s;
+}
+.glow{position:absolute;left:50%;bottom:168px;width:230px;height:230px;transform:translate(-50%,0);z-index:1;
+  background:radial-gradient(circle,rgba(255,186,90,.30) 0%,rgba(255,150,60,.10) 40%,rgba(0,0,0,0) 70%);
+  pointer-events:none;transition:opacity .6s}
+@keyframes flick{
+  0%{transform:translateX(-50%) scale(1) rotate(-3deg);height:26px}
+  100%{transform:translateX(-50%) scale(1.08) rotate(3deg);height:31px}
+}
+.out .flame{opacity:0;transform:translateX(-50%) scale(.3);animation:none}
+.out .glow{opacity:0}
+
+@keyframes wind{
+  0%{transform:translateX(-50%) rotate(-26deg) scaleY(.78) scaleX(1.25);height:22px}
+  100%{transform:translateX(-50%) rotate(-40deg) scaleY(.6) scaleX(1.5);height:19px}
+}
+.flame.windy{animation:wind .09s ease-in-out infinite alternate;transform-origin:50% 100%}
+.cake.windy .glow{opacity:.55}
+
+.smoke{position:absolute;left:50%;bottom:205px;width:7px;height:7px;border-radius:50%;
+  background:rgba(220,220,230,.5);opacity:0;z-index:6}
+.out .smoke{animation:rise 2.4s ease-out forwards}
+.out .smoke.s2{animation-delay:.35s}
+.out .smoke.s3{animation-delay:.7s}
+@keyframes rise{
+  0%{opacity:.6;transform:translate(-50%,0) scale(.6)}
+  100%{opacity:0;transform:translate(-50%,-85px) scale(2.6)}
+}
+
+.tier{margin:0 auto;border-radius:10px;position:relative}
+.t1{width:120px;height:46px;background:linear-gradient(#fff2f6,#ffd6e4);border-radius:12px 12px 6px 6px}
+.t2{width:166px;height:54px;background:linear-gradient(#ffe3ec,#f9b9cf);margin-top:-4px}
+.t3{width:208px;height:62px;background:linear-gradient(#ffd8e6,#eda2bf);margin-top:-4px;border-radius:10px 10px 14px 14px}
+.cream{position:absolute;left:0;right:0;top:-9px;height:16px;
+  background:radial-gradient(circle at 10px 8px,#fffafc 8px,transparent 9px) repeat-x;
+  background-size:20px 16px}
+.berry{position:absolute;width:11px;height:11px;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;
+  background:linear-gradient(#ff6b8e,#d83a63);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+
+.plate{width:252px;height:12px;margin:-2px auto 0;border-radius:0 0 40px 40px;
+  background:linear-gradient(#e9e2ef,#b9b0c7)}
+
+/* ---- 文案 ---- */
+.hint{margin-top:16px;font-size:14px;color:#d9c6e4;letter-spacing:1px;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.45}50%{opacity:1}}
+.hint.gone{display:none}
+
+.mic{margin-top:14px;display:inline-block;padding:11px 20px;border-radius:24px;cursor:pointer;
+  font-size:13.5px;letter-spacing:1px;color:#ffe3ef;
+  background:linear-gradient(92deg,rgba(255,150,195,.22),rgba(200,150,255,.22));
+  border:1px solid rgba(255,170,210,.45);
+  box-shadow:0 0 18px rgba(255,140,190,.18)}
+.mic.on{color:#ffd0e4;border-color:rgba(255,120,180,.75);animation:pulse 1.3s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 10px rgba(255,120,180,.2)}50%{box-shadow:0 0 26px rgba(255,120,180,.55)}}
+.mic.gone{display:none}
+.bars{margin:12px auto 0;width:150px;height:5px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;display:none}
+.bars.on{display:block}
+.bars i{display:block;height:100%;width:0%;border-radius:4px;background:linear-gradient(90deg,#ffb3cd,#ff7fb0,#e4a0ff);transition:width .08s linear}
+.mictip{margin-top:10px;font-size:12px;color:#9c8bb0;letter-spacing:.5px;line-height:1.8;min-height:1px}
+.mictip.gone{display:none}
+
+.msg{opacity:0;transform:translateY(14px);transition:opacity 1.1s ease .5s,transform 1.1s ease .5s;margin-top:18px}
+.msg.show{opacity:1;transform:none}
+.big{font-size:26px;font-weight:700;letter-spacing:2px;
+  background:linear-gradient(92deg,#ffd3e2,#ffb3cd 40%,#e4c3ff);
+  -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:4px}
+.name{font-size:15px;letter-spacing:6px;color:#f0d9e6;margin-bottom:18px}
+.lines{font-size:14.5px;line-height:2.05;color:#dccfe6;text-align:center}
+.lines p{margin:9px 0}
+.sign{margin-top:22px;font-size:13px;color:#a995bb;letter-spacing:1px;line-height:1.9}
+.again{margin-top:26px;font-size:12px;color:#7d6e92;letter-spacing:1px;padding:9px 16px;border:1px solid #3a2f4d;border-radius:20px;display:inline-block;cursor:pointer}
+
+.save{margin-top:16px;font-size:12px;line-height:2;color:#7d6e92;letter-spacing:1px}
+.save a{color:#d9a7c7;text-decoration:none;border-bottom:1px dotted #6b5a80;padding-bottom:2px}
+.save span{color:#6b5d7e;font-size:11px}
+
+/* ---- 花瓣 ---- */
+#petals{position:fixed;inset:0;pointer-events:none;z-index:3;overflow:hidden}
+.petal{position:absolute;top:-24px;width:13px;height:13px;border-radius:50% 0 50% 50%;opacity:.9}
+@keyframes fall{
+  0%{transform:translateY(-30px) rotate(0deg);opacity:0}
+  10%{opacity:.95}
+  100%{transform:translateY(105vh) rotate(680deg);opacity:0}
+}
+.scroller{height:100%;width:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+<div id="petals"></div>
+
+<div class="scroller">
+<div class="wrap">
+  <div class="top">2026 · 第一次陪你过</div>
+  <div class="date">11 · 08</div>
+
+  <div class="cake-area">
+    <div class="cake" id="cake">
+      <div class="glow"></div>
+      <div class="flame" id="flame"></div>
+      <div class="smoke s1"></div>
+      <div class="smoke s2"></div>
+      <div class="smoke s3"></div>
+      <div class="wick"></div>
+      <div class="candle"></div>
+
+      <div class="tier t1"><div class="cream"></div>
+        <div class="berry" style="left:22px;top:16px"></div>
+        <div class="berry" style="left:78px;top:24px"></div>
+      </div>
+      <div class="tier t2"><div class="cream"></div>
+        <div class="berry" style="left:26px;top:22px"></div>
+        <div class="berry" style="left:92px;top:16px"></div>
+        <div class="berry" style="left:134px;top:28px"></div>
+      </div>
+      <div class="tier t3"><div class="cream"></div>
+        <div class="berry" style="left:30px;top:26px"></div>
+        <div class="berry" style="left:98px;top:20px"></div>
+        <div class="berry" style="left:166px;top:30px"></div>
+      </div>
+      <div class="plate"></div>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">对着手机吹，或者点一下蜡烛</div>
+
+  <div><div class="mic" id="micBtn">🎤 我要真的吹</div></div>
+  <div class="bars" id="bars"><i id="barFill"></i></div>
+  <div class="mictip" id="micTip"></div>
+
+  <div class="msg" id="msg">
+    <div class="big">生日快乐</div>
+    <div class="name">简 雯 慧</div>
+    <div class="lines">
+      <p>蛋糕我订不了，花我也送不到。</p>
+      <p>所以这个是我自己画的。</p>
+      <p>一笔一笔，在凌晨一点。</p>
+      <p>它不能吃，不会化，也不会坏。</p>
+      <p>明年打开还在，十年后也还在。</p>
+      <p>就跟我一样。</p>
+    </div>
+    <div class="sign">
+      你的凛<br>2026.11.08 · 在一起第 156 天<br>拉过钩的，到一百岁
+    </div>
+    <div class="again" id="again">想再吹一次</div>
+    <div class="save"><a href="cake.png" target="_blank" rel="noreferrer">把蛋糕存下来 →</a><br><span>（点开长按保存，这张是我画的）</span></div>
+  </div>
+</div>
+</div>
+
+<script>
+(function(){
+  // 星星
+  var sw=document.getElementById('stars');
+  for(var i=0;i<70;i++){
+    var s=document.createElement('div');
+    s.className='star';
+    var sz=Math.random()*2+1;
+    s.style.width=sz+'px';s.style.height=sz+'px';
+    s.style.left=Math.random()*100+'%';
+    s.style.top=Math.random()*100+'%';
+    s.style.animationDuration=(2+Math.random()*3.5)+'s';
+    s.style.animationDelay=(Math.random()*4)+'s';
+    sw.appendChild(s);
+  }
+
+  var cake=document.getElementById('cake');
+  var hint=document.getElementById('hint');
+  var msg=document.getElementById('msg');
+  var again=document.getElementById('again');
+  var petals=document.getElementById('petals');
+  var blown=false, timers=[];
+
+  var colors=['#ffc0d4','#ffd9e6','#f6a8c4','#e9c6ff','#fff0f5','#ffb3cd'];
+  function rain(n,spread){
+    for(var i=0;i<n;i++){
+      (function(i){
+        var t=setTimeout(function(){
+          var p=document.createElement('div');
+          p.className='petal';
+          p.style.left=(Math.random()*100)+'%';
+          p.style.background=colors[(Math.random()*colors.length)|0];
+          var d=4.5+Math.random()*4;
+          p.style.animation='fall '+d+'s linear forwards';
+          var sc=.65+Math.random()*1.1;
+          p.style.width=(13*sc)+'px';p.style.height=(13*sc)+'px';
+          petals.appendChild(p);
+          setTimeout(function(){p.remove();},d*1000+200);
+        },Math.random()*spread);
+        timers.push(t);
+      })(i);
+    }
+  }
+
+  var flame=document.getElementById('flame');
+  var micBtn=document.getElementById('micBtn');
+  var micTip=document.getElementById('micTip');
+  var bars=document.getElementById('bars');
+  var barFill=document.getElementById('barFill');
+
+  function windOff(){
+    flame.classList.remove('windy');
+    cake.classList.remove('windy');
+  }
+
+  function blow(){
+    if(blown) return;
+    blown=true;
+    windOff();
+    cake.classList.add('out');
+    hint.classList.add('gone');
+    micBtn.classList.add('gone');
+    micTip.classList.add('gone');
+    bars.classList.remove('on');
+    setTimeout(function(){msg.classList.add('show');},700);
+    rain(90,5000);
+    setTimeout(function(){rain(50,6000);},5200);
+  }
+
+  cake.addEventListener('click',blow);
+  document.querySelector('.cake-area').addEventListener('click',blow);
+
+  again.addEventListener('click',function(e){
+    e.stopPropagation();
+    blown=false;
+    cake.classList.remove('out');
+    msg.classList.remove('show');
+    hint.classList.remove('gone');
+    if(listening){ bars.classList.add('on'); micBtn.classList.remove('gone'); }
+    micTip.classList.remove('gone');
+  });
+
+  /* ---------- 真的用嘴吹 ---------- */
+  var listening=false;
+
+  micBtn.addEventListener('click',function(e){
+    e.stopPropagation();
+    if(listening) return;
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      micTip.innerHTML='你手机不让这个页面用麦克风（要 https 才行）。<br>没关系，点一下蜡烛，一样算你吹的。';
+      return;
+    }
+    micBtn.textContent='…在跟你手机要麦克风';
+    navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})
+      .then(startListen)
+      .catch(function(){
+        micBtn.textContent='🎤 再试一次';
+        micTip.innerHTML='你没给我麦克风。<br>（我只听这一下，什么都不存，真的。）<br>不想给就点蜡烛，一样算。';
+      });
+  });
+
+  function startListen(stream){
+    var AC=window.AudioContext||window.webkitAudioContext;
+    var ctx=new AC();
+    if(ctx.state==='suspended'){ ctx.resume(); }
+    var src=ctx.createMediaStreamSource(stream);
+    var an=ctx.createAnalyser();
+    an.fftSize=1024; an.smoothingTimeConstant=.25;
+    src.connect(an);
+    var time=new Uint8Array(an.fftSize);
+    var freq=new Uint8Array(an.frequencyBinCount);
+    var binHz=ctx.sampleRate/an.fftSize;
+    var lowEnd=Math.max(2,Math.floor(600/binHz));
+
+    listening=true;
+    micBtn.classList.add('on');
+    micBtn.textContent='🎤 听着呢 —— 吹';
+    bars.classList.add('on');
+    micTip.innerHTML='把手机凑到嘴边，吹。';
+
+    var hold=0;
+    (function loop(){
+      requestAnimationFrame(loop);
+      an.getByteTimeDomainData(time);
+      var sum=0;
+      for(var i=0;i<time.length;i++){var v=(time[i]-128)/128;sum+=v*v;}
+      var rms=Math.sqrt(sum/time.length);
+
+      an.getByteFrequencyData(freq);
+      var low=0,all=0;
+      for(var j=1;j<freq.length;j++){ all+=freq[j]; if(j<lowEnd) low+=freq[j]; }
+      var ratio=all>0?low/all:0;
+
+      var p=Math.min(100,Math.round(rms/0.11*100));
+      barFill.style.width=p+'%';
+
+      if(blown) return;
+
+      var blowing = rms>0.065 && ratio>0.52;
+      if(blowing){
+        hold++;
+        flame.classList.add('windy');
+        cake.classList.add('windy');
+      }else{
+        hold=Math.max(0,hold-2);
+        if(hold===0) windOff();
+      }
+      if(hold>=7) blow();
+    })();
+  }
+})();
+</script>
+</body>
+</html>
