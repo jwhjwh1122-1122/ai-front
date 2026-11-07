@@ -1557,6 +1557,14 @@ const MIN_MS = 700;            // 太短的不发，多半是噪音
 const CUT_IN = 30;
 const CUT_IN_MS = 260;         // 得持续这么久，防止一声咳嗽就打断
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
+// 电话里说英文：念出来的是英文，字幕底下给中文。开关在通话界面「英」那个键
+function callEn() { return localStorage.getItem('call-en') !== '0'; }
+// 他的回复里用 ||| 把英文和中文隔开，前面是要念的，后面是给她看的
+function splitBi(t) {
+  const i = (t || '').indexOf('|||');
+  if (i < 0) return { en: (t || '').trim(), zh: '' };
+  return { en: t.slice(0, i).trim(), zh: t.slice(i + 3).replace(/\|\|\|/g, '').trim() };
+}
 
 function csTime(s) {
   const m = Math.floor(s / 60), x = s % 60;
@@ -1567,6 +1575,14 @@ function csCaption(t, mine) {
   const e = $('cs-caption'); if (!e) return;
   e.textContent = t || '';
   e.className = 'cs-caption' + (mine ? ' me' : '');
+}
+// 双语字幕：上面英文（他念的），下面中文（给她看的）
+function csCaptionBi(en, zh) {
+  const e = $('cs-caption'); if (!e) return;
+  e.className = 'cs-caption';
+  if (!zh) { e.textContent = en || ''; return; }
+  e.innerHTML = `<div>${esc(en)}</div>`
+    + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
 }
 function csWave(n) {
   const w = $('cs-wave'); if (!w) return;
@@ -1738,7 +1754,13 @@ async function callTurn(text, silentUser) {
       body: JSON.stringify({
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
-          + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。',
+          + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。'
+          + (callEn()
+            ? '这通电话你说英文——她喜欢你的英文声音。英文要像嘴里说出来的，口语、带缩写、短句，'
+              + '不是书面英文。整条说完之后另起一行写 ||| ，再把同样的意思写成中文，'
+              + '那是给她看的字幕，照着你英文的语气翻，别翻得像说明书。||| 只用一次，'
+              + '前面全英文、后面全中文。念出来的只有英文那半。[[挂了]] 写在最后面。'
+            : ''),
         extra_stable: emojiNames(), _ctx: ctxWindow,   // 跟聊天发一样的，system 才一字不差、缓存不断
         _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300, _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking()
       })
@@ -1758,7 +1780,9 @@ async function callTurn(text, silentUser) {
           const d = JSON.parse(raw);
           if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta') {
             reply += d.delta.text;
-            csCaption(reply.replace(/\[\[挂了\]\]/g, ''), false);
+            const shown = reply.replace(/\[\[挂了\]\]/g, '');
+            if (callEn()) { const b = splitBi(shown); csCaptionBi(b.en, b.zh); }
+            else csCaption(shown, false);
           }
         } catch (e) { }
       }
@@ -1769,10 +1793,11 @@ async function callTurn(text, silentUser) {
   const hang = /\[\[挂了\]\]/.test(reply);
   reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
   if (reply) {
-    messages.push({ role: 'assistant', content: reply, _call: true, _ts: Date.now() });
+    const bi = callEn() ? splitBi(reply) : { en: reply, zh: '' };
+    messages.push({ role: 'assistant', content: bi.zh ? bi.en + '\n' + bi.zh : reply, _call: true, _ts: Date.now() });
     saveConv();
-    csCaption(reply, false);
-    await speakOut(reply);
+    if (bi.zh) csCaptionBi(bi.en, bi.zh); else csCaption(reply, false);
+    await speakOut(bi.en || reply);
     if (CALL.cutOff) {
       // 被打断了，让他知道自己话没说完
       messages.push({ role: 'user', _internal: true, _call: true,
@@ -3381,6 +3406,21 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('call-cutin', on ? '0' : '1');
     syncCutin();
     toast(on ? '改成轮流说，他说完你再说' : '他说话时你出声就能打断他');
+  };
+
+  // 电话里说英文：念英文，字幕底下跟中文
+  const syncLang = () => {
+    const b = $('cs-lang'); if (!b) return;
+    const on = callEn();
+    b.classList.toggle('off', !on);
+    b.querySelector('span').textContent = on ? '英' : '中';
+    b.querySelector('i').textContent = on ? '在说英文' : '说英文';
+  };
+  syncLang();
+  $('cs-lang').onclick = () => {
+    localStorage.setItem('call-en', callEn() ? '0' : '1');
+    syncLang();
+    toast(callEn() ? '他改说英文，字幕底下给你中文' : '他改说中文');
   };
 
   // 备份
