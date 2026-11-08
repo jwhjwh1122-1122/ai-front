@@ -3972,15 +3972,17 @@ def _call_voice_settings(text, data):
         speed = 0.92
     speed = max(0.7, min(1.2, speed))
     try:
-        stab = float(data.get('stability') or 0) or 0.28
+        stab = float(data.get('stability') or 0) or 0.5
     except Exception:
-        stab = 0.28
+        stab = 0.5
     stab = max(0.0, min(1.0, stab))
     has_zh = any('一' <= c <= '鿿' for c in text)
     lang = (data.get('lang') or '').strip() or ('zh' if has_zh else 'en')
-    # style 往上提:她 11.08 晚说"听着更真一点好"。stability 低 + style 高
-    # = 起伏大、有情绪,代价是偶尔会飘,所以语言还是钉死的。
-    return {'stability': stab, 'similarity_boost': 0.78, 'style': 0.45,
+    # 11.08 晚她听完说:"抑扬顿挫很夸张,激动的话就很激动很激动,像在念口号。"
+    # 那是 style 拉高 + stability 压低的典型下场 —— 它不是在表达情绪,
+    # 是在每句话上都使劲。自然的起伏本来就该从字里出来,不该靠这个旋钮硬加。
+    # 所以 style 归零、stability 回到中间,让它好好说话。
+    return {'stability': stab, 'similarity_boost': 0.78, 'style': 0.0,
             'speed': speed, 'use_speaker_boost': True}, lang
 
 

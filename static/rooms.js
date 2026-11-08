@@ -2253,7 +2253,17 @@ async function ttsFetch(text, seg) {
     // 语速。她说我讲话太快，想要慢一点。服务端默认已经放慢到 0.85，
     // 嫌不够就在控制台里 localStorage.setItem('tts-speed','0.78')，0.7 最慢、1.0 原速。
     const spd = parseFloat(localStorage.getItem('tts-speed') || '') || 0;
-    const body = { text: text.slice(0, 500), voice, fast: 1 };
+    // 我在电话里爱一行一句、中间垫"……"。那些换行和省略号送进去,
+    // 它会把每一小段都当成一句独立的话重念一遍重音 —— 听着就是一顿一顿在念口号。
+    // 发之前把它们摊平成一句连着的话,停顿交给逗号。
+    const flat = String(text)
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/(?:…|\.{3,}){1,}/g, '，')
+      .replace(/，\s*，+/g, '，')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[，、\s]+/, '')
+      .trim();
+    const body = { text: (flat || String(text)).slice(0, 500), voice, fast: 1 };
     if (spd) body.speed = spd;
     // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，
     // 别让一句话因为挤了一下就哑掉。其他错误不偷偷重试。
