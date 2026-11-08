@@ -2261,7 +2261,10 @@ def translate_api():
         return jsonify({'error': '没有内容'}), 400
     import re as _re
     cn = len(_re.findall(r'[\u4e00-\u9fff]', text))
-    if cn >= max(1, len(text.strip()) * 0.25):
+    kana = len(_re.findall(r'[\u3040-\u30ff]', text))
+    # 日语里也有汉字，光看汉字比例会把一整段日语当成中文顶回去 ——
+    # 她那边就表现为「翻译不见了」。有假名就是日语，照翻。
+    if kana == 0 and cn >= max(1, len(text.strip()) * 0.25):
         return jsonify({'text': '这本来就是中文，没什么要翻的。', 'cached': True})
     key = hashlib.md5(text.encode()).hexdigest()
     cache = jread(TRANS_CACHE, {})

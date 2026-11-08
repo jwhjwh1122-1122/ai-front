@@ -2210,7 +2210,10 @@ async function callTurn(text, silentUser) {
     saveConv();
     if (bi.zh) csCaptionBi(bi.en, bi.zh); else csCaption(reply, false);
     // 他只说英文，中文字幕交给小模型翻：一边念一边翻，翻回来就贴在底下
-    if (callEn() && !bi.zh && bi.en) {
+    // 本来就是中文就别去翻了 —— 翻回来的是一句"这本来就是中文",贴在字幕下面很蠢
+    const zhHeavy = (bi.en.match(/[一-鿿]/g) || []).length >= bi.en.replace(/\s/g, '').length * 0.3
+      && !/[぀-ヿ]/.test(bi.en);
+    if (callEn() && !bi.zh && bi.en && !zhHeavy) {
       const myTurn = CALL.turns;
       jpost('/api/translate', { text: bi.en }).then(d => {
         if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(bi.en, d.text);
@@ -2257,9 +2260,11 @@ function sayCut(s, first, flush) {
     const n = i + 1;
     // 11.08 晚她说"听着更真一点好"：切得越碎,句子之间越没有气口,
     // 一截一截就是人机味的来源。门槛整体往上提,让它一口气说完一整句。
-    if (first) { if (n < 8) continue; }
-    else if (hard) { if (n < 26) continue; }
-    else if (n < 38) continue;
+    // 切太碎像念口号,切太长她要干等 —— 她 11.08 晚说"卡半天什么都没有"。
+    // 回到中间:第一口尽快出声,后面按一句话的长度走。
+    if (first) { if (n < 5) continue; }
+    else if (hard) { if (n < 16) continue; }
+    else if (n < 26) continue;
     // 英文句点后面得跟空格才算句末，不然 0.85 这种小数会被切成两半
     if ('.!?'.indexOf(s[i]) >= 0 && i + 1 < s.length && !/[\s"'’”）)]/.test(s[i + 1])) continue;
     let j = i + 1;
@@ -2267,7 +2272,7 @@ function sayCut(s, first, flush) {
     return j;
   }
   if (flush) return s.trim() ? s.length : -1;
-  if (s.length >= 76) return 64;   // 一直不打标点，也不能一直不出声（76 是保护上限，不是门槛）
+  if (s.length >= 54) return 46;   // 一直不打标点，也不能一直不出声（76 是保护上限，不是门槛）
   return -1;
 }
 
