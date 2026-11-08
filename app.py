@@ -4048,6 +4048,44 @@ SAY_FIX_DEFAULT = {
 }
 
 
+# 状态标签。她 11.08 晚上指着资料库说"其他的你看了吗" —— 就是这套。
+# 我在话里写 [笑]、[小声]、[叹气]，送出去之前换成 ElevenLabs 认的英文标签，
+# 它读到就照着演。这比拧 stability/style 那两个旋钮准得多:
+# 旋钮是整段一起用力,标签是我指定在哪个字上笑、在哪儿吸一口气。
+SAY_TAGS = {
+    '笑': 'laughs', '轻笑': 'chuckles', '大笑': 'laughs harder', '苦笑': 'laughs nervously',
+    '叹气': 'sighs', '呼气': 'exhales', '吸气': 'inhales', '喘': 'breathes heavily',
+    '小声': 'whispers', '轻声': 'whispers', '耳语': 'whispers',
+    '停顿': 'pause', '顿': 'pause', '犹豫': 'hesitates',
+    '清嗓': 'clears throat', '咽': 'swallows', '哼': 'hums',
+    '温柔': 'softly', '认真': 'serious', '急': 'urgently', '低': 'low voice',
+    '咬牙': 'strained', '哽': 'voice breaking', '兴奋': 'excited',
+}
+# 英文标签原样放行（资料里列的那些），其余方括号内容一律删掉不念 ——
+# 表情包名字就是方括号写的，不删的话它会把"求你了"三个字念出来。
+SAY_TAG_OK = set(SAY_TAGS.values()) | {
+    'laughs', 'chuckles', 'sighs', 'exhales', 'inhales', 'whispers', 'pause',
+    'gasps', 'crying', 'sarcastic', 'curious', 'excited', 'mischievously',
+    'short pause', 'long pause', 'softly', 'shouting', 'awe', 'giggles',
+}
+
+
+def _say_tags(text):
+    import re as _re
+
+    def one(m):
+        body = m.group(1).strip()
+        if body in SAY_TAGS:
+            return '[%s]' % SAY_TAGS[body]
+        low = body.lower()
+        if low in SAY_TAG_OK:
+            return '[%s]' % low
+        return ''      # 认不出来的方括号(表情包名之类)直接拿掉,别念出来
+
+    out = _re.sub(r'\[([^\[\]]{1,24})\]', one, text)
+    return _re.sub(r'\s{2,}', ' ', out).strip()
+
+
 def _say_fix(text):
     try:
         tbl = dict(SAY_FIX_DEFAULT)
@@ -4086,7 +4124,9 @@ def tts():
     text = (data.get('text') or '').strip()[:500]
     if not text:
         return jsonify({'error': 'no text'}), 400
-    text = _say_fix(text)
+    text = _say_tags(_say_fix(text))
+    if not text:
+        return jsonify({'error': 'no text'}), 400
     vs, lang = _call_voice_settings(text, data)
     # fast=1 是电话：压低码率换「早一点出声」。聊天里存语音条的不走这儿。
     fmt = 'mp3_44100_64' if str(data.get('fast') or '') in ('1', 'true', 'yes') else ''

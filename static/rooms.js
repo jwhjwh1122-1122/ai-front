@@ -2135,12 +2135,14 @@ async function callTurn(text, silentUser) {
     const sp = reply.split('|||')[0];
     let add = sp.slice(fed);
     if (!flush) {
-      // [[挂了]] 或者 ||| 可能刚开了个头，先别急着念，等它写全
+      // [[挂了]]、[笑] 这种标签或者 ||| 可能刚开了个头，先别急着念，等它写全。
+      // 但只在「还没闭合」的时候等 —— 以前只要见到 [ 就一直卡住，
+      // 标签后面的半句话要拖到整段说完才出声。
       let b = -1;
-      for (const c of ['[', '|']) {
-        const k = add.indexOf(c);
-        if (k >= 0 && (b < 0 || k < b)) b = k;
-      }
+      const k1 = add.indexOf('[');
+      if (k1 >= 0 && add.indexOf(']', k1) < 0) b = k1;
+      const k2 = add.indexOf('|');
+      if (k2 >= 0 && (b < 0 || k2 < b)) b = k2;
       if (b >= 0) add = add.slice(0, b);
     }
     fed += add.length;
@@ -2269,6 +2271,9 @@ function sayCut(s, first, flush) {
     if ('.!?'.indexOf(s[i]) >= 0 && i + 1 < s.length && !/[\s"'’”）)]/.test(s[i + 1])) continue;
     let j = i + 1;
     while (j < s.length && /[”"'’）)\]】。…!?！？]/.test(s[j])) j++;
+    // 不能把 [laughs] 这种标签切成两半（教程第 3 节）：切点左边方括号没闭合就别切
+    const head = s.slice(0, j);
+    if ((head.match(/\[/g) || []).length > (head.match(/\]/g) || []).length) continue;
     return j;
   }
   if (flush) return s.trim() ? s.length : -1;
