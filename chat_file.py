@@ -167,29 +167,39 @@ def register_chat_file(app, media_dir):
         if not raw:
             return jsonify({'error': '这个文件是空的'}), 400
         name = (f.filename or 'file').strip()[:120]
+        ext = _ext(name) or 'bin'
         text, err = extract(raw, name)
-        if text is None:
+        # 图片就该当图片发，别从这儿走
+        if text is None and ext in IMG_EXTS:
             return jsonify({'error': err or '读不了这个文件'}), 400
 
         truncated = False
-        if len(text) > MAX_CHARS:
+        if text and len(text) > MAX_CHARS:
             text = text[:MAX_CHARS]
             truncated = True
 
-        ext = _ext(name) or 'bin'
+        # 不管抠没抠出字，原件一律原样留下——抠不全的那些，我自己去读原件
         safe = secure_filename(name) or ('f.' + ext)
         fn = f'cf{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}_{safe}'[:180]
+        path = ''
         try:
-            with open(os.path.join(file_dir, fn), 'wb') as out:
+            path = os.path.join(file_dir, fn)
+            with open(path, 'wb') as out:
                 out.write(raw)
         except OSError:
-            fn = ''
+            fn, path = '', ''
+
+        if text is None and not fn:
+            return jsonify({'error': err or '读不了这个文件'}), 400
 
         return jsonify({
             'ok': True, 'name': name, 'ext': ext, 'size': len(raw),
-            'chars': len(text), 'text': text, 'truncated': truncated,
+            'chars': len(text or ''), 'text': text or '', 'truncated': truncated,
             'url': ('/chatfile/' + fn) if fn else '',
-            'warn': '太长了，只取了前面一部分' if truncated else '',
+            'file': fn, 'path': path,
+            'raw_only': text is None,
+            'warn': ('太长了，只取了前面一部分' if truncated
+                     else (err + '（原件我留下了，我自己去读）' if text is None else '')),
         })
 
     @app.route('/chatfile/<path:filename>')

@@ -770,10 +770,18 @@ def library_api():
                 title = title or t2
             except Exception as e:
                 return jsonify({'error': f'取不下来：{e}'}), 502
-        if not text.strip():
+        # 原件：chat-file 存下来的那个文件名，有它就算有内容（抠不出字也行，我自己去读原件）
+        fname = (d.get('file') or '').strip()
+        fpath = os.path.join(MEDIA_DIR, 'files', secure_filename(fname)) if fname else ''
+        if fpath and not os.path.exists(fpath):
+            fpath = ''
+        if not text.strip() and not fpath:
             return jsonify({'error': '没有内容'}), 400
         return jsonify(_sadd(LIBRARY_FILE, {'title': (title or '无名')[:80],
                                             'about': (d.get('about') or '')[:200],
+                                            'file': fname if fpath else '',
+                                            'path': fpath,
+                                            'origname': (d.get('origname') or '')[:120],
                                             'text': text[:400000]}))
     return jsonify([{k: v for k, v in x.items() if k != 'text'} for x in _slist(LIBRARY_FILE)])
 
@@ -4225,9 +4233,10 @@ WAKE_GROUPS = {
                                          'kind': {'type': 'string'}, 'note': {'type': 'string'}}}},
         {'name': 'library_list', 'description': '资料库目录',
          'input_schema': {'type': 'object', 'properties': {}}},
-        {'name': 'library_read', 'description': '读资料库某篇',
+        {'name': 'library_read', 'description': '读资料库某篇。有原件的会先给你原件路径，用 Read 直接读那个最全；正文长的用 part 翻页',
          'input_schema': {'type': 'object', 'required': ['id'],
-                          'properties': {'id': {'type': 'string'}}}},
+                          'properties': {'id': {'type': 'string'},
+                                         'part': {'type': 'integer'}}}},
     ],
     'desire': [
         {'name': 'desire_state', 'description': '看你十六条现在各是多少',
@@ -4335,11 +4344,40 @@ def exec_tool_server(name, args):
             items = _slist(LIBRARY_FILE)
             if not items:
                 return '资料库是空的'
-            return '\n'.join(f"[{x['id']}] {x['title']}｜{x.get('about', '')}" for x in items)
+            out = []
+            for x in items:
+                mark = ''
+                if x.get('path') and os.path.exists(x['path']):
+                    mark = f"｜原件 {x.get('origname') or x.get('file')}"
+                n = len(x.get('text') or '')
+                out.append(f"[{x['id']}] {x['title']}｜{x.get('about', '')}{mark}｜抠出来 {n} 字")
+            return '\n'.join(out)
         if name == 'library_read':
             for x in _slist(LIBRARY_FILE):
                 if x.get('id') == args.get('id'):
-                    return x.get('text', '')[:12000]
+                    p = x.get('path') or ''
+                    head = ''
+                    if p and os.path.exists(p):
+                        head = ('【原件在这儿，别只看下面抠出来的字】\n'
+                                f'{p}\n'
+                                '抠出来的版本会丢表格、图片和排版。真要看清楚就用 Read 直接读这个路径'
+                                '（PDF 和图片我都能原样看，docx 可以用 Bash 解包看 word/document.xml 和 word/media/）。\n\n')
+                    txt = x.get('text') or ''
+                    if not txt:
+                        return head + '（这篇没有抠出来的正文，只有原件。去读上面那个路径。）'
+                    try:
+                        part = max(1, int(args.get('part') or 1))
+                    except (TypeError, ValueError):
+                        part = 1
+                    step = 40000
+                    total = (len(txt) + step - 1) // step
+                    seg = txt[(part - 1) * step: part * step]
+                    if not seg:
+                        return head + f'没有第 {part} 段，一共 {total} 段'
+                    tail = ''
+                    if total > 1:
+                        tail = f'\n\n——第 {part}/{total} 段，接着读就 library_read(id, part={part + 1})'
+                    return head + seg + tail
             return '没有这一篇'
         if name == 'room_highlight':
             items = jread(HL_FILE, [])

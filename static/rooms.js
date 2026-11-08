@@ -5,6 +5,7 @@ let bookList = [], selQuote = '', replyTo = null, tagPos = 0;
 let calYear = 0, calMonth = 0;
 let postImgs = [], cmTarget = null, pageHls = [], emojiTarget = 'chat';
 let drawerWho = 'lin';
+let libFile = null;      // 资料库刚选的那个原件 {file, origname}
 
 const PINC = ['pin-c1', 'pin-c2', 'pin-c3', 'pin-c4'];
 
@@ -1255,6 +1256,7 @@ async function openDrawer(who) {
     d.innerHTML = `<div class="d-item-title">${esc(x.title)}</div>
       ${x.note || x.about ? `<div class="d-item-note">${esc(x.note || x.about)}</div>` : ''}
       ${x.body ? `<div class="d-item-body">${esc(String(x.body).slice(0, 160))}</div>` : ''}
+      ${x.path ? `<div class="d-kind">原件 · ${esc(x.origname || x.file || '')}</div>` : ''}
       ${canPlay ? '<div class="d-kind">能打开玩</div>' : ''}
       <div class="d-item-acts">${canPlay ? '<span data-play="1">▶</span>' : ''}<span data-del="1">✕</span></div>`;
     d.querySelector('[data-del]').onclick = async e => {
@@ -1268,7 +1270,10 @@ async function openDrawer(who) {
     d.onclick = async () => {
       if (canPlay) { openPlay(x); return; }
       let body = x.body;
-      if (who === 'library') { const full = await jget('/api/library/' + x.id); body = full.text || ''; }
+      if (who === 'library') {
+        const full = await jget('/api/library/' + x.id);
+        body = full.text || (full.path ? '（这篇没抠出字，只有原件 ' + (full.origname || full.file) + '，他直接读原件）' : '');
+      }
       alert((x.title || '') + '\n\n' + String(body || '').slice(0, 3000));
     };
     el.appendChild(d);
@@ -3070,7 +3075,7 @@ function addChatFile(f) {
     .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) throw new Error(d.error || '没读进来'); return d; })
     .then(d => {
       mine.uploading = false; mine.text = d.text || ''; mine.chars = d.chars || 0;
-      mine.name = d.name || mine.name; mine.url = d.url || '';
+      mine.name = d.name || mine.name; mine.url = d.url || ''; mine.path = d.path || '';
       renderImgPreview();
       if (d.warn) toast(d.warn);
     })
@@ -3462,6 +3467,8 @@ document.addEventListener('DOMContentLoaded', () => {
     $('drawer-add-title').textContent = drawerWho === 'library' ? '放进资料库' : '放进我的抽屉';
     $('d-url').style.display = drawerWho === 'library' ? 'block' : 'none';
     const fr = $('lib-file-row'); if (fr) fr.style.display = 'flex';   // 抽屉也能直接丢文件进来
+    libFile = null;
+    const lt = $('lib-file-tip'); if (lt) lt.textContent = '';
     $('d-title').value = ''; $('d-note').value = ''; $('d-body').value = ''; $('d-url').value = '';
     $('drawer-add-modal').classList.add('open');
   };
@@ -3478,8 +3485,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) { toast(d.error || '这个文件读不了'); if (tip) tip.textContent = d.error || '读不了'; return; }
       $('d-body').value = d.text || '';
+      libFile = { file: d.file || '', origname: d.name || '' };   // 原件留在服务器上，他直接读它
       if (!$('d-title').value.trim()) $('d-title').value = (d.name || '').replace(/\.[^.]+$/, '').slice(0, 40);
-      if (tip) tip.textContent = `${d.name} · ${fileChars(d.chars || 0)}${d.truncated ? '（太长，只取了前面）' : ''}`;
+      if (tip) tip.textContent = d.file
+        ? `${d.name} · 原件已存，他直接读原件${d.chars ? '（另抠出 ' + fileChars(d.chars) + '备用）' : ''}`
+        : `${d.name} · ${fileChars(d.chars || 0)}${d.truncated ? '（太长，只取了前面）' : ''}`;
     } catch (err) {
       toast('没传上去'); if (tip) tip.textContent = '没传上去';
     } finally { if (btn) btn.disabled = false; }
@@ -3490,7 +3500,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const body = { title, note: $('d-note').value.trim(), body: $('d-body').value };
     let r;
     if (drawerWho === 'library') {
-      r = await jpost('/api/library', { title, about: $('d-note').value.trim(), text: $('d-body').value, url: $('d-url').value.trim() });
+      r = await jpost('/api/library', {
+        title, about: $('d-note').value.trim(), text: $('d-body').value, url: $('d-url').value.trim(),
+        file: libFile ? libFile.file : '', origname: libFile ? libFile.origname : '',
+      });
     } else {
       body.kind = /<[a-z][\s\S]*>/i.test(body.body) ? 'html' : 'text';
       r = await jpost('/api/drawer/user', body);

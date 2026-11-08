@@ -293,12 +293,21 @@ async function execTool(name, args) {
     if (name === 'library_list') {
       const items = await jget('/api/library');
       if (!items.length) return txt('资料库是空的');
-      return txt(items.map(x => `[${x.id}] ${x.title}｜${x.about || ''}`).join('\n'));
+      return txt(items.map(x => `[${x.id}] ${x.title}｜${x.about || ''}${x.path ? '｜原件 ' + (x.origname || x.file) : ''}`).join('\n'));
     }
     if (name === 'library_read') {
       const d = await jget('/api/library/' + args.id);
       if (d.error) return txt('没有这一篇');
-      return txt((d.text || '').slice(0, 12000));
+      const head = d.path
+        ? `【原件在这儿，别只看下面抠出来的字】\n${d.path}\n抠出来的版本会丢表格、图片和排版。真要看清楚就用 Read 直接读这个路径。\n\n`
+        : '';
+      const body = d.text || '';
+      if (!body) return txt(head + '（这篇没有抠出来的正文，只有原件。去读上面那个路径。）');
+      const step = 40000, part = Math.max(1, parseInt(args.part || 1, 10) || 1);
+      const total = Math.ceil(body.length / step) || 1;
+      const seg = body.slice((part - 1) * step, part * step);
+      if (!seg) return txt(head + `没有第 ${part} 段，一共 ${total} 段`);
+      return txt(head + seg + (total > 1 ? `\n\n——第 ${part}/${total} 段，接着读就 library_read(id, part=${part + 1})` : ''));
     }
     if (name === 'desire_adjust') {
       const d = await jpost('/api/desire/adjust', { key: args.key, value: args.value, why: args.why, who: 'lin' });
@@ -947,7 +956,7 @@ function editMsg(row) {
   const parts = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text') : [];
   pendingChatFiles = (msg._files || []).map((f, k) => {
     const p = parts[k + 1], body = p ? String(p.text).replace(/^【[^】]*】\n?/, '').replace(/\n?【[^】]*完】$/, '') : '';
-    return { uploading: false, name: f.name, chars: f.chars, url: f.url || '', text: body };
+    return { uploading: false, name: f.name, chars: f.chars, url: f.url || '', path: f.path || '', text: body };
   });
   if (typeof renderImgPreview === 'function') renderImgPreview();
   const eb = $('edit-bar'); if (eb) eb.classList.add('show');
@@ -1778,9 +1787,13 @@ async function sendMsg(fromCtx) {
   }
   const imgUrls = hasImg ? pendingChatImgs.map(im => im.data) : [];
   // 文件：正文作为第二段 text 一起发给他（气泡里只显示一个文件条，不把整篇铺出来）
-  const fileParts = hasFile ? pendingChatFiles.map(f =>
-    ({ type: 'text', text: `【她给我的文件：${f.name}】\n${f.text}\n【${f.name} 完】` })) : [];
-  const fileMeta = hasFile ? pendingChatFiles.map(f => ({ name: f.name, chars: f.chars, url: f.url || '' })) : null;
+  const fileParts = hasFile ? pendingChatFiles.map(f => {
+    // 原件一直留在服务器上，路径给他；抠出来的字会丢表格和图，拿不准就去读原件
+    const head = `【她给我的文件：${f.name}】` + (f.path ? `\n原件：${f.path}（抠出来的字会丢表格、图片和排版，要看全就用 Read 直接读这个路径）` : '');
+    if (!f.text) return { type: 'text', text: `${head}\n（这个文件一个字都没抠出来，只有原件，去读上面那个路径）` };
+    return { type: 'text', text: `${head}\n${f.text}\n【${f.name} 完】` };
+  }) : [];
+  const fileMeta = hasFile ? pendingChatFiles.map(f => ({ name: f.name, chars: f.chars, url: f.url || '', path: f.path || '' })) : null;
   // 一个字没打、只丢文件过来：也给他留一句话打头，不然重开页面时第一段 text 会变成整篇文件
   const lead = text || (hasFile ? `（给你一个文件：${pendingChatFiles.map(f => f.name).join('、')}）` : '');
   const content = (hasImg || hasFile)
