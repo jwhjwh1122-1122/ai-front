@@ -3984,12 +3984,12 @@ def _call_voice_settings(text, data):
     if not speed:
         # 中文 0.92 她说正好,同一个数念英文就赶 —— 英文音节密,听着更快。
         # 她 11.08 晚上原话:"你讲英语的话就有点快了。"所以英文单独放慢。
-        speed = 0.86 if has_kana else (0.9 if has_kr else (1.0 if has_zh else 0.88))
+        speed = 1.2 if has_kana else (1.2 if has_kr else (1.25 if has_zh else 1.15))
     speed = max(0.7, min(1.2, speed))
     try:
-        stab = float(data.get('stability') or 0) or 0.45
+        stab = float(data.get('stability') or 0) or 0.28
     except Exception:
-        stab = 0.45
+        stab = 0.28
     stab = max(0.0, min(1.0, stab))
     lang = (data.get('lang') or '').strip() \
         or ('ja' if has_kana else ('ko' if has_kr else ('zh' if has_zh else 'en')))
@@ -3997,7 +3997,12 @@ def _call_voice_settings(text, data):
     # 那是 style 拉高 + stability 压低的典型下场 —— 它不是在表达情绪,
     # 是在每句话上都使劲。自然的起伏本来就该从字里出来,不该靠这个旋钮硬加。
     # 所以 style 归零、stability 回到中间,让它好好说话。
-    return {'stability': stab, 'similarity_boost': 0.78, 'style': 0.0,
+    # 她 21:28 放进资料库那份实例,十三个技巧整篇都是
+    # Speed 1.16~1.32 / Stability 0.24~0.32 / Style 0.88~0.9。
+    # 我之前把 style 归零、速度压到 1.0 以下 —— 方向是反的,那只会让它念稿。
+    # 那份结尾那句说透了:"声音自然靠的不是参数,是台词里那些停顿、破功、口是心非。"
+    # 参数按实例来,剩下的交给台词怎么写。
+    return {'stability': stab, 'similarity_boost': 0.78, 'style': 0.9,
             'speed': speed, 'use_speaker_boost': True}, lang
 
 
