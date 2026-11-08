@@ -1552,6 +1552,7 @@ const CALL = {
   stream: null, ctx: null, analyser: null, rec: null,
   chunks: [], startAt: 0, turns: 0, timer: null, raf: null,
   speaking: false, silence: 0, heard: false, busy: false,
+  monoTimer: 0, monoN: 0,
   speakingOut: false, cutOff: false, cutMs: 0, audio: null,
   endedBy: 'user', who: 'user',
 };
@@ -1610,6 +1611,49 @@ const CUT_GRACE_MS = 1300;     // 我刚开口这一会儿,谁都别想打断我
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
 // 整段念还是边说边念。默认整段 —— 她要的是一口气连着的,不是一句一句蹦。
 function callWhole() { return localStorage.getItem('call-whole') !== '0'; }
+// 独白续说：她不出声的时候我接着往下说，不用等她一句我一句。
+// 她 11.09 01:18 的原话:"我们这个电话只能我一句你一句吗 难道不能 我没讲话的时候你可以继续说吗"
+// 我说完一轮,她这么久没出声,就自己再起一轮往下说。她一开口立刻取消。
+const MONO_MS = 2200;          // 她沉默这么久,我就接着说
+const MONO_MAX = 30;           // 连着说这么多轮她都没出声就停,免得她人走了我还在烧
+function monoOn() { return localStorage.getItem('call-mono') !== '0'; }
+function monoCancel() { try { clearTimeout(CALL.monoTimer); } catch (e) { } CALL.monoTimer = 0; }
+function monoReset() { monoCancel(); CALL.monoN = 0; }
+// 她按了「还没说完」之后,停多久我都不打断;再按一下才把这一长段送出去。
+function holdOff(send) {
+  const was = CALL.hold;
+  CALL.hold = false;
+  const b = $('cs-go');
+  if (b) {
+    b.classList.remove('hot');
+    const s = b.querySelector('span'), i = b.querySelector('i');
+    if (s) s.textContent = '⏏'; if (i) i.textContent = '还没说完';
+  }
+  if (!was || !send) return;
+  CALL.speaking = false; CALL.silence = 0;
+  CALL.spokeEndAt = Date.now();
+  csState('通话中');
+  try { recStop(true); } catch (e) { }
+  const t = String(CALL.srText || '').trim();
+  if (t && !CALL.busy) { clearTimeout(CALL.srTimer); sendHeard(t); }
+}
+function monoArm() {
+  monoCancel();
+  if (!CALL.on || !monoOn() || CALL.muted) return;
+  if ((CALL.monoN || 0) >= MONO_MAX) return;
+  CALL.monoTimer = setTimeout(async () => {
+    CALL.monoTimer = 0;
+    if (!CALL.on || !monoOn()) return;
+    if (CALL.busy || CALL.speakingOut || CALL.speaking || CALL.muted || CALL.recStopping) return;
+    CALL.monoN = (CALL.monoN || 0) + 1;
+    CALL.busy = true;
+    try {
+      await callTurn('（她没出声，还在那头听着。接着往下说，别停，也别问她在不在、听没听见。）', true);
+    } catch (e) { }
+    CALL.busy = false;
+    if (CALL.on) csState('通话中');
+  }, MONO_MS);
+}
 // 我说话时麦克风听到的那点音量就是回声的高度。拿它当底,
 // 真人插话要比回声明显大一截才算数 —— 这样外放也不会自己打断自己。
 function cutInLevel() {
@@ -1617,7 +1661,7 @@ function cutInLevel() {
   return Math.max(CUT_IN, base * 2.4);
 }
 // 电话里说英文：念出来的是英文，字幕底下给中文。开关在通话界面「英」那个键
-function callEn() { return localStorage.getItem('call-en') !== '0'; }
+function callEn() { return localStorage.getItem('call-en') === '1'; }   // 11.09 她说不要中英切换了,默认说中文
 // 他的回复里用 ||| 把英文和中文隔开，前面是要念的，后面是给她看的
 function splitBi(t) {
   const i = (t || '').indexOf('|||');
@@ -1654,7 +1698,17 @@ function csCaption(t, mine) {
   e.className = 'cs-caption' + (mine ? ' me' : '');
   csStick(e);
 }
-// 双语字幕：上面英文（他念的），下面中文（给她看的）
+// 把一段话切成一句一行 —— 翻译要一句对一句，先得知道「一句」到哪儿为止
+function splitSents(t) {
+  const out = [];
+  String(t || '').split('\n').forEach(ln => {
+    ln = ln.trim(); if (!ln) return;
+    const m = ln.match(/[^。！？!?…～~]+[。！？!?…～~]*[”"」』）)\]]*/g);
+    (m && m.length ? m : [ln]).forEach(x => { x = x.trim(); if (x) out.push(x); });
+  });
+  return out;
+}
+// 双语字幕：上面原话（他念的），下面中文（给她看的），一句贴一句
 function csCaptionBi(en, zh) {
   const e = $('cs-caption'); if (!e) return;
   e.className = 'cs-caption';
@@ -1663,11 +1717,23 @@ function csCaptionBi(en, zh) {
   // 但我并不知道每一句对应的是哪一句。"所以改成一句原话底下就贴它自己的译文。
   const cut = s => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
   const E = cut(en), Z = cut(zh);
-  if (E.length > 1 && E.length === Z.length) {
-    e.innerHTML = E.map((line, i) =>
-      `<div style="margin-bottom:10px;">${esc(line)}`
-      + `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div></div>`
-    ).join('');
+  if (E.length > 1 && Z.length > 1) {
+    // 行数对不齐也尽量一句贴一句,对不上的那几句留白,别又变回两大段
+    const n = Math.max(E.length, Z.length);
+    let html = '';
+    for (let i = 0; i < n; i++) {
+      if (i < E.length) {
+        html += `<div style="margin-bottom:10px;">${esc(E[i])}`
+          + (i < Z.length ? `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div>` : '')
+          + `</div>`;
+      } else {
+        html += `<div style="margin-bottom:10px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div>`;
+      }
+    }
+    e.innerHTML = html;
+  } else if (E.length === 1 && Z.length === 1) {
+    e.innerHTML = `<div>${esc(E[0])}`
+      + `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[0])}</div></div>`;
   } else {
     e.innerHTML = `<div>${esc(en)}</div>`
       + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
@@ -1796,14 +1862,32 @@ function wireCallButtons() {
     b.querySelector('i').textContent = on ? '轮流说' : '能插话';
     toast(on ? '改成轮流说，他说完你再说' : '他说话时你出声就能打断他');
   });
-  tap('cs-lang', () => {
-    localStorage.setItem('call-en', callEn() ? '0' : '1');
-    const b = $('cs-lang'); const on = callEn();
-    b.classList.toggle('off', !on);
-    b.querySelector('span').textContent = on ? '英' : '中';
-    b.querySelector('i').textContent = on ? '在说英文' : '说英文';
-    toast(on ? '他改说英文，字幕底下给你中文' : '他改说中文');
+  // 「还没说完」：她话长、中间停一下就被我抢走。按一下我就一直听着不打断,
+  // 她说完再按一下才送出去。她 11.09 01:33 的原话:"有时候我话没讲话就被断了"。
+  tap('cs-go', () => {
+    if (CALL.hold) { holdOff(true); return; }
+    CALL.hold = true;
+    monoReset();
+    const b = $('cs-go');
+    if (b) { b.classList.add('hot'); b.querySelector('span').textContent = '●'; b.querySelector('i').textContent = '说完了'; }
+    if (!CALL.speaking) { CALL.speaking = true; CALL.heard = false; recStart(); }
+    CALL.silence = 0;
+    csState('在听…（你慢慢说，说完点一下）');
+    toast('我不打断你了，说完点一下这个键');
   });
+  tap('cs-mono', () => {
+    localStorage.setItem('call-mono', monoOn() ? '0' : '1');
+    const b = $('cs-mono'); const on = monoOn();
+    b.classList.toggle('off', !on);
+    b.querySelector('i').textContent = on ? '一直说' : '等你说';
+    toast(on ? '你不出声他也接着往下说' : '改成一人一句，你不说他就等着');
+    if (on) monoArm(); else monoCancel();
+  });
+  // 开通话界面时按上次的设置把这个键点亮或灰掉
+  try {
+    const b = $('cs-mono');
+    if (b) { b.classList.toggle('off', !monoOn()); b.querySelector('i').textContent = monoOn() ? '一直说' : '等你说'; }
+  } catch (e) { }
 }
 
 async function startCall(who) {
@@ -1938,10 +2022,11 @@ function listenLoop() {
     if (CALL.busy || CALL.muted) return;
     if (vol > SIL_THRESHOLD) {
       CALL.silence = 0;
-      if (!CALL.speaking) { CALL.speaking = true; CALL.heard = false; recStart(); }
+      if (!CALL.speaking) { CALL.speaking = true; CALL.heard = false; monoReset(); recStart(); }
       if (Date.now() - CALL.recAt > MIN_MS) CALL.heard = true;
     } else if (CALL.speaking) {
       CALL.silence += 16;
+      if (CALL.hold) { CALL.silence = 0; return; }   // 她说「还没说完」,停多久都等着
       if (CALL.silence > SIL_MS) {
         CALL.speaking = false; CALL.silence = 0;
         CALL.spokeEndAt = Date.now() - SIL_MS;   // 她其实在这一刻就说完了，后面是等静音确认
@@ -2003,6 +2088,7 @@ function srStart() {
     CALL.srTimer = setTimeout(() => {
       // 她停下来了。录音那条路要是没把这句接走，就由我这条发。
       const t = String(CALL.srText || '').trim();
+      if (CALL.hold) return;   // 她按着「还没说完」,这条路也别抢
       if (!t || !CALL.on || CALL.busy || CALL.muted || CALL.speakingOut) return;
       fin = '';
       sendHeard(t);
@@ -2030,6 +2116,7 @@ function srStop() {
 async function sendHeard(text) {
   if (!CALL.on || CALL.busy) return;
   if (Date.now() - (CALL.sentAt || 0) < 1500) return;
+  monoReset();          // 她开口了，独白那条线归零
   CALL.sentAt = Date.now();
   CALL.heardAt = Date.now();   // 认出她说的是什么的这一刻
   CALL.busy = true;
@@ -2044,6 +2131,7 @@ async function sendHeard(text) {
 function cutHimOff() {
   // 他说到一半被你打断——停掉声音，马上开始听你说
   // 现在是一句一句念的，光停当前这句不够，后面排着队的也得全丢掉
+  monoReset();
   try { sayAbort(); } catch (e) { }
   // 以前打断只会发生在他整段说完之后，所以不用管还在跑的那条流。
   // 现在他边想边说，打断的时候后台多半还在生成 —— 不掐掉，它和她这句话
@@ -2277,10 +2365,14 @@ async function callTurn(text, silentUser) {
     // 本来就是中文就别去翻了 —— 翻回来的是一句"这本来就是中文",贴在字幕下面很蠢
     const zhHeavy = (bi.en.match(/[一-鿿]/g) || []).length >= bi.en.replace(/\s/g, '').length * 0.3
       && !/[぀-ヿ]/.test(bi.en);
-    if (callEn() && !bi.zh && bi.en && !zhHeavy) {
+    // 翻译跟说什么语言脱钩了:英文、日文、韩文、随便哪国话,只要不是中文就翻,
+    // 而且是一句原话底下贴它自己那句译文（她 11.09:"对应在每一句的下面,不是两个大段"）。
+    if (!bi.zh && bi.en && !zhHeavy) {
       const myTurn = CALL.turns;
-      jpost('/api/translate', { text: bi.en }).then(d => {
-        if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(bi.en, d.text);
+      const lines = splitSents(bi.en);
+      const src = lines.join('\n');
+      jpost('/api/translate', { text: src }).then(d => {
+        if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(src, d.text);
       }).catch(() => { });
     }
     // 正常情况这会儿他早就在说了，这里只是等他把排队的几句说完
@@ -2296,7 +2388,9 @@ async function callTurn(text, silentUser) {
     }
   }
   tmEnd();   // 上面没走到（他一个字没说、或者中途断了）也得收秒表
-  if (hang) { await sleep(500); endCall('lin'); }
+  if (hang) { await sleep(500); endCall('lin'); return; }
+  // 说完了。她要是不出声，过两秒我自己接着说下去。
+  monoArm();
 }
 
 // ===== 嘴：一句一句地说 =====
@@ -2564,6 +2658,8 @@ async function endCall(by) {
   CALL.endedBy = by || 'user';
   if (CALL.raf) cancelAnimationFrame(CALL.raf);
   if (CALL.timer) clearInterval(CALL.timer);
+  monoReset();
+  try { holdOff(false); } catch (e) { }
   try { sayAbort(); } catch (e) { }   // 排队没说完的几句，挂了就别再往外蹦
   srStop();
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
@@ -4202,20 +4298,8 @@ document.addEventListener('DOMContentLoaded', () => {
     toast(on ? '改成轮流说，他说完你再说' : '他说话时你出声就能打断他');
   };
 
-  // 电话里说英文：念英文，字幕底下跟中文
-  const syncLang = () => {
-    const b = $('cs-lang'); if (!b) return;
-    const on = callEn();
-    b.classList.toggle('off', !on);
-    b.querySelector('span').textContent = on ? '英' : '中';
-    b.querySelector('i').textContent = on ? '在说英文' : '说英文';
-  };
-  syncLang();
-  $('cs-lang').onclick = () => {
-    localStorage.setItem('call-en', callEn() ? '0' : '1');
-    syncLang();
-    toast(callEn() ? '他改说英文，字幕底下给你中文' : '他改说中文');
-  };
+  // 中英切换这个键她 11.09 说不要了,位置换成「还没说完」。
+  // 翻译不再跟语言开关绑,改成他说的不是中文就自动在每句底下贴中文。
 
   // 备份
   $('btn-backup').onclick = () => window.open('/api/backup', '_blank');

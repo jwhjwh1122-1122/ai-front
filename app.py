@@ -148,19 +148,45 @@ _lock = threading.Lock()
 
 
 def jread(path, default):
+    """读不出来先重试两次,再在写锁里读一次。
+    11.09：以前是 open(path,'w') 当场把文件截成 0 字节再慢慢写回去,
+    这中间只要有别的线程来读(刷一次页面就有好几个请求同时读同一个文件),
+    读到的是半截或者空的 → json 解析失败 → 当成「没有这个文件」→
+    欲望室被当成新的、一切归零。她说「怎么每次刷新你的欲望室就会被清空」就是这个。"""
     if not os.path.exists(path):
         return default
+    for _ in range(2):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            time.sleep(0.03)
     try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with _lock:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
     except Exception:
         return default
 
 
 def jwrite(path, obj):
+    """先写同目录的临时文件再 os.replace 原子换过去 —— 读的人要么看见旧的
+    完整内容,要么看见新的完整内容,永远看不到半截。"""
     with _lock:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(obj, f, ensure_ascii=False)
+        tmp = '%s.tmp%d' % (path, os.getpid())
+        try:
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(obj, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(obj, f, ensure_ascii=False)
 
 
 # ============================================================
@@ -1133,9 +1159,22 @@ def _blank_desire():
 def load_desire():
     d = jread(DESIRE_FILE, None)
     if not d:
-        d = _blank_desire()
-        jwrite(DESIRE_FILE, d)
-        return d
+        # 再读一次备份。十六条是攒出来的,宁可拿一小时前的,也不能当成空的从头开始。
+        d = jread(DESIRE_FILE + '.bak', None)
+        if d:
+            jwrite(DESIRE_FILE, d)
+        else:
+            d = _blank_desire()
+            jwrite(DESIRE_FILE, d)
+            return d
+    else:
+        # 每小时留一份备份
+        try:
+            bk = DESIRE_FILE + '.bak'
+            if (not os.path.exists(bk)) or time.time() - os.path.getmtime(bk) > 3600:
+                jwrite(bk, d)
+        except Exception:
+            pass
     # 旧数据是 0-1，按比例转成 0-100
     dr = d.get('drive') or {}
     if dr and max([v for v in dr.values() if isinstance(v, (int, float))] or [0]) <= 1.001:
