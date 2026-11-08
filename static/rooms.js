@@ -2465,7 +2465,8 @@ async function endCall(by) {
       content: `（通话结束，聊了 ${csTime(secs)}，${by === 'lin' ? '他挂的' : '她挂的'}）`
     });
     saveConv();
-    addCallBubble(info, messages.length - 1);
+    // 电话里的来回收进这条气泡,聊天记录上只留这一条
+    if (typeof redrawMsgs === 'function' && !roomCtx) { redrawMsgs(); scrollBottom(true); }
     jpost('/api/call/log', {
       who: CALL.who, secs, turns: CALL.turns,
       ended_by: CALL.endedBy, conv: currentConvId

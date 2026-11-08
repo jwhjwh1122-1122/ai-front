@@ -879,7 +879,25 @@ function addCallBubble(info, idx, force) {
     <div class="bubble call-b ${mine ? 'user' : 'ai'}">${ico}<span>${esc(info.label)}</span></div>
     <div style="display:flex;align-items:center;gap:4px;${mine ? 'justify-content:flex-end;' : ''}">
       <span class="msg-time">${info.time || ''}</span></div></div>`;
-  row.querySelector('.call-b').onclick = () => { if (typeof openCallLog === 'function') openCallLog(); };
+  // 这条通话气泡就是那通电话的入口：点开把电话里说的话摊出来，再点收回去
+  const openable = info.kind !== 'missed' && idx !== undefined
+    && typeof openCalls !== 'undefined' && hasCallBody(idx);
+  const toggle = () => {
+    if (openCalls.has(idx)) openCalls.delete(idx); else openCalls.add(idx);
+    redrawMsgs(); scrollBottom(false);
+  };
+  if (openable) {
+    const tip = document.createElement('div');
+    tip.className = 'msg-time';
+    tip.style.cssText = 'cursor:pointer;opacity:.75;' + (mine ? 'text-align:right;' : '');
+    tip.textContent = openCalls.has(idx) ? '收起电话里说的话' : '点开看电话里说了什么';
+    tip.onclick = toggle;
+    row.querySelector('.bubble-wrap').appendChild(tip);
+  }
+  row.querySelector('.call-b').onclick = () => {
+    if (openable) { toggle(); return; }
+    if (typeof openCallLog === 'function') openCallLog();
+  };
   msgBox().appendChild(row);
   if (!mine && !force) markUnreadIfAway();   // 他那边的通话记录（比如未接来电）才算未读，自己这边的不算
   scrollBottom(force);
@@ -2004,7 +2022,39 @@ function syncModelUI() {
 // 长对话一次全画出来手机会卡死：打开时只画最近 RENDER_CHUNK 条，翻到顶再往前补
 const RENDER_CHUNK = 60;
 let renderFrom = 0, loadingOlder = false;
+// 电话里说的话收进那条通话气泡里,不再平铺在聊天记录上。
+// 只是不画出来 —— messages 里一个字没删,发给他的上下文照旧,他照样记得。
+// 点一下通话气泡就展开看那通电话说了什么,再点一下收回去。
+const openCalls = new Set();
+function hasCallBody(markIdx) {
+  for (let j = markIdx - 1; j >= 0; j--) {
+    const m = messages[j]; if (!m) break;
+    if (m._callmark) break;
+    if (m._call && !m._internal) return true;
+    if (!m._call && m.role !== 'tool' && !m._internal) break;
+  }
+  return false;
+}
+function callGroupMark(i) {
+  for (let j = i + 1; j < messages.length; j++) {
+    const m = messages[j];
+    if (m._callmark) return j;
+    if (!m._call && m.role !== 'tool' && !m._internal) return -1;
+  }
+  return -1;   // 这通还没挂,先照常显示
+}
+function redrawMsgs() {
+  const box = $('messages'); if (!box) return;
+  box.innerHTML = '<div class="sys-msg">— 今天 —</div>';
+  currentBubble = null; currentThinkWrap = null; currentAiRow = null;
+  for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
+  updOlderHint();
+}
 function renderOneMsg(msg, i) {
+    if (msg._call && !msg._callmark) {
+      const g = callGroupMark(i);
+      if (g >= 0 && !openCalls.has(g)) return;
+    }
     if (msg._callmark) {
       addCallBubble(msg._callinfo || {
         label: String(msg.content || '').replace(/[（）]/g, ''),
