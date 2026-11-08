@@ -2067,6 +2067,21 @@ function listenLoop() {
       } else CALL.cutMs = 0;
       return;
     }
+    // 他在想（生成中、还没出声），你说话了就别让他继续想了，直接听你的
+    // 修 11.09 05:20 她说的"我只能按那个才能讲"：mono 生成期间 busy=true 但
+    // speakingOut=false，旧代码在这儿直接 return 了，她的声音完全被吞掉。
+    if (CALL.busy && !CALL.speakingOut && !CALL.muted) {
+      if (vol > SIL_THRESHOLD) {
+        CALL._cutBusyMs = (CALL._cutBusyMs || 0) + 16;
+        if (CALL._cutBusyMs > 500) {
+          CALL._cutBusyMs = 0;
+          cutHimOff();
+        }
+      } else {
+        CALL._cutBusyMs = 0;
+      }
+      return;
+    }
     if (CALL.busy || CALL.muted) return;
     if (vol > SIL_THRESHOLD) {
       CALL.silence = 0;
