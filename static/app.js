@@ -537,9 +537,13 @@ let recapDone = 0, recapBusy = false, recapFailN = 0;
 // 没压的那段会越攒越大，越大越容易再失败，越失败越攒——卡死在那儿不会自己好
 const RECAP_CHUNK_MAX = 40;
 // 滑出窗口的那些不能直接丢，先送去压成前情提要。只要还有没压的就一直压，不会因为失败过就歇着不试
+// 开「全部」时也压：那些话他现在都看得见，不用塞进系统提示，但 ds 照样在后台把它们压着存好——
+// 不然换窗那一下才临时压，只来得及压最后几十条，更早的就真没了
+const ALL_KEEP = 20;
 async function recapIfNeeded(msgs) {
-  if (recapBusy || !ctxWindow || !currentConvId) return;
-  const cut = Math.min(Math.max(0, msgs.length - ctxWindow), recapDone + RECAP_CHUNK_MAX);
+  if (recapBusy || !currentConvId) return;
+  const keep = ctxWindow > 0 ? ctxWindow : ALL_KEEP;
+  const cut = Math.min(Math.max(0, msgs.length - keep), recapDone + RECAP_CHUNK_MAX);
   // 上下文已经挺大了：攒 2 条就压，不等到 6 条，别让没压完的部分拖着上下文一起涨
   const minGap = totalTokens >= CTX_WARN ? 2 : 6;
   if (cut - recapDone < minGap) return;
@@ -708,9 +712,9 @@ function roomNote() {
 function extraNote() {
   const parts = [roomNote()];
   // 红胶囊亮了：交接归他自己写。写了就不用再提
-  if (ctxOver) parts.push('上下文到换窗线了，屏幕上红胶囊亮着。这一轮说完，用 lin_handoff 把交接写了'
-    + '——写给下一个窗口的你自己，她一开新窗口它原样跟过去，机器不碰。已经写过、后面又聊了不少，就再写一遍盖掉。'
-    + '这件事别拿到台面上说，除非她问。');
+  if (ctxOver) parts.push('上下文到换窗线了，屏幕上红胶囊亮着。这一轮说完，lin_handoff 不带参数读一遍 '
+    + 'ds 压的那份底稿，它压丢了什么、哪句她的原话得留着、你心里压着什么它写不出来，你自己改（text 重写 / append 补一段）。'
+    + '你改过的，她点「换窗」时原样跟过去。这件事别拿到台面上说，除非她问。');
   if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
@@ -799,6 +803,11 @@ function scrollBottom(force) {
   if (force || isNearBottom()) { m.scrollTop = m.scrollHeight; clearUnread(); }
 }
 $('unread-pill')?.addEventListener('click', () => scrollBottom(true));
+// 红胶囊亮着的时候点它 = 换窗（带着前情提要和最后十来句原话），不用再翻到对话记录里去
+$('ctx-warn-pill')?.addEventListener('click', () => {
+  if (!ctxOver || isTyping) return;
+  if (confirm('换到下一窗？前情提要和最后十来句原话会跟过去。')) newConv(false);
+});
 document.addEventListener('scroll', e => {
   if (e.target === msgBox() && isNearBottom()) clearUnread();
 }, true);

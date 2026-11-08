@@ -3662,6 +3662,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-clear-conv').onclick = () => { if (confirm('清空这段对话？')) newConv(true); };
   // 「+新建」要的是真正空白的新对话，不带上一窗的任何内容（跟「清空对话」一样，都是 fresh）
   $('btn-new-conv').onclick = () => newConv(true);
+  // 「换窗」是另一回事：接着上一窗开下一窗——前情提要跟过去，最后十来句原话原样带着
+  if ($('btn-carry-conv')) $('btn-carry-conv').onclick = () => {
+    if (isTyping) { toast('等他说完这句再换'); return; }
+    if (!messages.length) { toast('这窗还什么都没有，不用换'); return; }
+    if (!confirm('换到下一窗？前情提要和最后十来句原话会跟过去。')) return;
+    newConv(false);
+  };
   $('btn-up-save').onclick = async () => {
     const r = await jpost('/api/upstream', upstreamBody());
     if (r.error) { toast(r.error); return; }
