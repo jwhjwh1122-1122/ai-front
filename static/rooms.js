@@ -1719,6 +1719,22 @@ document.addEventListener('pointerdown', () => { if (CALL.on) micCtx(); }, true)
 // 取不到就抛 TypeError，后面全部绑定一起没了，表现就是"按键按不动"。
 // 所以这里兜一层:只要电话界面能打开,按钮就一定是活的。
 function wireCallButtons() {
+  // 有东西盖在按键上就报出来。她说"全按不动"却看不见是谁挡的,
+  // 那就让它自己说话:点下去,屏幕上直接写出当时最上面那一层是什么。
+  if (!window.__csProbe) {
+    window.__csProbe = true;
+    document.addEventListener('pointerdown', ev => {
+      if (!CALL.on || CALL.mini) return;
+      if (ev.clientY < window.innerHeight * 0.68) return;
+      const top = document.elementFromPoint(ev.clientX, ev.clientY);
+      if (!top) return;
+      if (top.closest && top.closest('.cs-btn')) return;   // 正常命中按钮
+      const who = (top.id ? '#' + top.id : '') + (top.className && typeof top.className === 'string' ? '.' + top.className.split(' ').join('.') : '') || top.tagName;
+      csState('按键被挡住了：' + who);
+    }, true);
+  }
+  // 多选条挂在 body 上、层级 9000,开着的话正好压在按键那一排上面
+  try { const sb = $('sel-bar'); if (sb) sb.classList.remove('open'); } catch (e) { }
   const tap = (id, fn) => {
     const e = $(id); if (!e) return;
     e.onclick = fn;
