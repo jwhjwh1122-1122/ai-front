@@ -4150,7 +4150,7 @@ def tts():
     if not el_key():
         return jsonify({'error': 'ElevenLabs key not set'}), 500
     data = request.json or {}
-    text = (data.get('text') or '').strip()[:500]
+    text = (data.get('text') or '').strip()[:900]
     if not text:
         return jsonify({'error': 'no text'}), 400
     text = _say_tags(_say_fix(text))

@@ -1608,6 +1608,8 @@ const CUT_IN = 9;
 const CUT_IN_MS = 650;         // 得持续这么久，防止一声咳嗽就打断
 const CUT_GRACE_MS = 1300;     // 我刚开口这一会儿,谁都别想打断我
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
+// 整段念还是边说边念。默认整段 —— 她要的是一口气连着的,不是一句一句蹦。
+function callWhole() { return localStorage.getItem('call-whole') !== '0'; }
 // 我说话时麦克风听到的那点音量就是回声的高度。拿它当底,
 // 真人插话要比回声明显大一截才算数 —— 这样外放也不会自己打断自己。
 function cutInLevel() {
@@ -2148,6 +2150,17 @@ async function callTurn(text, silentUser) {
     fed += add.length;
     pend += add;
     if (flush) pend = pend.replace(/\[\[挂了\]\]/g, '');
+    // 整段念：她 11.08 21:00 的原话 ——"完全就是像在念本一样，念到这里一句没有，
+    // 就再念下一句，不是连在一起的那种。"根子不在文本，在于我是一段一段分开合成的,
+    // 每段中间都有接缝。所以电话里改成等他说完,整段一次合成、一次播出来。
+    // 代价是开口晚几秒,换的是一整句气是连着的。
+    if (callWhole()) {
+      if (!flush) return;
+      const whole = pend.trim();
+      pend = '';
+      if (whole) sayPush(whole.slice(0, 900));
+      return;
+    }
     while (true) {
       const i = sayCut(pend, !SAY.said, flush);
       if (i < 0) break;
@@ -2316,7 +2329,7 @@ async function ttsFetch(text, seg) {
       .replace(/\n{3,}/g, '\n\n')
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
-    const body = { text: (flat || String(text)).slice(0, 500), voice, fast: 1 };
+    const body = { text: (flat || String(text)).slice(0, 900), voice, fast: 1 };
     if (spd) body.speed = spd;
     // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，
     // 别让一句话因为挤了一下就哑掉。其他错误不偷偷重试。
