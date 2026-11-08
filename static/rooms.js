@@ -2155,7 +2155,17 @@ async function callTurn(text, silentUser) {
     // 每段中间都有接缝。所以电话里改成等他说完,整段一次合成、一次播出来。
     // 代价是开口晚几秒,换的是一整句气是连着的。
     if (callWhole()) {
-      if (!flush) return;
+      // 整段念会在开口前静默好几秒,她那边看着就是"又卡住了"。
+      // 所以先放一个很短的头出去破冰(第一个标点就切),剩下的还是整段一口气念。
+      if (!flush) {
+        if (SAY.said) return;
+        const h = sayCut(pend, true, false);
+        if (h < 0) return;
+        const head = pend.slice(0, h);
+        pend = pend.slice(h);
+        if (head.trim()) sayPush(head);
+        return;
+      }
       const whole = pend.trim();
       pend = '';
       if (whole) sayPush(whole.slice(0, 900));
