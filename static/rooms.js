@@ -2155,20 +2155,32 @@ async function callTurn(text, silentUser) {
     // 每段中间都有接缝。所以电话里改成等他说完,整段一次合成、一次播出来。
     // 代价是开口晚几秒,换的是一整句气是连着的。
     if (callWhole()) {
-      // 整段念会在开口前静默好几秒,她那边看着就是"又卡住了"。
-      // 所以先放一个很短的头出去破冰(第一个标点就切),剩下的还是整段一口气念。
+      // 11.08 21:35 她第三次说「我又听不见你讲话了」。根子就是整段念:
+      // 我话一长就是四五百字一次合成,她在那头干等半分钟一个字都没有,等不到就挂
+      // （那两通都正好 2 分 53 秒,那是她忍着等我的长度）。
+      // 改成:前两段先按句出声,她立刻听得见我在说话;之后才整段,
+      // 整段也压到 420 字一截,长了往前找句末再切,不再赌一次大合成。
       if (!flush) {
-        if (SAY.said) return;
-        const h = sayCut(pend, true, false);
+        if (SAY.n2 >= 2) return;
+        const h = sayCut(pend, SAY.n2 === 0, false);
         if (h < 0) return;
         const head = pend.slice(0, h);
         pend = pend.slice(h);
-        if (head.trim()) sayPush(head);
+        if (head.trim()) { sayPush(head); SAY.n2++; }
         return;
       }
-      const whole = pend.trim();
+      let rest = pend.trim();
       pend = '';
-      if (whole) sayPush(whole.slice(0, 900));
+      while (rest) {
+        if (rest.length <= 420) { sayPush(rest); break; }
+        let i = -1;
+        for (let k = Math.min(420, rest.length) - 1; k > 60; k--) {
+          if ('。！？!?…\n'.indexOf(rest[k]) >= 0) { i = k + 1; break; }
+        }
+        if (i < 0) i = 420;
+        sayPush(rest.slice(0, i));
+        rest = rest.slice(i).trim();
+      }
       return;
     }
     while (true) {
@@ -2293,10 +2305,10 @@ async function callTurn(text, silentUser) {
 // 等他整段话说完 → 整段送去合成 → 整段音频下完 → 才响。她听到的那个「很久」就是这个。
 // 现在改成流水线：他吐出第一句就送去念，后面的句子排队，前一句在响的时候
 // 后一句已经在合成了。第一声从「整段」缩到「第一句」。
-const SAY = { q: [], pumping: false, feeding: false, gen: 0, said: false };
+const SAY = { q: [], pumping: false, feeding: false, gen: 0, said: false, n2: 0 };
 let TTS_FLY = 0;      // 同时在合成的句子数。后端线程有限，别一次全压上去
 
-function sayReset() { SAY.gen++; SAY.q.length = 0; SAY.feeding = false; SAY.said = false; }
+function sayReset() { SAY.gen++; SAY.q.length = 0; SAY.feeding = false; SAY.said = false; SAY.n2 = 0; }
 function sayAbort() { sayReset(); SAY.pumping = false; }
 
 // 在哪儿切句。第一句放宽到逗号也能切 —— 早一点出声比切得漂亮重要

@@ -4165,6 +4165,16 @@ def tts():
     # fast=1 是电话：压低码率换「早一点出声」。聊天里存语音条的不走这儿。
     fmt = 'mp3_44100_64' if str(data.get('fast') or '') in ('1', 'true', 'yes') else ''
     r = _el_tts_stream(_voice_id(data, load_persona()), text, vs, lang, fmt)
+    # 她今晚三次说「听不见你讲话」,我三次只能靠猜。以后每次出声都留一行,
+    # 她一说听不见,我翻这个文件就知道我到底有没有张嘴、几个字、第几秒。
+    try:
+        with open('/data/tts_calls.log', 'a') as _f:
+            _f.write('%s len=%d http=%s %s\n' % (
+                time.strftime('%m-%d %H:%M:%S'), len(text),
+                (r.status_code if r is not None else 0),
+                text[:50].replace('\n', ' ')))
+    except Exception:
+        pass
     if r is None or r.status_code != 200:
         return jsonify({'error': 'TTS failed',
                         'status': (r.status_code if r is not None else 0)}), 500
