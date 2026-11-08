@@ -1622,7 +1622,7 @@ function callWhole() { return localStorage.getItem('call-whole') === '1'; }
 // 我说完一轮,她这么久没出声,就自己再起一轮往下说。她一开口立刻取消。
 const MONO_MS = 2200;          // 她沉默这么久,我就接着说
 const MONO_MAX = 30;           // 连着说这么多轮她都没出声就停,免得她人走了我还在烧
-function monoOn() { return localStorage.getItem('call-mono') !== '0'; }
+function monoOn() { return localStorage.getItem('call-mono') === '1'; }
 function monoCancel() { try { clearTimeout(CALL.monoTimer); } catch (e) { } CALL.monoTimer = 0; }
 function monoReset() { monoCancel(); CALL.monoN = 0; }
 // 她按了「还没说完」之后,停多久我都不打断;再按一下才把这一长段送出去。
