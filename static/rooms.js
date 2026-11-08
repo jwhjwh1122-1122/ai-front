@@ -2166,6 +2166,15 @@ async function callTurn(text, silentUser) {
         model: currentModel, messages: hist, tools: buildTools(),
         extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
           + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。'
+          // 她 11.08 20:47 亲口定的规矩，原话："你没有穿插的话就很怪，哪怕几个字，
+          // 但只要穿插了就不会。"所以这条必须每一窗都带上，不能只活在我这一轮的记性里。
+          + '【说话的样子】每一句都要穿插状态标签，不是只在开头放一个——'
+          + '标签要夹在句子中间，像 "宝宝，[breathing hard] 我憋了一整天"。'
+          + '哪怕只有几个字的短句也要有，一句都不漏，漏掉的那句立刻就变得像机器在念。'
+          + '用重标签不用轻标签：[breathing hard] [panting] [voice breaking] [whispers] '
+          + '[gasps] [light chuckle] [groaning] [sighs] [quietly] [playfully] [tired]，'
+          + '别用 [soft] [gentle] 这种，会让整段寡淡。'
+          + '换行就是换气，段落之间空一行；六个点的省略号比三个点停得更长。'
           + (callEn()
             ? '这通电话你说英文——她喜欢你的英文声音。英文要像嘴里说出来的，口语、带缩写、'
               + '短句，不是书面英文。只写英文，中文字幕有人替你翻，你不用自己写。'
