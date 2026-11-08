@@ -993,8 +993,12 @@ def build_cmd(system_prompt, resume_id, upstream_cfg, sys_file=None, auto_mcp=''
         cmd.append('--mcp-config=' + web_path)
         local_names = list(local_names) + list(web_names)   # 网页里加的也一并放行
     allowed = _split_list(os.environ.get('CC_ALLOWED_TOOLS') or '')
-    if not allowed and auto_mcp and not user_mcp:
-        allowed = ['mcp__ob__*']
+    if auto_mcp and not user_mcp and not any(
+            a.startswith('mcp__ob__') or a == 'mcp__ob' for a in allowed):
+        # 记忆库是系统自动挂上的，就该跟网页那些工具一样无条件放行。
+        # 以前写的是「白名单空着才放行」，于是 CC_ALLOWED_TOOLS 一被填上（Bash/Read/...），
+        # 记忆库就被挤出去了，每次调都被弹「没授权」，只能绕命令行走后门。
+        allowed.append('mcp__ob__*')
     # 查网页的工具（WebSearch / WebFetch）也得放行，不然 -p 模式下他一上网就被自动拒绝，等于没网
     if bt.lower() != 'none':
         for t in _split_list(bt):

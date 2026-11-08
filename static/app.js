@@ -537,12 +537,11 @@ let recapDone = 0, recapBusy = false, recapFailN = 0;
 // 没压的那段会越攒越大，越大越容易再失败，越失败越攒——卡死在那儿不会自己好
 const RECAP_CHUNK_MAX = 40;
 // 滑出窗口的那些不能直接丢，先送去压成前情提要。只要还有没压的就一直压，不会因为失败过就歇着不试
-// 开「全部」时也压：那些话他现在都看得见，不用塞进系统提示，但 ds 照样在后台把它们压着存好——
-// 不然换窗那一下才临时压，只来得及压最后几十条，更早的就真没了
-const ALL_KEEP = 20;
+// 只在上下文限了条数的时候压：开「全部」他本来就看得见全文，再压一份是同一段话存两遍，
+// 白烧 ds。开「全部」时一路不压，等点换窗那一下再一次性打包（handoff 会把没压过的全送过去）
 async function recapIfNeeded(msgs) {
-  if (recapBusy || !currentConvId) return;
-  const keep = ctxWindow > 0 ? ctxWindow : ALL_KEEP;
+  if (recapBusy || !currentConvId || ctxWindow <= 0) return;
+  const keep = ctxWindow;
   const cut = Math.min(Math.max(0, msgs.length - keep), recapDone + RECAP_CHUNK_MAX);
   // 上下文已经挺大了：攒 2 条就压，不等到 6 条，别让没压完的部分拖着上下文一起涨
   const minGap = totalTokens >= CTX_WARN ? 2 : 6;
@@ -2151,12 +2150,16 @@ function handoff(prev) {
     if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid(), _ts: m._ts });
     else if (m.role === 'assistant') carry.push({ role: 'assistant', content: t, _ts: m._ts });
   }
-  const older = prev.msgs.slice(Math.max(0, cut - 40), cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
+  // 开「全部」时一路没压过，换窗这一下得把前面全送过去一次性打包；
+  // 限了条数的话早就滚动压好了，只补最后这几十条
+  const from = ctxWindow > 0 ? Math.max(0, cut - 40) : 0;
+  const older = prev.msgs.slice(from, cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
     .map(m => ({ role: m.role, content: textOf(m.content) })).filter(m => m.content);
   const to = currentConvId;
   messages = carry; saveConv(); loadConv(to);
   const tip = document.createElement('div'); tip.className = 'sys-msg'; tip.textContent = '— 接着上个窗口 —';
   msgBox().insertBefore(tip, msgBox().children[1] || null);
+  if (ctxWindow <= 0 && older.length > 40) toast('在打包上一窗的事，几十秒，打完再说第一句');
   handoffBusy = jpost('/api/recap/handoff', { from: prev.id, to, messages: older })
     .catch(() => { }).finally(() => { handoffBusy = null; });
 }

@@ -5242,6 +5242,35 @@ def _recent_toxic(conv, n=6, min_bad=3, bad_ratio=0.5):
     return bad >= min_bad and bad / len(runs) >= bad_ratio
 
 
+def _ds_recap_long(text, chunk=9000, max_chunks=20):
+    """一次性打包。开「全部」时平时一次 ds 都不花,换窗这一下送过来的可能是一整窗的原话,
+    一口喂给 ds 会超长直接失败。所以太长就按时间切成几段分别压,再合成一份。
+    实在太长(超过 max_chunks 段)只留最近的那几段,早的那头认了。"""
+    if len(text) <= chunk:
+        return _ds_call(RECAP_SYS, text)
+    segs = [text[i:i + chunk] for i in range(0, len(text), chunk)]
+    if len(segs) > max_chunks:
+        segs = segs[-max_chunks:]
+    parts, last_err = [], None
+    for seg in segs:
+        if len(seg) < 80:
+            continue
+        out, err = _ds_call(RECAP_SYS, seg)
+        if out:
+            parts.append(out)
+        else:
+            last_err = err
+    if not parts:
+        return None, last_err or '压出来是空的'
+    if len(parts) == 1:
+        return parts[0], None
+    merged = parts[0]
+    for p in parts[1:]:
+        m, err = _ds_call(MERGE_SYS, '【早】\n' + merged + '\n\n【近】\n' + p, max_tokens=1300)
+        merged = m if (not err and m) else (merged + '\n\n' + p)[-RECAP_MAX:]
+    return merged, None
+
+
 def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False):
     if src and _recent_toxic(src):
         # 这段窗口最近老是报错/超时，疑似卡在坏循环里：不压缩带过去，新窗口的「更早的事」留空，干净重开
@@ -5256,7 +5285,7 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False):
     merged = base
     cap = HANDOFF_MAX if keep_base else RECAP_MAX
     if len(text) >= 80:
-        new, err = _ds_call(RECAP_SYS, text)
+        new, err = _ds_recap_long(text)
         if not err and new:
             merged = new
             if base and keep_base:
