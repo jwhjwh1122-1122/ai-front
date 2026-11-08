@@ -590,7 +590,7 @@ function buildMsgs(msgs) {
   for (let i = 0; i < win.length; i++) {
     const m = win[i];
     if (m.role === 'assistant' && !m.content && !m.tool_calls) continue;
-    const { _internal, _thinking, _thinkZh, _audio, _dur, _call, _callmark, _callinfo, _ts, _tools, _thinkTok, ...rest } = m;
+    const { _internal, _thinking, _thinkZh, _audio, _dur, _voices, _call, _callmark, _callinfo, _ts, _tools, _thinkTok, ...rest } = m;
     rest.content = toAnthropic(rest.content);
     out.push(trimOld(rest, i >= cut));
   }
@@ -828,8 +828,18 @@ function renderMd(text) {
   h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<em>$1</em>');
   return h.replace(/^#{1,3} (.+)$/gm, '<b>$1</b>').replace(/^[-•] (.+)$/gm, '• $1');
 }
+// 他想发语音：单起一段，开头写 [语音]。那一段落定之后会被换成一条语音气泡。
+// 标记本身不显示——还没换成语音之前，她看到的就是那句话本身。
+const VOICE_TAG = /^\s*\[语音\]\s*/;
+const isVoiceSeg = s => VOICE_TAG.test(String(s || ''));
+const voiceText = s => String(s || '').replace(VOICE_TAG, '').trim();
+const stripVoiceTags = s => String(s || '').replace(/\[语音\][ \t]*/g, '');
+const mostlyZh = t => {
+  const s = String(t || '').trim();
+  return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
+};
 function renderBubble(text) {
-  return stickerize(renderMd(text));
+  return stickerize(renderMd(stripVoiceTags(text)));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -974,22 +984,25 @@ function thinkTransBlock(origWrap, text, label) {
   origWrap.parentNode.insertBefore(t, origWrap.nextSibling);
 }
 function updateBubble(wrap, text, done, rawText, rowRef, tokens, ts) {
-  if (!currentBubble) {
+  // wrap._bodyDone：正文已经由别人画好了（比如最后一段是语音气泡），这里只补页脚，别再新建一个塞全文
+  if (!currentBubble && !wrap._bodyDone) {
     const b = document.createElement('div'); b.className = 'bubble ai' + (done ? '' : ' typing-cursor');
     wrap.appendChild(b); currentBubble = b;
   }
-  if (!done) { currentBubble.innerHTML = renderBubble(text); scrollBottom(); return; }
+  if (!done) { if (currentBubble) { currentBubble.innerHTML = renderBubble(text); scrollBottom(); } return; }
   const rendered = renderBubble(text);
-  if (!currentBubble.dataset.seg) currentBubble.innerHTML = rendered;
-  currentBubble.classList.remove('typing-cursor');
-  if (!rendered.replace(/<img[^>]*>/g, '').replace(/\s/g, '').length) {
-    currentBubble.style.cssText = 'background:transparent;border:none;box-shadow:none;padding:0';
-    currentBubble.classList.add('sticker-only');
+  if (currentBubble) {
+    if (!currentBubble.dataset.seg) currentBubble.innerHTML = rendered;
+    currentBubble.classList.remove('typing-cursor');
+    if (!rendered.replace(/<img[^>]*>/g, '').replace(/\s/g, '').length) {
+      currentBubble.style.cssText = 'background:transparent;border:none;box-shadow:none;padding:0';
+      currentBubble.classList.add('sticker-only');
+    }
   }
   const foot = document.createElement('div'); foot.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const time = document.createElement('span'); time.className = 'msg-time'; time.textContent = nowStr(ts);
   foot.appendChild(time);
-  const cap = rawText || text;
+  const cap = stripVoiceTags(rawText || text);
   const SZ = { '๑': 22, '◎': 17, '✎': 21, '✮': 25, 'ฅ': 21, '⊞': 20, '♡': 21 };
   const mk = (label, title, fn) => {
     const s = document.createElement('span'); s.className = 'msg-action-btn';
@@ -1082,7 +1095,7 @@ function voiceBubble(url, dur, transcript, isLin) {
     const tx = document.createElement('div'); tx.className = 'vb-transcript'; tx.textContent = transcript; tx.style.display = 'none';
     tb.onclick = () => { const on = tx.style.display === 'none'; tx.style.display = on ? 'block' : 'none'; tb.textContent = on ? '收起' : '看文字'; };
     row.appendChild(tb);
-    if (isLin) {
+    if (isLin && !mostlyZh(transcript)) {
       const trb = document.createElement('div'); trb.className = 'vb-text-btn'; trb.textContent = '✮';
       trb.style.fontSize = '13px';
       const trx = document.createElement('div'); trx.className = 'vb-transcript'; trx.style.display = 'none';
@@ -1160,15 +1173,48 @@ async function sendAudio(blob, dur) {
   finally { btn.textContent = '◎'; }
   sendComposed(text, [], { audio: audioUrl, dur });
 }
+// 他自己挑的那几段（开头写了 [语音] 的）变成语音气泡。跟「凛用语音回我」那个开关无关——
+// 那个开关是整条都念，这个是他想发哪句就发哪句。
+async function attachTaggedVoices(wrap, text, turnConv) {
+  if (!wrap || !text?.trim()) return false;
+  if (turnConv !== undefined && currentConvId !== turnConv) return false;
+  const segs = splitSay(text);
+  const idxs = segs.map((s, i) => (isVoiceSeg(s) && voiceText(s) ? i : -1)).filter(i => i >= 0);
+  if (!idxs.length) return false;
+  const bubbles = [...wrap.querySelectorAll('.bubble.ai')];
+  const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
+  const store = [];
+  for (const i of idxs) {
+    const t = voiceText(segs[i]);
+    const b = bubbles[i];
+    if (b) b.classList.add('voice-making');
+    let d = {};
+    try { d = await jpost('/api/tts-save', { text: t.slice(0, 600), voice }); } catch (e) { }
+    if (b) b.classList.remove('voice-making');
+    if (!d || !d.url) { toast(d?.error || '这条语音没发出去'); continue; }
+    const secs = Math.max(2, Math.round([...t].length / 4.2));
+    store.push({ i, url: d.url, dur: secs });
+    if (b && b.parentNode) b.parentNode.replaceChild(voiceBubble(d.url, secs, t, true), b);
+  }
+  if (!store.length) return false;
+  for (let k = messages.length - 1; k >= 0; k--)
+    if (messages[k].role === 'assistant' && messages[k].content) { messages[k]._voices = store; break; }
+  saveConv();
+  scrollBottom();
+  return true;
+}
 async function attachVoiceReply(wrap, text, turnConv) {
+  const tagged = await attachTaggedVoices(wrap, text, turnConv);
   // 换到别的窗口了：这条回复现在不在眼前，不用特地生成语音
   if ((turnConv !== undefined && currentConvId !== turnConv) || localStorage.getItem('auto-voice') !== '1' || !text?.trim()) return;
+  if (tagged) return;   // 这条他已经自己挑着发过语音了，别再整条念一遍
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
-    const d = await jpost('/api/tts-save', { text: text.slice(0, 600), voice });
+    const say = stripVoiceTags(text).trim();
+    const d = await jpost('/api/tts-save', { text: say.slice(0, 600), voice });
     if (!d.url) return;
-    const secs = Math.max(2, Math.round(text.length / 4.5));
-    if (wrap) wrap.insertBefore(voiceBubble(d.url, secs, '', true), wrap.firstChild);
+    const secs = Math.max(2, Math.round(say.length / 4.5));
+    if (wrap) wrap.insertBefore(voiceBubble(d.url, secs, say, true), wrap.firstChild);
     for (let i = messages.length - 1; i >= 0; i--)
       if (messages[i].role === 'assistant' && messages[i].content) { messages[i]._audio = d.url; messages[i]._dur = secs; break; }
     saveConv();
@@ -1960,8 +2006,14 @@ function renderOneMsg(msg, i) {
       if (msg._audio) wrap.appendChild(voiceBubble(msg._audio, msg._dur, '', true));
       if (text) {
         const segs = splitSay(text);
-        if (segs.length > 1) {
-          segs.forEach(sg => {
+        const vmap = {}; (msg._voices || []).forEach(v => { vmap[v.i] = v; });
+        if (segs.length > 1 || vmap[0]) {
+          wrap._bodyDone = true;
+          segs.forEach((sg, i) => {
+            if (vmap[i]) {   // 他当时是用语音说的这一段
+              wrap.appendChild(voiceBubble(vmap[i].url, vmap[i].dur, voiceText(sg), true));
+              currentBubble = null; return;
+            }
             const b = document.createElement('div');
             b.className = 'bubble ai' + (isStickerOnly(sg) ? ' sticker-only' : ''); b.dataset.seg = '1';
             b.innerHTML = renderBubble(sg);
