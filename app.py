@@ -3967,9 +3967,13 @@ def _call_voice_settings(text, data):
       顺带也能救多音字：「湿」被念成第四声，她听成了「屎」。
     """
     try:
-        speed = float(data.get('speed') or 0) or 0.92
+        speed = float(data.get('speed') or 0) or 0
     except Exception:
-        speed = 0.92
+        speed = 0
+    if not speed:
+        # 中文 0.92 她说正好,同一个数念英文就赶 —— 英文音节密,听着更快。
+        # 她 11.08 晚上原话:"你讲英语的话就有点快了。"所以英文单独放慢。
+        speed = 0.92 if any('一' <= c <= '鿿' for c in text) else 0.82
     speed = max(0.7, min(1.2, speed))
     try:
         stab = float(data.get('stability') or 0) or 0.5
