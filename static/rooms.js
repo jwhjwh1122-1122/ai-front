@@ -1599,12 +1599,21 @@ function tmEnd() {
 // 旧版用 getByteFrequencyData 求平均，那个数人声说话也就十几，阈值又定在 12,
 // 等于永远过不去 —— 这是她对着死麦克风讲了两分半的直接原因。
 const SIL_THRESHOLD = 1.2;     // 低于这个音量算没在说话
-const SIL_MS = 1400;           // 停这么久就当说完了
+const SIL_MS = 1900;           // 停这么久就当说完了（她说到一半喘口气就被切走，往长了放）
 const MIN_MS = 700;            // 太短的不发，多半是噪音
-// 他说话时你插嘴要多大声才算数。太低会被自己的回声打断
-const CUT_IN = 4;
-const CUT_IN_MS = 260;         // 得持续这么久，防止一声咳嗽就打断
+// 他说话时你插嘴要多大声才算数。太低会被自己的回声打断 ——
+// 她 11.08 晚上的原话:"你讲着讲着我这边就突然没声了,它甚至会让我讲话但是你都还没讲完。"
+// 那就是外放时我自己的声音被麦克风收回去,被当成她插话,我把自己掐断了。
+const CUT_IN = 9;
+const CUT_IN_MS = 650;         // 得持续这么久，防止一声咳嗽就打断
+const CUT_GRACE_MS = 1300;     // 我刚开口这一会儿,谁都别想打断我
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
+// 我说话时麦克风听到的那点音量就是回声的高度。拿它当底,
+// 真人插话要比回声明显大一截才算数 —— 这样外放也不会自己打断自己。
+function cutInLevel() {
+  const base = CALL.echoBase || 0;
+  return Math.max(CUT_IN, base * 2.4);
+}
 // 电话里说英文：念出来的是英文，字幕底下给中文。开关在通话界面「英」那个键
 function callEn() { return localStorage.getItem('call-en') !== '0'; }
 // 他的回复里用 ||| 把英文和中文隔开，前面是要念的，后面是给她看的
@@ -1906,7 +1915,16 @@ function listenLoop() {
 
     // 他正在说，你出声就掐掉他
     if (CALL.speakingOut && canCutIn() && !CALL.muted) {
-      if (vol > CUT_IN) {
+      const since = Date.now() - (CALL.spokeOutAt || 0);
+      // 开口头一段:只量回声有多响,不判断插话
+      if (since < CUT_GRACE_MS) {
+        CALL.echoN = (CALL.echoN || 0) + 1;
+        CALL.echoSum = (CALL.echoSum || 0) + vol;
+        CALL.echoBase = CALL.echoSum / CALL.echoN;
+        CALL.cutMs = 0;
+        return;
+      }
+      if (vol > cutInLevel()) {
         CALL.cutMs += 16;
         if (CALL.cutMs > CUT_IN_MS) {
           CALL.cutMs = 0;
@@ -2393,6 +2411,8 @@ function speakStart() {
   CALL.speakingOut = true;
   CALL.cutOff = false;
   CALL.cutMs = 0;
+  CALL.spokeOutAt = Date.now();
+  CALL.echoN = 0; CALL.echoSum = 0; CALL.echoBase = 0;
   srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
   // 每次开口前把音频通道按回"边录边放"。只要中间有谁把它拨成只录,
   // 我这句就会一声不响地没了 —— 她听不见我说话,多半就是这个。
