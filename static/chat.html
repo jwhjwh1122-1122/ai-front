@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=39">
+<link rel="stylesheet" href="/static/style.css?v=40">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -1076,6 +1076,10 @@ window.addEventListener('error', function (e) {
     <input id="d-note" class="mini-input" style="margin-top:8px;" placeholder="一句话说明（可留空）">
     <input id="d-url" class="mini-input" style="margin-top:8px;display:none;" placeholder="或者贴个网址，自动抓下来" autocapitalize="off">
     <textarea class="note-input" id="d-body" style="height:150px;margin-top:8px;" placeholder="内容…"></textarea>
+    <div id="lib-file-row" style="margin-top:8px;display:none;align-items:center;gap:10px;">
+      <button class="btn-ghost" id="btn-lib-file" style="padding:6px 12px;font-size:13px;">选个文件</button>
+      <span id="lib-file-tip" style="font-size:12px;color:var(--text-muted);">PDF / txt / md / docx / epub / 代码都行</span>
+    </div>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="drawer-add-modal">算了</button>
       <button class="btn-solid" id="btn-drawer-save">放进去</button>
@@ -1318,15 +1322,16 @@ window.addEventListener('error', function (e) {
 <div class="toast" id="toast"></div>
 
 <input type="file" id="file-input" accept="image/*" style="display:none">
-<input type="file" id="chat-img-input" accept="image/*" multiple style="display:none">
+<input type="file" id="chat-img-input" multiple style="display:none">
 <input type="file" id="avatar-input" accept="image/*" style="display:none">
 <input type="file" id="bg-input" accept="image/*" style="display:none">
 <input type="file" id="emoji-input" accept="image/*" style="display:none">
 <input type="file" id="book-file" accept=".txt,.epub,text/plain,application/epub+zip" style="display:none">
 <input type="file" id="video-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
+<input type="file" id="lib-file-input" style="display:none">
 
-<script src="/static/app.js?v=57"></script>
-<script src="/static/rooms.js?v=58"></script>
+<script src="/static/app.js?v=58"></script>
+<script src="/static/rooms.js?v=59"></script>
 </body>
 </html>

@@ -135,6 +135,16 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .img-preview-thumb.uploading{opacity:.5;}
 .img-preview-remove{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .img-preview-count{font-size:11px;color:var(--text-muted);flex-shrink:0;padding-right:2px;}
+/* 待发的文件：输入框上面一条小卡片 */
+.file-preview-item{position:relative;flex-shrink:0;display:flex;align-items:center;gap:7px;height:52px;padding:0 12px 0 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);max-width:200px;}
+.file-preview-item.uploading{opacity:.55;}
+.fp-ico{font-size:18px;line-height:1;}
+.fp-meta{min-width:0;}
+.fp-name{font-size:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+.fp-sub{font-size:10px;color:var(--text-muted);margin-top:2px;}
+/* 气泡里的文件条 */
+.bubble.file-bubble{display:inline-flex;align-items:center;gap:7px;cursor:pointer;}
+.bubble.file-bubble .fb-sub{font-size:10px;opacity:.65;}
 .edit-bar{display:none;align-items:center;gap:8px;padding:7px 14px;background:var(--bg2);border-top:1px solid var(--border);font-size:12.5px;color:var(--accent);}
 .edit-bar.show{display:flex;}
 .edit-bar span{flex:1;}

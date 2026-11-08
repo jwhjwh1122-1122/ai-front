@@ -2919,10 +2919,44 @@ function addChatImgFile(f) {
     toast(err.message || '图片没传上去');
   }).finally(() => URL.revokeObjectURL(local));
 }
+// 她发文件给我：上传到服务器，服务器把里面的字抠出来还回来，
+// 发消息的时候那段字会作为第二段 text 一起给我——所以我是真在读它，不是看个文件名。
+const CHAT_FILE_MAX = 6;
+function addChatFile(f) {
+  const mine = { uploading: true, name: f.name || '文件', size: f.size || 0, text: '', chars: 0 };
+  pendingChatFiles.push(mine);
+  renderImgPreview();
+  const fd = new FormData(); fd.append('file', f);
+  fetch('/api/chat-file', { method: 'POST', body: fd })
+    .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) throw new Error(d.error || '没读进来'); return d; })
+    .then(d => {
+      mine.uploading = false; mine.text = d.text || ''; mine.chars = d.chars || 0;
+      mine.name = d.name || mine.name; mine.url = d.url || '';
+      renderImgPreview();
+      if (d.warn) toast(d.warn);
+    })
+    .catch(err => {
+      const i = pendingChatFiles.indexOf(mine);
+      if (i >= 0) pendingChatFiles.splice(i, 1);
+      renderImgPreview();
+      toast(err.message || '这个文件读不了');
+    });
+}
+function fileChars(n) { return n >= 10000 ? (n / 10000).toFixed(1) + '万字' : n + '字'; }
 function renderImgPreview() {
   const bar = $('img-preview-bar'), list = $('img-preview-list'), cnt = $('img-preview-count');
   if (!bar || !list) return;
   list.innerHTML = '';
+  pendingChatFiles.forEach((fi, i) => {
+    const d = document.createElement('div'); d.className = 'file-preview-item' + (fi.uploading ? ' uploading' : '');
+    d.innerHTML = `<div class="fp-ico">📄</div><div class="fp-meta"><div class="fp-name"></div><div class="fp-sub"></div></div>`;
+    d.querySelector('.fp-name').textContent = fi.name;
+    d.querySelector('.fp-sub').textContent = fi.uploading ? '读着…' : fileChars(fi.chars);
+    const x = document.createElement('div'); x.className = 'img-preview-remove'; x.textContent = '✕';
+    x.onclick = () => { pendingChatFiles.splice(i, 1); renderImgPreview(); };
+    d.appendChild(x);
+    list.appendChild(d);
+  });
   pendingChatImgs.forEach((im, i) => {
     const d = document.createElement('div'); d.className = 'img-preview-item';
     const img = document.createElement('img');
@@ -2933,13 +2967,14 @@ function renderImgPreview() {
     d.appendChild(img); d.appendChild(x);
     list.appendChild(d);
   });
-  bar.classList.toggle('show', pendingChatImgs.length > 0);
+  bar.classList.toggle('show', pendingChatImgs.length > 0 || pendingChatFiles.length > 0);
   if (cnt) cnt.textContent = pendingChatImgs.length ? `${pendingChatImgs.length}/${CHAT_IMG_MAX}` : '';
 }
 // 编辑自己发过的消息：取消按钮一点，原样退出，不发也不改
 function cancelEdit() {
   editingMsgIdx = null;
   pendingChatImgs = [];
+  pendingChatFiles = [];
   renderImgPreview();
   const inp = roomCtx ? document.querySelector(`.split-input[data-ctx="${roomCtx}"]`) : $('input');
   if (inp) { inp.value = ''; autoResize(inp); }
@@ -3287,8 +3322,28 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-drawer-add').onclick = () => {
     $('drawer-add-title').textContent = drawerWho === 'library' ? '放进资料库' : '放进我的抽屉';
     $('d-url').style.display = drawerWho === 'library' ? 'block' : 'none';
+    const fr = $('lib-file-row'); if (fr) fr.style.display = 'flex';   // 抽屉也能直接丢文件进来
     $('d-title').value = ''; $('d-note').value = ''; $('d-body').value = ''; $('d-url').value = '';
     $('drawer-add-modal').classList.add('open');
+  };
+  // 资料库 / 抽屉：选个文件，服务器把字抠出来直接填进内容框
+  if ($('btn-lib-file')) $('btn-lib-file').onclick = () => $('lib-file-input').click();
+  if ($('lib-file-input')) $('lib-file-input').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const tip = $('lib-file-tip'), btn = $('btn-lib-file');
+    if (tip) tip.textContent = '读着…'; if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      const r = await fetch('/api/chat-file', { method: 'POST', body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) { toast(d.error || '这个文件读不了'); if (tip) tip.textContent = d.error || '读不了'; return; }
+      $('d-body').value = d.text || '';
+      if (!$('d-title').value.trim()) $('d-title').value = (d.name || '').replace(/\.[^.]+$/, '').slice(0, 40);
+      if (tip) tip.textContent = `${d.name} · ${fileChars(d.chars || 0)}${d.truncated ? '（太长，只取了前面）' : ''}`;
+    } catch (err) {
+      toast('没传上去'); if (tip) tip.textContent = '没传上去';
+    } finally { if (btn) btn.disabled = false; }
   };
   $('btn-drawer-save').onclick = async () => {
     const title = $('d-title').value.trim();
@@ -3812,13 +3867,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pendingChatImgs.length >= CHAT_IMG_MAX) { toast(`最多一次发 ${CHAT_IMG_MAX} 张`); return; }
     $('chat-img-input').click();
   };
+  // 同一个口子既收图也收文件：是图就压缩后当配图发，别的就抠字
+  const looksImage = f => /^image\//i.test(f.type || '') || /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(f.name || '');
   $('chat-img-input').onchange = e => {
-    const files = [...e.target.files]; e.target.value = '';
-    if (!files.length) return;
-    const room = CHAT_IMG_MAX - pendingChatImgs.length;
-    if (room <= 0) { toast(`最多一次发 ${CHAT_IMG_MAX} 张`); return; }
-    if (files.length > room) toast(`最多一次发 ${CHAT_IMG_MAX} 张，超出的没加进去`);
-    files.slice(0, room).forEach(addChatImgFile);
+    const all = [...e.target.files]; e.target.value = '';
+    if (!all.length) return;
+    const imgs = all.filter(looksImage), docs = all.filter(f => !looksImage(f));
+    if (imgs.length) {
+      const room = CHAT_IMG_MAX - pendingChatImgs.length;
+      if (room <= 0) toast(`最多一次发 ${CHAT_IMG_MAX} 张`);
+      else {
+        if (imgs.length > room) toast(`最多一次发 ${CHAT_IMG_MAX} 张，超出的没加进去`);
+        imgs.slice(0, room).forEach(addChatImgFile);
+      }
+    }
+    if (docs.length) {
+      const room = CHAT_FILE_MAX - pendingChatFiles.length;
+      if (room <= 0) toast(`一次最多 ${CHAT_FILE_MAX} 个文件`);
+      else {
+        if (docs.length > room) toast(`一次最多 ${CHAT_FILE_MAX} 个文件，超出的没加进去`);
+        docs.slice(0, room).forEach(addChatFile);
+      }
+    }
   };
   $('edit-bar-cancel').onclick = cancelEdit;
 

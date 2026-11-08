@@ -5418,6 +5418,13 @@ try:
 except Exception as e:
     print(f'[media] 挂载失败（不影响其他功能）: {e}', flush=True)
 
+# 她发给我的文件：收下来、把里面的字抠出来
+try:
+    from chat_file import register_chat_file
+    register_chat_file(app, media_dir=MEDIA_DIR)
+except Exception as e:
+    print(f'[chat-file] 挂载失败（不影响其他功能）: {e}', flush=True)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True)

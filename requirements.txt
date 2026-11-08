@@ -5,3 +5,4 @@ gunicorn==22.0.0
 opencc-python-reimplemented
 pycryptodome==3.20.0
 Pillow
+pypdf==4.3.1

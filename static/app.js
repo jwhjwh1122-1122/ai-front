@@ -8,7 +8,7 @@ let CFG = {};
 let messages = [], isTyping = false, totalTokens = 0, lastCacheRead = 0;
 let lastInTok = 0, lastOutTok = 0;   // 这一轮的进/出 token，算每条消息底下的 token/命中率用
 // 新输入 = inTok - cacheRead（inTok 本来就是 新输入 + 缓存写 + 缓存读 的总和，减掉读缓存那块剩下的都算新的）
-let pendingChatImgs = [], editingMsgIdx = null;
+let pendingChatImgs = [], pendingChatFiles = [], editingMsgIdx = null;
 let currentAudio = null, currentAudioBtn = null, voicePlayingEl = null;
 let currentModel = 'anthropic/claude-sonnet-4-6';
 let ctxWindow = 15, sendFrom = 0, currentConvId = null;
@@ -854,8 +854,9 @@ function addCallBubble(info, idx, force) {
   scrollBottom(force);
 }
 // imgs：一张就是字符串，多张传数组；null/空都算没有图。force：自己刚发的/刚打开对话，不管在不在最底下都滚过去
-function addUserBubble(text, imgs, idx, audio, force, ts) {
+function addUserBubble(text, imgs, idx, audio, force, ts, files) {
   imgs = imgs ? (Array.isArray(imgs) ? imgs.filter(Boolean) : [imgs]) : [];
+  files = Array.isArray(files) ? files.filter(Boolean) : [];
   const row = document.createElement('div'); row.className = 'msg-row user';
   if (idx !== undefined) row.dataset.msgIdx = idx;
   const uav = localStorage.getItem('chat-avatar-user');
@@ -869,6 +870,11 @@ function addUserBubble(text, imgs, idx, audio, force, ts) {
       `<div class="bubble-img-item"><img src="${u}">${i === 0 ? `<div class="bimg-badge">+${imgs.length - 1}</div>` : ''}</div>`).join('')
       }</div><span class="bubble-imgs-fold">收起</span></div>`;
   }
+  // 文件：气泡里只放一条，点一下能下载回去；正文已经在消息里给他了
+  files.forEach(f => {
+    const n = f.chars || 0, sub = n >= 10000 ? (n / 10000).toFixed(1) + '万字' : n + '字';
+    c += `<div class="bubble user file-bubble"${f.url ? ` data-file-url="${esc(f.url)}"` : ''}>📄 ${esc(f.name || '文件')}<span class="fb-sub">${sub}</span></div>`;
+  });
   // 她的也按空行拆成几条（只是显示，发给他的还是原样一整句）
   // 她的：换一行就拆一个气泡（手机上回车就是换行）
   if (text && !(audio && audio.url)) String(text).split(/\n+/).flatMap(l => l.trim() ? splitSay(l) : []).filter(Boolean).forEach(sg => {
@@ -881,6 +887,9 @@ function addUserBubble(text, imgs, idx, audio, force, ts) {
     const w = row.querySelector('.bubble-wrap');
     w.insertBefore(voiceBubble(audio.url, audio.dur, text || ''), w.firstChild);
   }
+  row.querySelectorAll('.file-bubble[data-file-url]').forEach(b => {
+    b.onclick = () => window.open(b.dataset.fileUrl, '_blank');
+  });
   row.querySelector('[data-edit]').onclick = () => editMsg(row);
   row.querySelector('[data-copy]').onclick = () => {
     const b = row.querySelector('.bubble.user'); copyText(b ? b.textContent : '');
@@ -912,6 +921,12 @@ function editMsg(row) {
   inp.value = raw; autoResize(inp); inp.focus(); editingMsgIdx = idx;
   // 带图的也一起接回来，不然重发一次图就没了
   pendingChatImgs = imgs.map(u => ({ uploading: false, data: u }));
+  // 带文件的也接回来：正文在消息里躺着，照原样捡起来，重发一次不会丢
+  const parts = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text') : [];
+  pendingChatFiles = (msg._files || []).map((f, k) => {
+    const p = parts[k + 1], body = p ? String(p.text).replace(/^【[^】]*】\n?/, '').replace(/\n?【[^】]*完】$/, '') : '';
+    return { uploading: false, name: f.name, chars: f.chars, url: f.url || '', text: body };
+  });
   if (typeof renderImgPreview === 'function') renderImgPreview();
   const eb = $('edit-bar'); if (eb) eb.classList.add('show');
   document.querySelectorAll('.msg-row.editing').forEach(r => r.classList.remove('editing'));
@@ -1680,9 +1695,11 @@ const ccStop = () => { if (currentConvId) jpost('/api/cc/stop', { conv: currentC
 async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && pendingChatImgs.length > 0;
-  if (!text && !hasImg) return;
+  const hasFile = !fromCtx && pendingChatFiles.length > 0;
+  if (!text && !hasImg && !hasFile) return;
   if (isTyping) { toast(typingConvId === currentConvId ? '等他说完这句' : '他正在另一个窗口里回着，等会儿再发'); return; }
   if (hasImg && pendingChatImgs.some(im => im.uploading)) { toast('图片还在上传，稍等一下'); return; }
+  if (hasFile && pendingChatFiles.some(f => f.uploading)) { toast('文件还在读，稍等一下'); return; }
   inp.value = ''; inp.style.height = 'auto';
   const turnConv = currentConvId;
   const seq = beginTurn(turnConv);
@@ -1700,14 +1717,24 @@ async function sendMsg(fromCtx) {
     $('edit-bar')?.classList.remove('show');
   }
   const imgUrls = hasImg ? pendingChatImgs.map(im => im.data) : [];
-  const content = hasImg
-    ? [...(text ? [{ type: 'text', text }] : []), ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
+  // 文件：正文作为第二段 text 一起发给他（气泡里只显示一个文件条，不把整篇铺出来）
+  const fileParts = hasFile ? pendingChatFiles.map(f =>
+    ({ type: 'text', text: `【她给我的文件：${f.name}】\n${f.text}\n【${f.name} 完】` })) : [];
+  const fileMeta = hasFile ? pendingChatFiles.map(f => ({ name: f.name, chars: f.chars, url: f.url || '' })) : null;
+  // 一个字没打、只丢文件过来：也给他留一句话打头，不然重开页面时第一段 text 会变成整篇文件
+  const lead = text || (hasFile ? `（给你一个文件：${pendingChatFiles.map(f => f.name).join('、')}）` : '');
+  const content = (hasImg || hasFile)
+    ? [...(lead ? [{ type: 'text', text: lead }] : []), ...fileParts, ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : text;
   const sentTs = Date.now();
-  messages.push({ role: 'user', content, _mid: genMid(), _ts: sentTs });
-  addUserBubble(text, hasImg ? imgUrls : null, messages.length - 1, null, true, sentTs);
+  const umsg = { role: 'user', content, _mid: genMid(), _ts: sentTs };
+  if (fileMeta) umsg._files = fileMeta;
+  messages.push(umsg);
+  addUserBubble(lead, hasImg ? imgUrls : null, messages.length - 1, null, true, sentTs, fileMeta);
   saveConv();
-  if (hasImg) { pendingChatImgs = []; if (typeof renderImgPreview === 'function') renderImgPreview(); }
+  if (hasImg) { pendingChatImgs = []; }
+  if (hasFile) { pendingChatFiles = []; }
+  if ((hasImg || hasFile) && typeof renderImgPreview === 'function') renderImgPreview();
   const wrap = startAiBubble(messages.length);
   currentBubble = null; currentThinkWrap = null; currentThinkContent = null; turnThinking = ''; turnThinkTok = 0; turnThinkZh = '';
   let reply = '';
@@ -1918,7 +1945,7 @@ function renderOneMsg(msg, i) {
     if (msg.role === 'user') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.find(c => c.type === 'text')?.text || '' : '');
       const imgs = Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'image_url').map(c => c.image_url?.url).filter(Boolean) : [];
-      addUserBubble(text, imgs.length ? imgs : null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null, false, msg._ts);
+      addUserBubble(text, imgs.length ? imgs : null, i, msg._audio ? { url: msg._audio, dur: msg._dur } : null, false, msg._ts, msg._files);
       if (msg._call) { const b = msgBox().lastElementChild?.querySelector('.bubble'); if (b) b.classList.add('in-call'); }
     } else if (msg.role === 'assistant') {
       const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
