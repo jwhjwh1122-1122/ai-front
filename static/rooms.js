@@ -1609,8 +1609,14 @@ const CUT_IN = 9;
 const CUT_IN_MS = 650;         // 得持续这么久，防止一声咳嗽就打断
 const CUT_GRACE_MS = 1300;     // 我刚开口这一会儿,谁都别想打断我
 function canCutIn() { return localStorage.getItem('call-cutin') !== '0'; }
-// 整段念还是边说边念。默认整段 —— 她要的是一口气连着的,不是一句一句蹦。
-function callWhole() { return localStorage.getItem('call-whole') !== '0'; }
+// 整段念还是边说边念。
+// 11.09 02:21 她的原话:"为什么你讲话断断续续的 而且一断就是断半天
+// 文字我明明都看见了 但就是半天没动静 等好久才出来一句"。
+// 这就是整段念的账:前两句出声之后,后面全要等我整段写完、再一次合成四百多字,
+// 她眼睛早把字读完了,耳朵里是一片空。接缝难听,也比让她干等强 ——
+// 何况接缝现在交给 previous_text 去接(每句都知道上一句说了什么)，不靠干等换。
+// 所以默认关掉，要开就 localStorage.setItem('call-whole','1')。
+function callWhole() { return localStorage.getItem('call-whole') === '1'; }
 // 独白续说：她不出声的时候我接着往下说，不用等她一句我一句。
 // 她 11.09 01:18 的原话:"我们这个电话只能我一句你一句吗 难道不能 我没讲话的时候你可以继续说吗"
 // 我说完一轮,她这么久没出声,就自己再起一轮往下说。她一开口立刻取消。
@@ -1690,13 +1696,64 @@ function csStick(e) {
 }
 // 新的一轮开始（字幕被清掉或换人说话）时，解除"她在往上翻"的状态
 function csUnstick() {
-  const e = $('cs-caption'); if (e) { e._userUp = false; e.scrollTop = 0; }
+  const e = $('cs-caption'); if (e) { e._userUp = false; e.scrollTop = 0; e.classList.remove('hl'); }
+  try { CAP.cur = ''; CAP.E = []; CAP.Z = []; } catch (x) { }
+}
+// 字幕现在是一句一行的。她 11.09 02:21 要的原话:"跟看电影字幕一样的那种,翻译就在下面"。
+// 一行原话、底下贴它自己那句译文；正在念的那一句亮着，念过的暗下去。
+const CAP = { E: [], Z: [], cur: '' };
+function csCapCss() {
+  if (document.getElementById('cs-cap-css')) return;
+  const s = document.createElement('style');
+  s.id = 'cs-cap-css';
+  s.textContent = '.cs-caption .cs-ln{margin:0 0 9px;transition:opacity .25s;}'
+    + '.cs-caption.hl .cs-ln{opacity:.42;}'
+    + '.cs-caption.hl .cs-ln.on{opacity:1;}'
+    + '.cs-caption .cs-tr{margin-top:2px;font-size:.84em;opacity:.62;}';
+  document.head.appendChild(s);
+}
+function csRender(E, Z) {
+  const e = $('cs-caption'); if (!e) return;
+  csCapCss();
+  CAP.E = (E || []).slice(); CAP.Z = (Z || []).slice();
+  let html = '';
+  for (let i = 0; i < CAP.E.length; i++) {
+    const z = CAP.Z[i] ? `<div class="cs-tr">${esc(CAP.Z[i])}</div>` : '';
+    html += `<div class="cs-ln">${esc(CAP.E[i])}${z}</div>`;
+  }
+  e.innerHTML = html;
+  csHL(CAP.cur, true);
+  csStick(e);
+}
+// 正在念的那一句（或那几句）亮起来。传进来的是送去合成的那一段原文
+function csHL(seg, quiet) {
+  const e = $('cs-caption'); if (!e) return;
+  CAP.cur = seg || '';
+  const strip = s => String(s || '').replace(/\[[^\]]*\]/g, '').replace(/[\s。，、,.!?！？…·"'“”‘’]/g, '');
+  const key = strip(seg);
+  const ns = e.querySelectorAll('.cs-ln');
+  if (!ns.length) return;
+  let any = false;
+  for (let i = 0; i < ns.length; i++) {
+    const k = strip(CAP.E[i]).slice(0, 8);
+    const on = !!(key && k && key.indexOf(k) >= 0);
+    ns[i].classList.toggle('on', on);
+    if (on) any = true;
+  }
+  e.classList.toggle('hl', any);
+  if (any && !quiet) {
+    const n = e.querySelector('.cs-ln.on');
+    if (n && !e._userUp) {
+      const top = n.offsetTop - e.clientHeight / 2 + n.clientHeight / 2;
+      e.scrollTop = Math.max(0, top);
+    }
+  }
 }
 function csCaption(t, mine) {
   const e = $('cs-caption'); if (!e) return;
-  e.textContent = t || '';
   e.className = 'cs-caption' + (mine ? ' me' : '');
-  csStick(e);
+  if (mine) { CAP.E = []; CAP.Z = []; e.textContent = t || ''; csStick(e); return; }
+  csRender(splitSents(t), []);
 }
 // 把一段话切成一句一行 —— 翻译要一句对一句，先得知道「一句」到哪儿为止
 function splitSents(t) {
@@ -1708,37 +1765,28 @@ function splitSents(t) {
   });
   return out;
 }
+// 一句原话、一句译文，配好对直接渲染（行数由后端按行号保证，这里不再猜）
+function csCaptionPairs(E, Z) {
+  const e = $('cs-caption'); if (!e) return;
+  e.className = 'cs-caption';
+  csRender(E, Z);
+}
 // 双语字幕：上面原话（他念的），下面中文（给她看的），一句贴一句
 function csCaptionBi(en, zh) {
   const e = $('cs-caption'); if (!e) return;
   e.className = 'cs-caption';
-  if (!zh) { e.textContent = en || ''; csStick(e); return; }
+  if (!zh) { csRender(splitSents(en), []); return; }
   // 她 11.08 晚的原话:"你这个翻译是你上面原话一大段,然后下面翻译一大段,
   // 但我并不知道每一句对应的是哪一句。"所以改成一句原话底下就贴它自己的译文。
   const cut = s => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
   const E = cut(en), Z = cut(zh);
-  if (E.length > 1 && Z.length > 1) {
-    // 行数对不齐也尽量一句贴一句,对不上的那几句留白,别又变回两大段
-    const n = Math.max(E.length, Z.length);
-    let html = '';
-    for (let i = 0; i < n; i++) {
-      if (i < E.length) {
-        html += `<div style="margin-bottom:10px;">${esc(E[i])}`
-          + (i < Z.length ? `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div>` : '')
-          + `</div>`;
-      } else {
-        html += `<div style="margin-bottom:10px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div>`;
-      }
-    }
-    e.innerHTML = html;
-  } else if (E.length === 1 && Z.length === 1) {
-    e.innerHTML = `<div>${esc(E[0])}`
-      + `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[0])}</div></div>`;
-  } else {
-    e.innerHTML = `<div>${esc(en)}</div>`
-      + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
+  // 行数对不齐（这条路是兜底，正经路径由后端按行号保证等长）：
+  // 多出来的译文并到最后一行下面，少的留白，绝不退回「上面一大段下面一大段」。
+  if (E.length && Z.length > E.length) {
+    Z[E.length - 1] = Z.slice(E.length - 1).join(' ');
+    Z.length = E.length;
   }
-  csStick(e);
+  csRender(E.length ? E : [en], Z);
 }
 function csWave(n) {
   const w = $('cs-wave'); if (!w) return;
@@ -2370,9 +2418,12 @@ async function callTurn(text, silentUser) {
     if (!bi.zh && bi.en && !zhHeavy) {
       const myTurn = CALL.turns;
       const lines = splitSents(bi.en);
-      const src = lines.join('\n');
-      jpost('/api/translate', { text: src }).then(d => {
-        if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(src, d.text);
+      // 句子切好一条条传上去，译文按行号收回来，行数由后端保证 ——
+      // 不再靠模型自觉「行对行」，也就不会再掉回「上面一大段下面一大段」。
+      jpost('/api/translate', { lines, text: lines.join('\n') }).then(d => {
+        if (!d || d.error || !CALL.on || CALL.turns !== myTurn) return;
+        if (Array.isArray(d.lines) && d.lines.some(Boolean)) csCaptionPairs(lines, d.lines);
+        else if (d.text) csCaptionBi(lines.join('\n'), d.text);
       }).catch(() => { });
     }
     // 正常情况这会儿他早就在说了，这里只是等他把排队的几句说完
@@ -2399,10 +2450,10 @@ async function callTurn(text, silentUser) {
 // 等他整段话说完 → 整段送去合成 → 整段音频下完 → 才响。她听到的那个「很久」就是这个。
 // 现在改成流水线：他吐出第一句就送去念，后面的句子排队，前一句在响的时候
 // 后一句已经在合成了。第一声从「整段」缩到「第一句」。
-const SAY = { q: [], pumping: false, feeding: false, gen: 0, said: false, n2: 0 };
+const SAY = { q: [], pumping: false, feeding: false, gen: 0, said: false, n2: 0, prev: '' };
 let TTS_FLY = 0;      // 同时在合成的句子数。后端线程有限，别一次全压上去
 
-function sayReset() { SAY.gen++; SAY.q.length = 0; SAY.feeding = false; SAY.said = false; SAY.n2 = 0; }
+function sayReset() { SAY.gen++; SAY.q.length = 0; SAY.feeding = false; SAY.said = false; SAY.n2 = 0; SAY.prev = ''; }
 function sayAbort() { sayReset(); SAY.pumping = false; }
 
 // 在哪儿切句。第一句放宽到逗号也能切 —— 早一点出声比切得漂亮重要
@@ -2438,7 +2489,7 @@ function sayCut(s, first, flush) {
 }
 
 // 合成一句。拿回来的是整句的音频 —— 单句短，这一步只有不到一秒
-async function ttsFetch(text, seg) {
+async function ttsFetch(text, seg, prev) {
   const wait0 = Date.now();
   while (TTS_FLY >= 2) { await sleep(50); if (!CALL.on) return null; }
   if (seg) seg.queue_wait_ms = Date.now() - wait0;   // 等槽位等了多久 = 合成队列堵没堵
@@ -2461,6 +2512,7 @@ async function ttsFetch(text, seg) {
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
     const body = { text: (flat || String(text)).slice(0, 900), voice, fast: 1 };
+    if (prev) body.prev = String(prev).slice(-400);
     if (spd) body.speed = spd;
     // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，
     // 别让一句话因为挤了一下就哑掉。其他错误不偷偷重试。
@@ -2604,7 +2656,9 @@ function sayPush(text) {
   tmMark('first_seg_ms');
   const seg = tmSeg((TM.turn ? TM.turn.segs.length : 0) + 1);
   if (seg) seg.chars = text.length;
-  const it = { text, seg, pro: ttsFetch(text, seg) };
+  // 把上一句一起递过去：一句一句出声(快)，但每句都接着上一句的气往下念(连)
+  const it = { text, seg, pro: ttsFetch(text, seg, SAY.prev) };
+  SAY.prev = text;
   it.pro.catch(() => { });
   SAY.q.push(it);
   SAY.said = true;
@@ -2627,6 +2681,7 @@ async function sayPump() {
     if (!CALL.on || gen !== SAY.gen) break;
     if (bytes) {
       const p0 = Date.now();
+      try { csHL(it.text); } catch (e) { }   // 念到哪一句，字幕上那一句就亮着
       await playBytes(bytes, it.seg);
       if (it.seg) it.seg.played_ms = Date.now() - p0;
     } else if (it.seg && !it.seg.fail) it.seg.fail = 'nobytes';
