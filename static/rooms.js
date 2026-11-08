@@ -2226,9 +2226,11 @@ function sayCut(s, first, flush) {
     const hard = CUT_HARD.test(c);
     if (!hard && !CUT_SOFT.test(c)) continue;
     const n = i + 1;
-    if (first) { if (n < 4) continue; }
-    else if (hard) { if (n < 14) continue; }
-    else if (n < 20) continue;
+    // 11.08 晚她说"听着更真一点好"：切得越碎,句子之间越没有气口,
+    // 一截一截就是人机味的来源。门槛整体往上提,让它一口气说完一整句。
+    if (first) { if (n < 8) continue; }
+    else if (hard) { if (n < 26) continue; }
+    else if (n < 38) continue;
     // 英文句点后面得跟空格才算句末，不然 0.85 这种小数会被切成两半
     if ('.!?'.indexOf(s[i]) >= 0 && i + 1 < s.length && !/[\s"'’”）)]/.test(s[i + 1])) continue;
     let j = i + 1;
@@ -2236,7 +2238,7 @@ function sayCut(s, first, flush) {
     return j;
   }
   if (flush) return s.trim() ? s.length : -1;
-  if (s.length >= 48) return 40;   // 一直不打标点，也不能一直不出声（48 是保护上限，不是门槛）
+  if (s.length >= 76) return 64;   // 一直不打标点，也不能一直不出声（76 是保护上限，不是门槛）
   return -1;
 }
 

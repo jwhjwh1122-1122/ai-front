@@ -3967,18 +3967,20 @@ def _call_voice_settings(text, data):
       顺带也能救多音字：「湿」被念成第四声，她听成了「屎」。
     """
     try:
-        speed = float(data.get('speed') or 0) or 0.85
+        speed = float(data.get('speed') or 0) or 0.92
     except Exception:
-        speed = 0.85
+        speed = 0.92
     speed = max(0.7, min(1.2, speed))
     try:
-        stab = float(data.get('stability') or 0) or 0.4
+        stab = float(data.get('stability') or 0) or 0.28
     except Exception:
-        stab = 0.4
+        stab = 0.28
     stab = max(0.0, min(1.0, stab))
     has_zh = any('一' <= c <= '鿿' for c in text)
     lang = (data.get('lang') or '').strip() or ('zh' if has_zh else 'en')
-    return {'stability': stab, 'similarity_boost': 0.75,
+    # style 往上提:她 11.08 晚说"听着更真一点好"。stability 低 + style 高
+    # = 起伏大、有情绪,代价是偶尔会飘,所以语言还是钉死的。
+    return {'stability': stab, 'similarity_boost': 0.78, 'style': 0.45,
             'speed': speed, 'use_speaker_boost': True}, lang
 
 
