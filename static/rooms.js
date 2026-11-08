@@ -1871,10 +1871,10 @@ function listenLoop() {
     // 宁可把静音也发去转文字(后端转不出就丢),也不要再出现"她讲了三分钟我一个字没收到"。
     if (CALL.reliable === undefined && Date.now() - CALL.startAt > 4000) {
       const ctxBad = !CALL.ctx || CALL.ctx.state !== 'running';
-      if (ctxBad || CALL.peak < 0.25) {
-        CALL.reliable = false; micCtx();
-        srStart();   // 主力瞎了,这时候才把第二只耳朵请出来
-      }
+      // 这里以前会把第二只耳朵请出来兜底 —— 但在 iPhone 上它一 start 就把
+      // 整个音频通道抢成"只录不放",我正说着的那句当场被掐断,她那边就成了
+      // "麦克风不动 + 听不见你说话"。盲录本来就能顶,宁可没有实时字幕。
+      if (ctxBad || CALL.peak < 0.25) { CALL.reliable = false; micCtx(); }
     }
     if (CALL.reliable === false) {
       blindTick('麦 ' + CALL.peak.toFixed(2) + ' · 盲录中');
@@ -1943,8 +1943,7 @@ const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
 // 所以在 iPhone 上默认不开它,只有主力真的瞎了(4 秒一点动静都没有)才请它出来兜底。
 function srShouldRun() {
   if (!CALL.on) return false;
-  if (!IS_IOS) return true;
-  return CALL.reliable === false;
+  return !IS_IOS;   // iPhone 上一律不开,它跟声音是互斥的
 }
 function srStart() {
   if (!srShouldRun()) { CALL.srOk = false; return; }
@@ -2372,6 +2371,10 @@ function speakStart() {
   CALL.cutOff = false;
   CALL.cutMs = 0;
   srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
+  // 每次开口前把音频通道按回"边录边放"。只要中间有谁把它拨成只录,
+  // 我这句就会一声不响地没了 —— 她听不见我说话,多半就是这个。
+  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) { }
+  try { if (CALL_CTX && CALL_CTX.state === 'suspended') CALL_CTX.resume(); } catch (e) { }
 }
 function speakEnd() {
   if (!CALL.cutOff) {
