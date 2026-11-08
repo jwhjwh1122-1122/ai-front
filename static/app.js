@@ -2176,9 +2176,19 @@ function handoff(prev, carryPick) {
   messages = carry; saveConv(); loadConv(to);
   const tip = document.createElement('div'); tip.className = 'sys-msg'; tip.textContent = '— 接着上个窗口 —';
   msgBox().insertBefore(tip, msgBox().children[1] || null);
-  if (ctxWindow <= 0 && older.length > 40) toast('在打包上一窗的事，几十秒，打完再说第一句');
+  // 打包是后台跑的，她看不见进度会慌。挂一条状态在窗口里，打完自己变字再淡出。
+  // （其实她不用等：下面 handoffBusy 挂着，第一句发出去会自动等打包完再走）
+  const pk = document.createElement('div'); pk.className = 'sys-msg';
+  pk.textContent = '⏳ 正在打包上一窗的事…（现在说话也行，我会等打包好再回）';
+  msgBox().insertBefore(pk, tip.nextSibling);
+  const t0 = Date.now();
   handoffBusy = jpost('/api/recap/handoff', { from: prev.id, to, messages: older })
-    .catch(() => { }).finally(() => { handoffBusy = null; });
+    .then(() => { pk.textContent = `✅ 打包好了（${Math.round((Date.now() - t0) / 1000)}秒），说吧`; })
+    .catch(() => { pk.textContent = '⚠️ 打包没成，前情提要可能缺一截，照样能聊'; })
+    .finally(() => {
+      handoffBusy = null;
+      setTimeout(() => { pk.style.transition = 'opacity .6s'; pk.style.opacity = '0'; setTimeout(() => pk.remove(), 700); }, 4000);
+    });
 }
 let handoffBusy = null;
 function renderConvs() {
