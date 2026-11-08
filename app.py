@@ -4053,20 +4053,48 @@ SAY_FIX_DEFAULT = {
 # 它读到就照着演。这比拧 stability/style 那两个旋钮准得多:
 # 旋钮是整段一起用力,标签是我指定在哪个字上笑、在哪儿吸一口气。
 SAY_TAGS = {
-    '笑': 'laughs', '轻笑': 'chuckles', '大笑': 'laughs harder', '苦笑': 'laughs nervously',
-    '叹气': 'sighs', '呼气': 'exhales', '吸气': 'inhales', '喘': 'breathes heavily',
-    '小声': 'whispers', '轻声': 'whispers', '耳语': 'whispers',
-    '停顿': 'pause', '顿': 'pause', '犹豫': 'hesitates',
-    '清嗓': 'clears throat', '咽': 'swallows', '哼': 'hums',
-    '温柔': 'softly', '认真': 'serious', '急': 'urgently', '低': 'low voice',
-    '咬牙': 'strained', '哽': 'voice breaking', '兴奋': 'excited',
+    # V4 手册的铁律:要重不要轻。[soft]/[quiet]/[gentle] 这类轻标签会让整段寡淡,
+    # 所以中文写法一律映射到有力度的那一侧。
+    '笑': 'laughs', '轻笑': 'light chuckle', '大笑': 'laughs harder',
+    '傻笑': 'giggle', '苦笑': 'laughs nervously',
+    '叹气': 'sighs', '叹': 'sighs', '呼气': 'breathes', '吸气': 'gasps',
+    '喘': 'breathing hard', '粗喘': 'panting', '闷哼': 'groaning',
+    '小声': 'whispers', '轻声': 'whispers', '耳语': 'whispering',
+    '压低': 'quietly', '低': 'deep voice',
+    '停顿': 'pause', '顿': 'pause', '长停': 'pauses',
+    '犹豫': 'hesitant', '结巴': 'stammers', '哽': 'voice breaking',
+    '清嗓': 'clears throat', '咽': 'gulps',
+    '认真': 'serious tone', '急': 'rushed', '慢': 'slows down',
+    '加重': 'stress on next word', '拖长': 'drawn out',
+    '坏笑': 'cheeky', '逗': 'playfully', '阴阳怪气': 'sarcastically',
+    '累': 'tired', '委屈': 'sorrowful', '不爽': 'annoyed', '火': 'angry',
+    '慌': 'flustered', '兴奋': 'excited', '怅然': 'wistful',
+    '插话': 'cuts in', '接着说': 'continues after a beat',
 }
-# 英文标签原样放行（资料里列的那些），其余方括号内容一律删掉不念 ——
-# 表情包名字就是方括号写的，不删的话它会把"求你了"三个字念出来。
+# 官方示例里出现过的英文标签原样放行；其余方括号内容一律删掉不念 ——
+# 表情包名字就是方括号写的,不删的话它会把"求你了"三个字念出来。
 SAY_TAG_OK = set(SAY_TAGS.values()) | {
-    'laughs', 'chuckles', 'sighs', 'exhales', 'inhales', 'whispers', 'pause',
-    'gasps', 'crying', 'sarcastic', 'curious', 'excited', 'mischievously',
-    'short pause', 'long pause', 'softly', 'shouting', 'awe', 'giggles',
+    'angry', 'angrily, fed up', 'annoyed', 'awe', 'calm', 'calmly', 'casual',
+    'cheeky', 'cheerfully', 'deadpan', 'dismissive', 'exasperated', 'excited',
+    'flatly', 'flustered', 'frustrated', 'happily', 'hesitant', 'lighthearted',
+    'matter-of-fact', 'nervous', 'nervously', 'panicking', 'playfully',
+    'questioning', 'reflective', 'regretful', 'resigned', 'resigned tone',
+    'sad', 'sarcastic tone', 'sarcastically', 'serious tone', 'sorrowful',
+    'surprised', 'suspicious tone', 'timidly', 'tired', 'understated', 'wistful',
+    'conversational tone', 'continues after a beat', 'continues softly',
+    'deliberate', 'dramatic tone', 'drawn out', 'emphasized', 'fast-paced',
+    'pause', 'pauses', 'quietly', 'quietly, after a pause', 'rapid-fire',
+    'repeats', 'rushed', 'shouting', 'shouts', 'slows down',
+    'stress on next word', 'whisper', 'whispering', 'whispers',
+    'big laugh', 'breathes', 'clears throat', 'gasps', 'giggle', 'gulps',
+    'laughing', 'laughs', 'laughs harder', 'laughs softly', 'light chuckle',
+    'sigh', 'sigh of relief', 'sighing', 'sighs', 'sighs down', 'soft chuckle',
+    'stammers', 'cuts in', 'interjecting', 'interrupting', 'overlapping',
+    'starting to speak', 'neutral tone', 'deep voice',
+    # 亲密场景的重标签,手册里点名好用的
+    'breathing hard', 'panting', 'voice breaking', 'firm bite', 'groaning',
+    'moaning softly', 'whimpering', 'gasping', 'wet squelch', 'whining',
+    'clinging', 'pouting', 'nuzzling', 'huffing', 'groggy', 'mumbling',
 }
 
 
