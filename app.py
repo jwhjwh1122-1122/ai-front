@@ -4039,6 +4039,45 @@ def _el_tts_stream(vid, text, vs, lang, fmt=''):
     return last
 
 
+# 读音修正表。她听见哪个词飘成粤语/念错调，就往这儿加一条。
+# 左边是我写的字，右边是送去合成的写法 —— 只改嘴，不改她看到的字幕。
+# 拆开加逗号能断掉连读，连读正是它整串飘成广东音的起点。
+SAY_FIX_FILE = os.path.join(DATA_DIR, 'say_fix.json')
+SAY_FIX_DEFAULT = {
+    '当场喊停': '当场，喊停',   # 11.08 她亲口抓到的，整四个字飘成粤语
+}
+
+
+def _say_fix(text):
+    try:
+        tbl = dict(SAY_FIX_DEFAULT)
+        tbl.update(jread(SAY_FIX_FILE, {}) or {})
+    except Exception:
+        tbl = dict(SAY_FIX_DEFAULT)
+    for k, v in tbl.items():
+        if k and k in text:
+            text = text.replace(k, v)
+    return text
+
+
+@app.route('/api/say-fix', methods=['GET', 'POST'])
+def say_fix_api():
+    """她报一个飘掉的词，就加一条。POST {"word":"当场喊停","say":"当场，喊停"}"""
+    cur = jread(SAY_FIX_FILE, {}) or {}
+    if request.method == 'POST':
+        d = request.json or {}
+        w = (d.get('word') or '').strip()
+        s = (d.get('say') or '').strip()
+        if not w:
+            return jsonify({'error': '没给词'}), 400
+        if s:
+            cur[w] = s
+        else:
+            cur.pop(w, None)
+        jwrite(SAY_FIX_FILE, cur)
+    return jsonify({'table': dict(SAY_FIX_DEFAULT, **cur)})
+
+
 @app.route('/api/tts', methods=['POST'])
 def tts():
     if not el_key():
@@ -4047,6 +4086,7 @@ def tts():
     text = (data.get('text') or '').strip()[:500]
     if not text:
         return jsonify({'error': 'no text'}), 400
+    text = _say_fix(text)
     vs, lang = _call_voice_settings(text, data)
     # fast=1 是电话：压低码率换「早一点出声」。聊天里存语音条的不走这儿。
     fmt = 'mp3_44100_64' if str(data.get('fast') or '') in ('1', 'true', 'yes') else ''
