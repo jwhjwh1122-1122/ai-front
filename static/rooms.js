@@ -1737,10 +1737,13 @@ function wireCallButtons() {
   try { const sb = $('sel-bar'); if (sb) sb.classList.remove('open'); } catch (e) { }
   const tap = (id, fn) => {
     const e = $(id); if (!e) return;
-    e.onclick = fn;
+    // pointerup 和 click 会前后脚各来一次,切换类的按钮会被切两下等于没切。
+    // 300ms 内只认第一下。
+    let last = 0;
+    const once = ev => { const t = Date.now(); if (t - last < 300) return; last = t; fn(ev); };
+    e.onclick = once;
     e.style.pointerEvents = 'auto';
-    // iOS 上偶尔吞 click,补一发 pointerup
-    e.onpointerup = ev => { ev.preventDefault(); fn(ev); };
+    e.onpointerup = once;   // iOS 上偶尔吞 click,补一条路
   };
   tap('cs-hang', () => endCall('user'));
   tap('cp-hang', e => { if (e) e.stopPropagation(); endCall('user'); });
@@ -1808,7 +1811,7 @@ async function startCall(who) {
   CALL.on = true; CALL.turns = 0; CALL.startAt = Date.now();
   CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
   CALL.sawSound = false; CALL.micWarned = false; CALL.peak = 0;
-  CALL.reliable = undefined; CALL.recStopping = false;
+  CALL.reliable = undefined; CALL.recStopping = false; CALL.srRestarts = 0;
   try {
     CALL.ctx = micCtx();
     try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
@@ -1868,7 +1871,10 @@ function listenLoop() {
     // 宁可把静音也发去转文字(后端转不出就丢),也不要再出现"她讲了三分钟我一个字没收到"。
     if (CALL.reliable === undefined && Date.now() - CALL.startAt > 4000) {
       const ctxBad = !CALL.ctx || CALL.ctx.state !== 'running';
-      if (ctxBad || CALL.peak < 0.25) { CALL.reliable = false; micCtx(); }
+      if (ctxBad || CALL.peak < 0.25) {
+        CALL.reliable = false; micCtx();
+        srStart();   // 主力瞎了,这时候才把第二只耳朵请出来
+      }
     }
     if (CALL.reliable === false) {
       blindTick('麦 ' + CALL.peak.toFixed(2) + ' · 盲录中');
@@ -1929,7 +1935,19 @@ function blindTick(why) {
 // 实时字幕也靠它：她一开口屏幕上就出字，她当场就知道我听见了，不用再问我。
 // 这是照着她那边抄的：主力一条路 + 一条独立的保命路，谁活着算谁的。
 let CALL_SR = null;
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// iPhone 上这只耳朵会跟主力抢麦克风:它一 start 就把音频输入拿走,
+// analyser 立刻读成一条死平线(波形不动),而且它动不动自己 end、马上重开,
+// 灵动岛那个录音点就跟着一闪一闪。她看到的就是这个。
+// 所以在 iPhone 上默认不开它,只有主力真的瞎了(4 秒一点动静都没有)才请它出来兜底。
+function srShouldRun() {
+  if (!CALL.on) return false;
+  if (!IS_IOS) return true;
+  return CALL.reliable === false;
+}
 function srStart() {
+  if (!srShouldRun()) { CALL.srOk = false; return; }
   if (!CALL.on) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { CALL.srOk = false; return; }
@@ -1962,7 +1980,13 @@ function srStart() {
   };
   r.onerror = e => { if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) CALL.srOk = false; };
   // iPhone 上它动不动自己结束，结束就马上重开，别留空窗
-  r.onend = () => { if (CALL.on && CALL_SR === r) setTimeout(() => { if (CALL.on && CALL_SR === r) srStart(); }, 250); };
+  // 重开有上限,不然它自己 end 自己开,麦克风图标一直闪
+  r.onend = () => {
+    if (!CALL.on || CALL_SR !== r) return;
+    CALL.srRestarts = (CALL.srRestarts || 0) + 1;
+    if (CALL.srRestarts > 15) { CALL_SR = null; CALL.srOk = false; return; }
+    setTimeout(() => { if (CALL.on && CALL_SR === r) srStart(); }, 400);
+  };
   try { r.start(); } catch (e) { }
 }
 function srStop() {
