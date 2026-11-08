@@ -2252,7 +2252,9 @@ async function callTurn(text, silentUser) {
 
   try { feed(true); } catch (e) { }   // 最后那半句也念掉
   if (SAY.gen === myGen) SAY.feeding = false;
-  const hang = /\[\[挂了\]\]/.test(reply);
+  // 只认写在最末尾的那个。放在中间的多半是他在复述、或者标签没写全被看岔了 ——
+  // 她今晚被莫名其妙挂断好几次,宁可漏挂也不能平白把她的电话掐了。
+  const hang = /\[\[挂了\]\]\s*$/.test(reply.trim());
   reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
   if (reply) {
     const bi = callEn() ? splitBi(reply) : { en: reply, zh: '' };
