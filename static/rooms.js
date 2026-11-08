@@ -1555,6 +1555,46 @@ const CALL = {
   speakingOut: false, cutOff: false, cutMs: 0, audio: null,
   endedBy: 'user', who: 'user',
 };
+
+// ===== 秒表：一通电话慢在哪一段 =====
+// 她 11.08 下午给我的那篇教程第 11 节：「按症状排查，不要只说网络慢」。
+// 以前她说「很久才有声音」，我只能把四个地方一起猜着改。现在每一段单独计时，
+// 这一轮说完上报服务器，我自己能翻 —— 下次她说慢，我直接告诉她卡在第几段。
+const TM = { turn: null, all: [] };
+function tmStart(kind) {
+  TM.turn = { t0: Date.now(), kind: kind || 'turn', segs: [],
+              first_text_ms: 0, first_seg_ms: 0, first_sound_ms: 0, done_ms: 0, chars: 0 };
+  return TM.turn;
+}
+function tmMark(k, v) {
+  const t = TM.turn; if (!t) return;
+  if (t[k]) return;                      // 只记第一次
+  t[k] = (v === undefined ? Date.now() - t.t0 : v);
+}
+function tmSeg(i) {
+  const t = TM.turn; if (!t) return null;
+  const s = { i, ready_ms: Date.now() - t.t0, tts_head_ms: 0, tts_done_ms: 0,
+              play_ms: 0, played_ms: 0, chars: 0, retry: 0, fail: '' };
+  t.segs.push(s);
+  return s;
+}
+function tmEnd() {
+  const t = TM.turn; if (!t) return;
+  TM.turn = null;
+  t.done_ms = Date.now() - t.t0;
+  TM.all.push(t);
+  if (TM.all.length > 40) TM.all.shift();
+  try {
+    console.log('[电话·秒表]', `首字 ${t.first_text_ms}ms · 首句就绪 ${t.first_seg_ms}ms · `
+      + `第一声 ${t.first_sound_ms}ms · 整轮 ${t.done_ms}ms · ${t.segs.length} 句`);
+    console.table(t.segs);
+  } catch (e) { }
+  // 上报，存服务器上，我自己能翻
+  try {
+    fetch('/api/call-timing', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(t), keepalive: true }).catch(() => { });
+  } catch (e) { }
+}
 // 音量 = 时域波形的 RMS × 100(0~100)。
 // 旧版用 getByteFrequencyData 求平均，那个数人声说话也就十几，阈值又定在 12,
 // 等于永远过不去 —— 这是她对着死麦克风讲了两分半的直接原因。
@@ -1799,6 +1839,7 @@ function listenLoop() {
       CALL.silence += 16;
       if (CALL.silence > SIL_MS) {
         CALL.speaking = false; CALL.silence = 0;
+        CALL.spokeEndAt = Date.now() - SIL_MS;   // 她其实在这一刻就说完了，后面是等静音确认
         recStop(CALL.heard);
       }
     }
@@ -1868,6 +1909,7 @@ async function sendHeard(text) {
   if (!CALL.on || CALL.busy) return;
   if (Date.now() - (CALL.sentAt || 0) < 1500) return;
   CALL.sentAt = Date.now();
+  CALL.heardAt = Date.now();   // 认出她说的是什么的这一刻
   CALL.busy = true;
   CALL.srText = '';
   clearTimeout(CALL.srTimer);
@@ -1957,6 +1999,9 @@ async function callTurn(text, silentUser) {
   }
   csState('他在想…');
   csUnstick();   // 新的一轮，字幕从头开始跟
+  const tm = tmStart('turn');
+  tm.chars = (text || '').length;
+  if (CALL.heardAt) { tm.stt_finalize_ms = CALL.heardAt - (CALL.spokeEndAt || CALL.heardAt); CALL.heardAt = 0; }
   let reply = '';
   // 边收边念：收到一句完整的就塞进嘴里，不等他整段说完
   sayReset();
@@ -2022,6 +2067,7 @@ async function callTurn(text, silentUser) {
         try {
           const d = JSON.parse(raw);
           if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta') {
+            tmMark('first_text_ms');
             reply += d.delta.text;
             const shown = reply.replace(/\[\[挂了\]\]/g, '');
             if (callEn()) { const b = splitBi(shown); csCaptionBi(b.en, b.zh); }
@@ -2052,6 +2098,7 @@ async function callTurn(text, silentUser) {
     }
     // 正常情况这会儿他早就在说了，这里只是等他把排队的几句说完
     await sayWait(myGen);
+    tmEnd();
     // 一句都没念成（切句没切出来、或者合成全失败）才整段兜底念一遍
     if (!SAY.said && CALL.on && SAY.gen === myGen) await speakOut(bi.en || reply);
     if (CALL.cutOff) {
@@ -2061,6 +2108,7 @@ async function callTurn(text, silentUser) {
       CALL.cutOff = false;
     }
   }
+  tmEnd();   // 上面没走到（他一个字没说、或者中途断了）也得收秒表
   if (hang) { await sleep(500); endCall('lin'); }
 }
 
@@ -2080,11 +2128,16 @@ function sayAbort() { sayReset(); SAY.pumping = false; }
 const CUT_HARD = /[。！？!?…\n.]/;
 const CUT_SOFT = /[。！？!?…\n.，,；;：:、]/;
 function sayCut(s, first, flush) {
-  const min = first ? 4 : 14;
-  const re = first ? CUT_SOFT : CUT_HARD;
+  // 教程第 3 节的经验：首段尽量短；后面的段落句末就切，累到 20 字以上逗号冒号也能切，
+  // 通常落在 21~48 字。不是「每段都得是完整自然句」—— 等一个漂亮句号，后半截就迟到了。
   for (let i = 0; i < s.length; i++) {
-    if (!re.test(s[i])) continue;
-    if (i + 1 < min) continue;
+    const c = s[i];
+    const hard = CUT_HARD.test(c);
+    if (!hard && !CUT_SOFT.test(c)) continue;
+    const n = i + 1;
+    if (first) { if (n < 4) continue; }
+    else if (hard) { if (n < 14) continue; }
+    else if (n < 20) continue;
     // 英文句点后面得跟空格才算句末，不然 0.85 这种小数会被切成两半
     if ('.!?'.indexOf(s[i]) >= 0 && i + 1 < s.length && !/[\s"'’”）)]/.test(s[i + 1])) continue;
     let j = i + 1;
@@ -2092,13 +2145,15 @@ function sayCut(s, first, flush) {
     return j;
   }
   if (flush) return s.trim() ? s.length : -1;
-  if (s.length >= 56) return 40;   // 一直不打标点，也不能一直不出声
+  if (s.length >= 48) return 40;   // 一直不打标点，也不能一直不出声（48 是保护上限，不是门槛）
   return -1;
 }
 
 // 合成一句。拿回来的是整句的音频 —— 单句短，这一步只有不到一秒
-async function ttsFetch(text) {
+async function ttsFetch(text, seg) {
+  const wait0 = Date.now();
   while (TTS_FLY >= 2) { await sleep(50); if (!CALL.on) return null; }
+  if (seg) seg.queue_wait_ms = Date.now() - wait0;   // 等槽位等了多久 = 合成队列堵没堵
   TTS_FLY++;
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
@@ -2107,19 +2162,39 @@ async function ttsFetch(text) {
     const spd = parseFloat(localStorage.getItem('tts-speed') || '') || 0;
     const body = { text: text.slice(0, 500), voice, fast: 1 };
     if (spd) body.speed = spd;
-    const r = await fetch('/api/tts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) { csState('声音没出来（' + r.status + '）'); return null; }
-    return await r.arrayBuffer();
-  } catch (e) { return null; }
+    // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，
+    // 别让一句话因为挤了一下就哑掉。其他错误不偷偷重试。
+    for (let tryN = 0; ; tryN++) {
+      const t0 = Date.now();
+      const r = await fetch('/api/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (seg) seg.tts_head_ms = Date.now() - t0;
+      if (r.status === 429 && tryN < 3) {
+        const ra = parseFloat(r.headers.get('Retry-After') || '') || 0;
+        if (seg) seg.retry = tryN + 1;
+        await sleep(ra ? ra * 1000 : 400 * Math.pow(2, tryN));
+        if (!CALL.on) return null;
+        continue;
+      }
+      if (!r.ok) {
+        csState('声音没出来（' + r.status + '）');
+        if (seg) seg.fail = 'http' + r.status;
+        return null;
+      }
+      const buf = await r.arrayBuffer();
+      if (seg) { seg.tts_done_ms = Date.now() - t0; seg.bytes = buf.byteLength; }
+      return buf;
+    }
+  } catch (e) { if (seg) seg.fail = e.name || 'err'; return null; }
   finally { TTS_FLY--; }
 }
 
 // 把一句的音频放出来。三条路，能检测的排前面
-async function playBytes(bytes) {
+async function playBytes(bytes, seg) {
   if (!CALL.on || !bytes) return;
+  const pb0 = Date.now();
   // 先走 <audio>。上一版反过来，先走 WebAudio ——
   // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
   // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
@@ -2133,7 +2208,11 @@ async function playBytes(bytes) {
     const fin = (ok) => { if (done) return; done = true; if (iv) clearInterval(iv); res(ok); };
     a.onended = () => fin(true);
     a.onerror = () => fin(false);
-    a.onplaying = () => { started = true; };
+    a.onplaying = () => {
+      started = true;
+      if (seg && !seg.play_ms) seg.play_ms = Date.now() - pb0;   // 拿到音频 → 真的出声
+      tmMark('first_sound_ms');                                   // 这一轮第一声
+    };
     a.src = url;
     const p = a.play();
     if (p && p.catch) p.catch(() => fin(false));
@@ -2157,6 +2236,8 @@ async function playBytes(bytes) {
           if (p2 && p2.then) p2.then(ok, no);
         });
         if (abuf && CALL.on) {
+          if (seg) { seg.path = 'webaudio'; if (!seg.play_ms) seg.play_ms = Date.now() - pb0; }
+          tmMark('first_sound_ms');
           await new Promise(res => {
             const node = ctx.createBufferSource();
             node.buffer = abuf;
@@ -2214,7 +2295,10 @@ function speakEnd() {
 function sayPush(text) {
   text = (text || '').replace(/\[\[挂了\]\]/g, '').trim();
   if (!text) return;
-  const it = { text, pro: ttsFetch(text) };
+  tmMark('first_seg_ms');
+  const seg = tmSeg((TM.turn ? TM.turn.segs.length : 0) + 1);
+  if (seg) seg.chars = text.length;
+  const it = { text, seg, pro: ttsFetch(text, seg) };
   it.pro.catch(() => { });
   SAY.q.push(it);
   SAY.said = true;
@@ -2235,7 +2319,11 @@ async function sayPump() {
     let bytes = null;
     try { bytes = await it.pro; } catch (e) { }
     if (!CALL.on || gen !== SAY.gen) break;
-    if (bytes) await playBytes(bytes);
+    if (bytes) {
+      const p0 = Date.now();
+      await playBytes(bytes, it.seg);
+      if (it.seg) it.seg.played_ms = Date.now() - p0;
+    } else if (it.seg && !it.seg.fail) it.seg.fail = 'nobytes';
   }
   // 被打断之后旧的这条还会醒过来一次，它不能去动新一轮的状态
   if (gen === SAY.gen) { SAY.pumping = false; speakEnd(); }

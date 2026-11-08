@@ -3822,6 +3822,23 @@ def esc_html(t):
 # 电话
 # ============================================================
 CALL_FILE = os.path.join(DATA_DIR, 'calls.json')
+CALL_TIMING_FILE = os.path.join(DATA_DIR, 'call_timing.json')
+
+
+@app.route('/api/call-timing', methods=['GET', 'POST', 'DELETE'])
+def call_timing():
+    """一通电话每一段花了多久。她说「很久才有声音」的时候，我能翻出来卡在第几段。"""
+    if request.method == 'POST':
+        b = request.json or {}
+        rows = jread(CALL_TIMING_FILE, [])
+        b['at'] = int(time.time() * 1000)
+        rows.insert(0, b)
+        jwrite(CALL_TIMING_FILE, rows[:200])
+        return jsonify({'ok': True})
+    if request.method == 'DELETE':
+        jwrite(CALL_TIMING_FILE, [])
+        return jsonify({'ok': True})
+    return jsonify(jread(CALL_TIMING_FILE, [])[:40])
 
 
 @app.route('/api/call/missed', methods=['GET', 'POST', 'DELETE'])
