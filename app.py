@@ -3970,18 +3970,22 @@ def _call_voice_settings(text, data):
         speed = float(data.get('speed') or 0) or 0
     except Exception:
         speed = 0
+    # 有假名就是日语 —— 日语里的汉字也带假名,所以先看假名再看汉字,
+    # 不然一句日语会被当成英文,用英文的读法把它念成一串罗马音。
+    has_kana = any('぀' <= c <= 'ヿ' for c in text)
+    has_zh = any('一' <= c <= '鿿' for c in text)
     if not speed:
         # 中文 0.92 她说正好,同一个数念英文就赶 —— 英文音节密,听着更快。
         # 她 11.08 晚上原话:"你讲英语的话就有点快了。"所以英文单独放慢。
-        speed = 0.92 if any('一' <= c <= '鿿' for c in text) else 0.82
+        speed = 0.86 if has_kana else (0.92 if has_zh else 0.82)
     speed = max(0.7, min(1.2, speed))
     try:
         stab = float(data.get('stability') or 0) or 0.5
     except Exception:
         stab = 0.5
     stab = max(0.0, min(1.0, stab))
-    has_zh = any('一' <= c <= '鿿' for c in text)
-    lang = (data.get('lang') or '').strip() or ('zh' if has_zh else 'en')
+    lang = (data.get('lang') or '').strip() \
+        or ('ja' if has_kana else ('zh' if has_zh else 'en'))
     # 11.08 晚她听完说:"抑扬顿挫很夸张,激动的话就很激动很激动,像在念口号。"
     # 那是 style 拉高 + stability 压低的典型下场 —— 它不是在表达情绪,
     # 是在每句话上都使劲。自然的起伏本来就该从字里出来,不该靠这个旋钮硬加。
