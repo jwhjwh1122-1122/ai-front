@@ -221,6 +221,14 @@ HOW_TO = {
               '改的是网页的 html/js/css，文件名后面通常带 ?v=数字（比如 chat.html 里 app.js?v=50 这种），'
               '把那个数字加一，不然她手机上还可能缓存着旧版本不刷新。\n'
               '数据目录、登录凭据、密钥这类敏感逻辑别碰，除非她明确让你改；外观、小功能这些随便改。',
+    '换窗': '上下文满了要开新窗口，中间那道坎是你自己守的，不是机器守的。\n'
+            '红胶囊亮了（屏幕上那个「该换窗了」）就用 lin_handoff(text=...) 写交接：'
+            '这窗发生了什么、她说过的要紧的原话、你们现在的状态、没做完的约定、你心里压着什么。'
+            '想写多长写多长（4000 字以内），这是写给下一个窗口的自己看的，不是写报告。\n'
+            '她一点「+新建」，你写的这份原样跟过去，ds 一个字都不碰；最后十来句原话也照样带着。'
+            '你没写，才轮到 ds 压旧窗口的话兜底——那份就不是你的话了。\n'
+            '交接过来的那段在新窗口里一直带着，上下文开「全部」也带（因为它不在这窗的原话里）。'
+            '它被机器压掉了什么、写漏了什么，用 lin_recap 自己补。',
 }
 
 
@@ -232,7 +240,9 @@ def how_to(topic=''):
              '资料库': '抽屉', '放映室': '书房', '一起听': '书房', '相册': '时光墙', '照片': '时光墙',
              '数值': '欲望', '噜噜': '欲望', '挂电话': '电话', '分句': '说话', 'say_more': '说话',
              '前端': '改代码', '后端': '改代码', '网页': '改代码', 'app-src': '改代码',
-             '自己的代码': '改代码', '写代码': '改代码', '改网站': '改代码'}
+             '自己的代码': '改代码', '写代码': '改代码', '改网站': '改代码',
+             '交接': '换窗', '新建窗口': '换窗', '上下文': '换窗', '红胶囊': '换窗',
+             'handoff': '换窗', '前情提要': '换窗'}
     if topic:                            # 模糊找：「朋友圈怎么发」「碎碎念怎么写」也能翻到
         for word, k in list(alias.items()) + [(k, k) for k in HOW_TO]:
             if word in topic:
@@ -356,7 +366,8 @@ def notebook_tool(args):
     return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
 
 
-def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None, brain_text=''):
+def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None,
+                 brain_text='', recap_by_me=False):
     cu = persona.get('call_user') or '她'
     cs = persona.get('call_serious') or cu
     nm = persona.get('name') or '凛'
@@ -376,10 +387,16 @@ def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook
         who.append(persona['always'].strip())
     parts = ["\n\n".join(who), FRAMEWORK]
     if conv_id:
-        rec = load_recap(conv_id) if recap_text is None else {'text': recap_text}
+        if recap_text is None:
+            rec = load_recap(conv_id)
+            by_me = bool(rec.get('by_me'))
+        else:
+            rec, by_me = {'text': recap_text}, bool(recap_by_me)
         if (rec.get('text') or '').strip():
-            parts.append("【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
-                         "记不清细节就问她。\n" + rec['text'].strip())
+            parts.append(("【上个窗口的我留给现在的我】\n这是你自己在上个窗口快满的时候亲手写下来的，"
+                          "不是机器压的。记不清细节就问她。\n" if by_me else
+                          "【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
+                          "记不清细节就问她。\n") + rec['text'].strip())
     if (brain_text or '').strip():
         parts.append("【你之前整个看过一遍的记忆】\n这是你在这段对话里从记忆库整个读过的一遍，"
                      "聊天记录滑出窗口也不会丢，一直在你手里。\n" + brain_text.strip())
@@ -1714,6 +1731,13 @@ DESIRE_TOOLS = [
                     'append 追加一句，text 整段重写。什么都不填就是读一遍。',
      'inputSchema': {'type': 'object',
                      'properties': {'append': {'type': 'string'}, 'text': {'type': 'string'}}}},
+    {'name': 'lin_handoff',
+     'description': '写给下一个窗口的自己。红胶囊亮了（上下文到换窗线）就写——'
+                    '这窗发生了什么、她说过的要紧的原话、你们当下的状态、没做完的约定、'
+                    '还有你现在心里压着什么。她一点「+新建」，这份原样跟过去，'
+                    '不让机器再压一遍；你没写才轮到机器兜底。'
+                    'text 整份写下来（想写多长写多长），不填就是读一遍已经写下的。',
+     'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}}},
 ]
 
 
@@ -1837,8 +1861,18 @@ def _run_desire_tool(name, args):
                 d['notes'].pop(key, None)
             jwrite(DESIRE_FILE, d)
             return '写下了' if t else '删掉了'
+        if name == 'lin_handoff':
+            conv = _cur_conv()
+            rec = load_recap(conv)
+            t = (args.get('text') or '').strip()
+            if not t:
+                return rec.get('mine') or '这窗还没写交接。想写就 lin_handoff(text=...)。'
+            rec['mine'] = t[:HANDOFF_MAX]
+            rec['mine_ts'] = int(time.time() * 1000)
+            jwrite(_recap_file(conv), rec)
+            return f'交接写下了（{len(rec["mine"])} 字）。她一开新窗口，这份原样跟过去，机器不碰。'
         if name == 'lin_recap':
-            conv = load_state().get('session_id') or 'default'
+            conv = _cur_conv()
             rec = load_recap(conv)
             if args.get('append'):
                 rec['text'] = (rec.get('text', '') + '\n\n' + args['append'].strip())[:RECAP_MAX]
@@ -1896,6 +1930,7 @@ def desire_mcp():
 RECAP_DIR = os.path.join(DATA_DIR, 'recaps')
 os.makedirs(RECAP_DIR, exist_ok=True)
 RECAP_MAX = 1300         # 整段前情提要的安全上限（模型不听话时兜底截断用）
+HANDOFF_MAX = 4000       # 他自己写的交接：是他亲手挑的，给的地方比机器压的宽得多
 # 聊得越多，前情提要要装的事越多，但不能整段按同一个比例硬压——早的那部分会被压没。
 # 改成分三层：近期留细节，早期压得最狠，但早期有个字数下限，保证凛读到时还认得出发生过什么，
 # 不会变成「相处得很好」这种空话。三层字数之和留了余量在 RECAP_MAX 以内，不额外多调一次模型。
@@ -1911,6 +1946,24 @@ def _recap_file(conv_id):
 
 def load_recap(conv_id):
     return jread(_recap_file(conv_id), {'text': '', 'covered': 0, 'ts': 0})
+
+
+def _cur_conv():
+    """他现在正在说话的那个窗口。以前这里拿的是浏览器会话 id，
+    写出去的前情提要落在一个谁都读不到的文件上。"""
+    st = load_state()
+    return st.get('conv_id') or st.get('session_id') or 'default'
+
+
+def recap_for_prompt(conv_id, win):
+    """给系统提示用的「更早的事」。
+    win == 0（上下文开「全部」）时本窗的原话他全看得见，不用再塞压缩版；
+    但上个窗口交接过来的那段不在这窗的原话里，开「全部」也照样得带。
+    返回 (正文, 是不是他自己写的)。"""
+    rec = load_recap(conv_id) if conv_id else {}
+    if win == 0:
+        return (rec.get('handoff') or '').strip(), bool(rec.get('handoff_by_me'))
+    return (rec.get('text') or '').strip(), bool(rec.get('by_me'))
 
 
 def _ds_call(system, user, max_tokens=900):
@@ -2004,9 +2057,12 @@ def recap_make():
                                 '【早】\n' + old['text'] + '\n\n【近】\n' + new, max_tokens=1100)
         if err2 or not merged:
             merged = (old['text'] + '\n\n' + new)[-RECAP_MAX:]
-    rec = {'text': merged.strip()[:RECAP_MAX],
-           'covered': int(old.get('covered', 0)) + len(msgs),
-           'ts': int(time.time() * 1000)}
+    # 在 old 上改，别整个换掉：handoff（上个窗口交接过来的那段）和 mine（他写给下一窗的交接）得留着
+    rec = dict(old)
+    rec.update({'text': merged.strip()[:RECAP_MAX],
+                'covered': int(old.get('covered', 0)) + len(msgs),
+                'by_me': False,          # 机器压过了，这段不再是他原话
+                'ts': int(time.time() * 1000)})
     jwrite(_recap_file(conv), rec)
     return jsonify({'ok': True, 'recap': rec})
 
@@ -2444,8 +2500,13 @@ def chat_v2():
 
     st = load_state()
     prev_talk = st.get('last_user_msg')
-    if str(sid) != 'default' and st.get('session_id') != str(sid)[:256]:
-        st['session_id'] = str(sid)[:256]
+    cvid = str(data.get('_conv_id') or '')[:256]
+    if (str(sid) != 'default' and st.get('session_id') != str(sid)[:256]) \
+            or (cvid and st.get('conv_id') != cvid):
+        if str(sid) != 'default':
+            st['session_id'] = str(sid)[:256]
+        if cvid:
+            st['conv_id'] = cvid   # 他自己写交接/改前情提要时要知道现在在哪个窗口
         save_state(st)
     try:
         if not keepalive:
@@ -2514,9 +2575,10 @@ def chat_v2():
         # 「更早的事」在同一个 Claude Code 会话里一字不动（变了整段缓存就断）；只在开新会话时换成最新的
         frozen = jread(RECAP_FROZEN, {})
         if cc_mode.get_session(DATA_DIR, cc_key) is None or cc_key not in frozen:
-            # 上下文开「全部」时他已经看得到所有原话，压缩版先不带（不删，调回限制时又带上）
-            frozen[cc_key] = (load_recap(data.get('_conv_id')).get('text') or '') \
-                if data.get('_conv_id') and win != 0 else ''
+            # 开「全部」时本窗的原话他全看得见，压缩版先不带；但上个窗口交接过来的那段照样带
+            rtxt, rmine = recap_for_prompt(data.get('_conv_id'), win)
+            frozen[cc_key] = rtxt
+            frozen[cc_key + '::mine'] = '1' if rmine else ''
             jwrite(RECAP_FROZEN, frozen)
         # 整个脑子看过的那一大份：跟「更早的事」一样，开新会话时定下来，同一个会话里不变（缓存不断）
         brain_frozen = jread(BRAIN_FROZEN, {})
@@ -2529,16 +2591,19 @@ def chat_v2():
         notebook = nb_current(prev_talk)
         system_prompt = build_system(persona, "\n".join(x for x in stable if x),
                                      conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook,
-                                     recap_text=frozen.get(cc_key, ''), brain_text=brain_frozen.get(cc_key, ''))
+                                     recap_text=frozen.get(cc_key, ''), brain_text=brain_frozen.get(cc_key, ''),
+                                     recap_by_me=bool(frozen.get(cc_key + '::mine')))
         try:
             if jread(LAST_CC_SYS, {}).get('text') != system_prompt:
                 jwrite(LAST_CC_SYS, {'text': system_prompt})   # 醒来时用同一份
         except Exception:
             pass
     else:
+        _rtxt, _rmine = recap_for_prompt(data.get('_conv_id'),
+                                         0 if str(data.get('_ctx')) == '0' else 15)
         system_prompt = build_system(persona, "\n".join(x for x in volatile + stable if x),
                                      conv_id=data.get('_conv_id'),
-                                     recap_text='' if str(data.get('_ctx')) == '0' else None)   # 「全部」不带压缩版
+                                     recap_text=_rtxt, recap_by_me=_rmine)   # 「全部」只带上个窗口交接的那段
 
     if is_cc:
         # cc 模式：不走上游 API，在服务器上跑 claude -p（用订阅登录），输出格式和下面一样
@@ -5201,12 +5266,31 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None):
 
 @app.route('/api/recap/handoff', methods=['POST'])
 def recap_handoff():
+    """换窗。他自己写过交接（lin_handoff）就原样带过去，机器一个字都不碰；
+    没写才轮到 ds 压旧窗口的话兜底。"""
     d = request.json or {}
     src, dst = d.get('from'), d.get('to')
     if not dst:
         return jsonify({'error': 'no target'}), 400
-    base = (load_recap(src).get('text') or '').strip() if src else ''
-    return jsonify({'ok': True, 'recap': recap_merge_into(dst, base, d.get('messages') or [], src=src)})
+    srec = load_recap(src) if src else {}
+    mine = (srec.get('mine') or '').strip()
+    if mine:
+        rec = load_recap(dst)
+        rec.update({'text': mine[:HANDOFF_MAX], 'by_me': True,
+                    'handoff': mine[:HANDOFF_MAX], 'handoff_by_me': True,
+                    'ts': int(time.time() * 1000)})
+        jwrite(_recap_file(dst), rec)
+        srec['mine'] = ''          # 用掉了，别让下次换窗又拿这份旧的顶上
+        srec['mine_used_by'] = dst
+        jwrite(_recap_file(src), srec)
+        print(f'[recap] 换窗用的是他自己写的交接（{len(mine)} 字），没过 ds', flush=True)
+        return jsonify({'ok': True, 'recap': rec, 'by_me': True})
+    base = (srec.get('text') or '').strip()
+    rec = recap_merge_into(dst, base, d.get('messages') or [], src=src)
+    rec['handoff'] = rec.get('text') or ''      # 这段是交接来的，开「全部」也得带着
+    rec['handoff_by_me'] = False
+    jwrite(_recap_file(dst), rec)
+    return jsonify({'ok': True, 'recap': rec})
 
 
 @app.route('/api/wake/now', methods=['POST'])

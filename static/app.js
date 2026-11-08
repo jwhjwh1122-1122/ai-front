@@ -707,6 +707,10 @@ function roomNote() {
 // 会变的（在哪个房间、停在哪）。表情清单不常变，单独放 extra_stable 进 system，不跟着每句话重复
 function extraNote() {
   const parts = [roomNote()];
+  // 红胶囊亮了：交接归他自己写。写了就不用再提
+  if (ctxOver) parts.push('上下文到换窗线了，屏幕上红胶囊亮着。这一轮说完，用 lin_handoff 把交接写了'
+    + '——写给下一个窗口的你自己，她一开新窗口它原样跟过去，机器不碰。已经写过、后面又聊了不少，就再写一遍盖掉。'
+    + '这件事别拿到台面上说，除非她问。');
   if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
@@ -1406,13 +1410,15 @@ async function streamResponse(wrap, hist, turnConv) {
 // inTok 是模型自己报的这一轮实际输入 token，本来就是 Claude Code 这个会话此刻的真实大小，
 // 不用再按「限了多少条 + 压缩了多少字」自己拼一遍——不管开没开上下文条数限制，这个数都是准的。
 let ctxWarnedAt = { warn: false, switch: false };
+let ctxOver = false;   // 红胶囊亮着：该他自己写交接了（extraNote 会在「当下」里提醒他）
 function checkCtxThreshold(inTok) {
   const pill = $('ctx-warn-pill');
   if (inTok < CTX_WARN) {
-    ctxWarnedAt.warn = false; ctxWarnedAt.switch = false;
+    ctxWarnedAt.warn = false; ctxWarnedAt.switch = false; ctxOver = false;
     if (pill) pill.classList.remove('show', 'over');
     return;
   }
+  ctxOver = inTok >= CTX_SWITCH;
   if (inTok >= CTX_SWITCH) {
     if (pill) { pill.classList.add('show', 'over'); pill.textContent = `上下文 ${Math.round(inTok / 1000)}k · 该换窗了`; }
     if (!ctxWarnedAt.switch) {
@@ -2090,9 +2096,9 @@ document.addEventListener('scroll', e => {
   const box = $('messages');
   if (e.target === box && box.scrollTop < 80 && renderFrom > 0 && !selMode) loadOlder();
 }, true);
-// 换新窗口无缝接上：最后两轮原样带过去，再往前的跟旧摘要一起压成新窗口的「更早的事」。
+// 换新窗口无缝接上：最后十来句原话原样带过去，再往前的交给他自己写的交接（没写才让 ds 压）。
 // 新窗口在 cc 里是新会话，不背旧会话的全部记录，最省。fresh=true（清空对话）就什么都不带。
-const CARRY_ROUNDS = 2;
+const CARRY_ROUNDS = 4, CARRY_LINES = 12;
 function newConv(fresh) {
   if (typeof cancelEdit === 'function') cancelEdit();
   const prev = { id: currentConvId, msgs: messages };
@@ -2112,7 +2118,22 @@ function handoff(prev) {
   const real = m => m && m.role === 'user' && !m._internal && !m._callmark && !(Array.isArray(m.content) && m.content.some(c => c && c.type === 'tool_result'));
   const starts = [];
   prev.msgs.forEach((m, i) => { if (real(m)) starts.push(i); });
-  const cut = starts.length > CARRY_ROUNDS ? starts[starts.length - CARRY_ROUNDS] : (starts[0] ?? prev.msgs.length);
+  // 带过去的那截：至少最后 CARRY_ROUNDS 轮，最多往回数到第 CARRY_LINES 句原话——
+  // 他自己写的交接接住「更早的事」，这十来句接住「刚刚在说什么」，中间不断口
+  let cut = starts.length > CARRY_ROUNDS ? starts[starts.length - CARRY_ROUNDS] : (starts[0] ?? prev.msgs.length);
+  {
+    let lines = 0, i = prev.msgs.length - 1;
+    for (; i >= 0; i--) {
+      const m = prev.msgs[i];
+      if (m._internal || m._callmark || m.role === 'tool') continue;
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      if (Array.isArray(m.content) && m.content.some(c => c && c.type === 'tool_result')) continue;
+      if (++lines >= CARRY_LINES) break;
+    }
+    // 从她的那一句开起，别让新窗口的第一条是他半截的话
+    const want = starts.filter(s => s <= i).pop();
+    if (want !== undefined && want < cut) cut = want;
+  }
   const textOf = c => typeof c === 'string' ? c : (Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('') : '');
   const carry = [];
   for (const m of prev.msgs.slice(cut)) {
