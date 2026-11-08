@@ -1714,7 +1714,59 @@ function micCtx() {
 }
 document.addEventListener('pointerdown', () => { if (CALL.on) micCtx(); }, true);
 
+// 通话界面那五个按键：每次开电话都重新挂一遍。
+// 之前它们只在启动时那一长串 $('x').onclick 里绑一次 —— 那串里任何一个元素
+// 取不到就抛 TypeError，后面全部绑定一起没了，表现就是"按键按不动"。
+// 所以这里兜一层:只要电话界面能打开,按钮就一定是活的。
+function wireCallButtons() {
+  const tap = (id, fn) => {
+    const e = $(id); if (!e) return;
+    e.onclick = fn;
+    e.style.pointerEvents = 'auto';
+    // iOS 上偶尔吞 click,补一发 pointerup
+    e.onpointerup = ev => { ev.preventDefault(); fn(ev); };
+  };
+  tap('cs-hang', () => endCall('user'));
+  tap('cp-hang', e => { if (e) e.stopPropagation(); endCall('user'); });
+  tap('cs-mini', () => {
+    CALL.mini = true;
+    $('callscreen').classList.remove('open');
+    $('call-pill').classList.add('on');
+  });
+  tap('call-pill', () => {
+    CALL.mini = false;
+    $('call-pill').classList.remove('on');
+    $('callscreen').classList.add('open');
+  });
+  tap('cs-mute', () => {
+    CALL.muted = !CALL.muted;
+    const b = $('cs-mute');
+    b.classList.toggle('off', CALL.muted);
+    b.querySelector('span').textContent = CALL.muted ? '▶' : '⏸';
+    b.querySelector('i').textContent = CALL.muted ? '继续听' : '暂停听';
+    csState(CALL.muted ? '暂停了' : '通话中');
+    if (CALL.muted && CALL.rec) recStop(false);
+  });
+  tap('cs-cutin', () => {
+    const on = localStorage.getItem('call-cutin') !== '0';
+    localStorage.setItem('call-cutin', on ? '0' : '1');
+    const b = $('cs-cutin');
+    b.classList.toggle('off', on);
+    b.querySelector('i').textContent = on ? '轮流说' : '能插话';
+    toast(on ? '改成轮流说，他说完你再说' : '他说话时你出声就能打断他');
+  });
+  tap('cs-lang', () => {
+    localStorage.setItem('call-en', callEn() ? '0' : '1');
+    const b = $('cs-lang'); const on = callEn();
+    b.classList.toggle('off', !on);
+    b.querySelector('span').textContent = on ? '英' : '中';
+    b.querySelector('i').textContent = on ? '在说英文' : '说英文';
+    toast(on ? '他改说英文，字幕底下给你中文' : '他改说中文');
+  });
+}
+
 async function startCall(who) {
+  wireCallButtons();
   unlockAudio();
   micCtx();
   if (CALL.on) { $('callscreen').classList.add('open'); CALL.mini = false; $('call-pill').classList.remove('on'); return; }

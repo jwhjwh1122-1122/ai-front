@@ -785,7 +785,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .cs-caption::-webkit-scrollbar{width:3px;}
 .cs-caption::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 .cs-caption.me{color:var(--text-muted);font-size:14px;}
-.cs-acts{position:relative;display:flex;justify-content:center;flex-wrap:wrap;gap:14px 18px;padding:0 14px max(40px,env(safe-area-inset-bottom));flex-shrink:0;}
+.cs-acts{position:relative;z-index:3;pointer-events:auto;display:flex;justify-content:center;flex-wrap:wrap;gap:14px 18px;padding:0 14px max(40px,env(safe-area-inset-bottom));flex-shrink:0;}
 .cs-btn{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;}
 .cs-btn span{width:54px;height:54px;border-radius:50%;background:var(--input-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text);}
 .cs-btn i{font-style:normal;font-size:11px;color:var(--text-muted);}
