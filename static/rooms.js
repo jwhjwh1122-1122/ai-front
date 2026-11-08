@@ -1648,8 +1648,19 @@ function csCaptionBi(en, zh) {
   const e = $('cs-caption'); if (!e) return;
   e.className = 'cs-caption';
   if (!zh) { e.textContent = en || ''; csStick(e); return; }
-  e.innerHTML = `<div>${esc(en)}</div>`
-    + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
+  // 她 11.08 晚的原话:"你这个翻译是你上面原话一大段,然后下面翻译一大段,
+  // 但我并不知道每一句对应的是哪一句。"所以改成一句原话底下就贴它自己的译文。
+  const cut = s => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+  const E = cut(en), Z = cut(zh);
+  if (E.length > 1 && E.length === Z.length) {
+    e.innerHTML = E.map((line, i) =>
+      `<div style="margin-bottom:10px;">${esc(line)}`
+      + `<div style="margin-top:3px;opacity:.6;font-size:.86em;">${esc(Z[i])}</div></div>`
+    ).join('');
+  } else {
+    e.innerHTML = `<div>${esc(en)}</div>`
+      + `<div style="margin-top:6px;opacity:.68;font-size:.9em;">${esc(zh)}</div>`;
+  }
   csStick(e);
 }
 function csWave(n) {
