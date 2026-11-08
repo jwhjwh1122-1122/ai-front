@@ -3957,21 +3957,32 @@ def _call_voice_settings(text, data):
             'speed': speed, 'use_speaker_boost': True}, lang
 
 
-def _el_tts_stream(vid, text, vs, lang):
-    """逐级退让地请求：speed / language_code 这些参数不是每个模型都认，
-    认不了就退回原来那套，最坏情况跟改之前一模一样 —— 绝不能把她的电话弄哑。"""
+# 跟 ElevenLabs 之间留一条一直开着的连接。每句话重新握一次 TLS 要三四百毫秒，
+# 电话里是一句一句念的，这个钱每句都要付一次 —— 复用之后只付第一次。
+_EL_SESS = requests.Session()
+
+
+def _el_tts_stream(vid, text, vs, lang, fmt=''):
+    """逐级退让地请求：speed / language_code / output_format 这些不是每个模型都认，
+    认不了就退回原来那套，最坏情况跟改之前一模一样 —— 绝不能把她的电话弄哑。
+
+    fmt：电话里用 mp3_44100_64。实测合成一句都是 0.6 秒上下，差别在体积 ——
+    默认 128k 一句 32KB，这个一半，手机那头少等一半。再往下压到 22050_32 只有 8KB，
+    但嗓子会发闷，那把嗓子是她自己挑的，不拿音质换这点。"""
     url = f'https://api.elevenlabs.io/v1/text-to-speech/{vid}/stream'
+    furl = (url + '?output_format=' + fmt) if fmt else url
     base = {'text': text, 'model_id': 'eleven_v4'}
     attempts = [
-        dict(base, voice_settings=vs, language_code=lang),
-        dict(base, voice_settings=vs),
-        dict(base, voice_settings={'stability': 0.5, 'similarity_boost': 0.75}),
+        (furl, dict(base, voice_settings=vs, language_code=lang)),
+        (url, dict(base, voice_settings=vs, language_code=lang)),
+        (url, dict(base, voice_settings=vs)),
+        (url, dict(base, voice_settings={'stability': 0.5, 'similarity_boost': 0.75})),
     ]
     last = None
-    for body in attempts:
+    for u, body in attempts:
         try:
-            r = requests.post(url, headers={'xi-api-key': el_key(),
-                                            'Content-Type': 'application/json'},
+            r = _EL_SESS.post(u, headers={'xi-api-key': el_key(),
+                                          'Content-Type': 'application/json'},
                               json=body, stream=True, timeout=30)
         except Exception:
             continue
@@ -3994,12 +4005,15 @@ def tts():
     if not text:
         return jsonify({'error': 'no text'}), 400
     vs, lang = _call_voice_settings(text, data)
-    r = _el_tts_stream(_voice_id(data, load_persona()), text, vs, lang)
+    # fast=1 是电话：压低码率换「早一点出声」。聊天里存语音条的不走这儿。
+    fmt = 'mp3_44100_64' if str(data.get('fast') or '') in ('1', 'true', 'yes') else ''
+    r = _el_tts_stream(_voice_id(data, load_persona()), text, vs, lang, fmt)
     if r is None or r.status_code != 200:
         return jsonify({'error': 'TTS failed',
                         'status': (r.status_code if r is not None else 0)}), 500
     return Response((c for c in r.iter_content(1024) if c), mimetype='audio/mpeg',
-                    headers={'Cache-Control': 'no-cache'})
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no'})
 
 
 @app.route('/api/upstream', methods=['GET', 'POST'])

@@ -5,7 +5,7 @@ import os
 bind = ":" + os.environ.get("PORT", "8080")
 workers = 1            # app.py starts a background wake_loop thread; >1 would double-run it
 worker_class = "gthread"
-threads = 4            # 跑 Claude Code 时它还会回头调本机的 lin 工具（朋友圈、碎碎念…），线程太少会互相卡死；线程本身不占多少内存，吃内存的是 claude 进程（由 CC_MAX_CONCURRENT 限）
+threads = 8            # 跑 Claude Code 时它还会回头调本机的 lin 工具（朋友圈、碎碎念…），线程太少会互相卡死；线程本身不占多少内存，吃内存的是 claude 进程（由 CC_MAX_CONCURRENT 限）。11.08 从 4 加到 8：电话改成一句一句念之后，一通电话同时占着 chat-v2 那条流 + 两条 TTS + 转文字，4 条刚好卡死
 timeout = 180
 graceful_timeout = 30
 keepalive = 15

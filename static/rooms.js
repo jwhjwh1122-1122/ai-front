@@ -1874,6 +1874,12 @@ async function sendHeard(text) {
 
 function cutHimOff() {
   // 他说到一半被你打断——停掉声音，马上开始听你说
+  // 现在是一句一句念的，光停当前这句不够，后面排着队的也得全丢掉
+  try { sayAbort(); } catch (e) { }
+  // 以前打断只会发生在他整段说完之后，所以不用管还在跑的那条流。
+  // 现在他边想边说，打断的时候后台多半还在生成 —— 不掐掉，它和她这句话
+  // 引出的下一轮会同时在跑，两轮的话会搅在一起。
+  try { if (CALL.ctrl) { ccStop(); CALL.ctrl.abort(); CALL.ctrl = null; } } catch (e) { }
   try { if (CALL.audio) { CALL.audio.pause(); CALL.audio.currentTime = 0; } } catch (e) { }
   try { if (CALL.node) { CALL.node.stop(); CALL.node = null; } } catch (e) { }
   CALL.speakingOut = false;
@@ -1947,6 +1953,37 @@ async function callTurn(text, silentUser) {
   csState('他在想…');
   csUnstick();   // 新的一轮，字幕从头开始跟
   let reply = '';
+  // 边收边念：收到一句完整的就塞进嘴里，不等他整段说完
+  sayReset();
+  SAY.feeding = true;
+  const myGen = SAY.gen;
+  let fed = 0, pend = '';
+  const feed = (flush) => {
+    // 她插过话了，这一轮剩下的话就别再往外念了
+    if (!CALL.on || SAY.gen !== myGen) return;
+    // ||| 后面是给她看的中文字幕，不念
+    const sp = reply.split('|||')[0];
+    let add = sp.slice(fed);
+    if (!flush) {
+      // [[挂了]] 或者 ||| 可能刚开了个头，先别急着念，等它写全
+      let b = -1;
+      for (const c of ['[', '|']) {
+        const k = add.indexOf(c);
+        if (k >= 0 && (b < 0 || k < b)) b = k;
+      }
+      if (b >= 0) add = add.slice(0, b);
+    }
+    fed += add.length;
+    pend += add;
+    if (flush) pend = pend.replace(/\[\[挂了\]\]/g, '');
+    while (true) {
+      const i = sayCut(pend, !SAY.said, flush);
+      if (i < 0) break;
+      const chunk = pend.slice(0, i);
+      pend = pend.slice(i);
+      sayPush(chunk);
+    }
+  };
   try {
     const hist = buildMsgs(messages);
     // 挂电话时要能把这条请求掐掉，否则服务器上的 Claude Code 还会一直跑
@@ -1984,6 +2021,7 @@ async function callTurn(text, silentUser) {
             const shown = reply.replace(/\[\[挂了\]\]/g, '');
             if (callEn()) { const b = splitBi(shown); csCaptionBi(b.en, b.zh); }
             else csCaption(shown, false);
+            feed(false);   // 够一句了就先念出去
           }
         } catch (e) { }
       }
@@ -1991,6 +2029,8 @@ async function callTurn(text, silentUser) {
   } catch (e) { if (e.name !== 'AbortError') csState('断了'); }
   finally { CALL.ctrl = null; }
 
+  try { feed(true); } catch (e) { }   // 最后那半句也念掉
+  if (SAY.gen === myGen) SAY.feeding = false;
   const hang = /\[\[挂了\]\]/.test(reply);
   reply = reply.replace(/\[\[挂了\]\]/g, '').trim();
   if (reply) {
@@ -2005,7 +2045,10 @@ async function callTurn(text, silentUser) {
         if (d && d.text && !d.error && CALL.on && CALL.turns === myTurn) csCaptionBi(bi.en, d.text);
       }).catch(() => { });
     }
-    await speakOut(bi.en || reply);
+    // 正常情况这会儿他早就在说了，这里只是等他把排队的几句说完
+    await sayWait(myGen);
+    // 一句都没念成（切句没切出来、或者合成全失败）才整段兜底念一遍
+    if (!SAY.said && CALL.on && SAY.gen === myGen) await speakOut(bi.en || reply);
     if (CALL.cutOff) {
       // 被打断了，让他知道自己话没说完
       messages.push({ role: 'user', _internal: true, _call: true,
@@ -2016,102 +2059,197 @@ async function callTurn(text, silentUser) {
   if (hang) { await sleep(500); endCall('lin'); }
 }
 
-async function speakOut(text) {
-  if (!CALL.on) return;
-  const ae = $('cs-avatar');
-  csState('说话中');
-  ae.classList.add('speak');
-  CALL.busy = true;
-  CALL.speakingOut = true;
-  CALL.cutOff = false;
-  CALL.cutMs = 0;
-  srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
+// ===== 嘴：一句一句地说 =====
+// 她 11.08 下午说的：「点击播放很久才有声音……你先参考我们的一起听修」。
+// 一起听快，是因为它不等整首歌下完才出声。电话以前正好反过来，三段等待串在一起：
+// 等他整段话说完 → 整段送去合成 → 整段音频下完 → 才响。她听到的那个「很久」就是这个。
+// 现在改成流水线：他吐出第一句就送去念，后面的句子排队，前一句在响的时候
+// 后一句已经在合成了。第一声从「整段」缩到「第一句」。
+const SAY = { q: [], pumping: false, feeding: false, gen: 0, said: false };
+let TTS_FLY = 0;      // 同时在合成的句子数。后端线程有限，别一次全压上去
+
+function sayReset() { SAY.gen++; SAY.q.length = 0; SAY.feeding = false; SAY.said = false; }
+function sayAbort() { sayReset(); SAY.pumping = false; }
+
+// 在哪儿切句。第一句放宽到逗号也能切 —— 早一点出声比切得漂亮重要
+const CUT_HARD = /[。！？!?…\n.]/;
+const CUT_SOFT = /[。！？!?…\n.，,；;：:、]/;
+function sayCut(s, first, flush) {
+  const min = first ? 4 : 14;
+  const re = first ? CUT_SOFT : CUT_HARD;
+  for (let i = 0; i < s.length; i++) {
+    if (!re.test(s[i])) continue;
+    if (i + 1 < min) continue;
+    // 英文句点后面得跟空格才算句末，不然 0.85 这种小数会被切成两半
+    if ('.!?'.indexOf(s[i]) >= 0 && i + 1 < s.length && !/[\s"'’”）)]/.test(s[i + 1])) continue;
+    let j = i + 1;
+    while (j < s.length && /[”"'’）)\]】。…!?！？]/.test(s[j])) j++;
+    return j;
+  }
+  if (flush) return s.trim() ? s.length : -1;
+  if (s.length >= 56) return 40;   // 一直不打标点，也不能一直不出声
+  return -1;
+}
+
+// 合成一句。拿回来的是整句的音频 —— 单句短，这一步只有不到一秒
+async function ttsFetch(text) {
+  while (TTS_FLY >= 2) { await sleep(50); if (!CALL.on) return null; }
+  TTS_FLY++;
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
     // 语速。她说我讲话太快，想要慢一点。服务端默认已经放慢到 0.85，
     // 嫌不够就在控制台里 localStorage.setItem('tts-speed','0.78')，0.7 最慢、1.0 原速。
     const spd = parseFloat(localStorage.getItem('tts-speed') || '') || 0;
-    const body = { text: text.slice(0, 500), voice };
+    const body = { text: text.slice(0, 500), voice, fast: 1 };
     if (spd) body.speed = spd;
     const r = await fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (r.ok) {
-      const bytes = await r.arrayBuffer();
-      // 先走 <audio>。上一版反过来，先走 WebAudio ——
-      // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
-      // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
-      // <audio> 失败至少会 reject/onerror,看得见。能检测的路要排在前面。
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
-      let played = await new Promise(res => {
-        if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
-        const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
-        CALL.audio = a;
-        let done = false;
-        const fin = (ok) => { if (done) return; done = true; res(ok); };
-        a.onended = () => fin(true);
-        a.onerror = () => fin(false);
-        a.src = url;
-        const p = a.play();
-        if (p && p.catch) p.catch(() => fin(false));
-        // 真在播就让它播完；一直没动静(0.3 秒还在 0 秒上)就算它没播成
-        setTimeout(() => { if (!done && (a.paused || !a.currentTime)) fin(false); }, 400);
-      });
-      if (!played && CALL.on) {
-        // <audio> 那路不行(多半是 iOS 把它甩到听筒或者拦了自动播放)，
-        // 改走 WebAudio：同一套 ctx，跟录音并存，走正常外放
-        try {
-          const ctx = micCtx();
-          if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { } }
-          if (ctx && ctx.state === 'running') {
-            const abuf = await new Promise((ok, no) => {
-              const p2 = ctx.decodeAudioData(bytes.slice(0), ok, no);
-              if (p2 && p2.then) p2.then(ok, no);
-            });
-            if (abuf && CALL.on) {
-              await new Promise(res => {
-                const node = ctx.createBufferSource();
-                node.buffer = abuf;
-                const g = ctx.createGain(); g.gain.value = 1;
-                node.connect(g); g.connect(ctx.destination);
-                CALL.node = node;
-                let done = false;
-                const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
-                node.onended = fin;
-                try { node.start(0); } catch (e) { fin(); return; }
-                setTimeout(fin, (abuf.duration * 1000) + 1500);
-              });
-              played = true;
-            }
-          }
-        } catch (e) { }
+    if (!r.ok) { csState('声音没出来（' + r.status + '）'); return null; }
+    return await r.arrayBuffer();
+  } catch (e) { return null; }
+  finally { TTS_FLY--; }
+}
+
+// 把一句的音频放出来。三条路，能检测的排前面
+async function playBytes(bytes) {
+  if (!CALL.on || !bytes) return;
+  // 先走 <audio>。上一版反过来，先走 WebAudio ——
+  // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
+  // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
+  // <audio> 失败至少会 reject/onerror,看得见。
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+  let played = await new Promise(res => {
+    if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
+    const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
+    CALL.audio = a;
+    let done = false, started = false, iv = 0;
+    const fin = (ok) => { if (done) return; done = true; if (iv) clearInterval(iv); res(ok); };
+    a.onended = () => fin(true);
+    a.onerror = () => fin(false);
+    a.onplaying = () => { started = true; };
+    a.src = url;
+    const p = a.play();
+    if (p && p.catch) p.catch(() => fin(false));
+    // 真在播就让它播完；一直没动静(0.4 秒还在 0 秒上)就算它没播成
+    setTimeout(() => { if (!done && (a.paused || !a.currentTime)) fin(false); }, 400);
+    // 她插话时是 pause() 掐掉的 —— pause 不会触发 ended，不看着点这个 Promise
+    // 就永远挂在这儿，后面排队的一句都放不出来。被打断、挂断，都算这句说完了。
+    iv = setInterval(() => {
+      if (!CALL.on || CALL.cutOff || (started && a.paused)) fin(true);
+    }, 200);
+  });
+  if (!played && CALL.on) {
+    // <audio> 那路不行(多半是 iOS 把它甩到听筒或者拦了自动播放)，
+    // 改走 WebAudio：同一套 ctx，跟录音并存，走正常外放
+    try {
+      const ctx = micCtx();
+      if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { } }
+      if (ctx && ctx.state === 'running') {
+        const abuf = await new Promise((ok, no) => {
+          const p2 = ctx.decodeAudioData(bytes.slice(0), ok, no);
+          if (p2 && p2.then) p2.then(ok, no);
+        });
+        if (abuf && CALL.on) {
+          await new Promise(res => {
+            const node = ctx.createBufferSource();
+            node.buffer = abuf;
+            const g = ctx.createGain(); g.gain.value = 1;
+            node.connect(g); g.connect(ctx.destination);
+            CALL.node = node;
+            let done = false;
+            const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
+            node.onended = fin;
+            try { node.start(0); } catch (e) { fin(); return; }
+            setTimeout(fin, (abuf.duration * 1000) + 1500);
+          });
+          played = true;
+        }
       }
-      if (!played && CALL.on) {
-        // 两条路都没出声：告诉她，并且点一下屏幕就重播这一句
-        csState('点一下屏幕，声音就出来');
-        const a = CALL_AUD;
-        const once = () => {
-          document.removeEventListener('touchend', once);
-          document.removeEventListener('click', once);
-          unlockAudio();
-          setTimeout(() => { if (a) { a.src = url; a.play().catch(() => { }); } }, 80);
-        };
-        document.addEventListener('touchend', once, { once: true });
-        document.addEventListener('click', once, { once: true });
-      }
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { } }, 60000);
-    } else {
-      csState('声音没出来（' + r.status + '）');
-    }
-  } catch (e) { csState('声音断了'); }
+    } catch (e) { }
+  }
+  if (!played && CALL.on) {
+    // 两条路都没出声：告诉她，并且点一下屏幕就重播这一句
+    csState('点一下屏幕，声音就出来');
+    const a = CALL_AUD;
+    const once = () => {
+      document.removeEventListener('touchend', once);
+      document.removeEventListener('click', once);
+      unlockAudio();
+      setTimeout(() => { if (a) { a.src = url; a.play().catch(() => { }); } }, 80);
+    };
+    document.addEventListener('touchend', once, { once: true });
+    document.addEventListener('click', once, { once: true });
+  }
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { } }, 60000);
+}
+
+function speakStart() {
+  const ae = $('cs-avatar');
+  csState('说话中');
+  if (ae) ae.classList.add('speak');
+  CALL.busy = true;
+  CALL.speakingOut = true;
+  CALL.cutOff = false;
+  CALL.cutMs = 0;
+  srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
+}
+function speakEnd() {
   if (!CALL.cutOff) {
     CALL.speakingOut = false;
-    ae.classList.remove('speak');
+    const ae = $('cs-avatar'); if (ae) ae.classList.remove('speak');
     CALL.busy = false;
   }
   CALL.srText = '';
   srStart();   // 说完了，第二只耳朵重新支起来
+}
+
+// 排队：一入队就开始合成，不等前一句播完
+function sayPush(text) {
+  text = (text || '').replace(/\[\[挂了\]\]/g, '').trim();
+  if (!text) return;
+  const it = { text, pro: ttsFetch(text) };
+  it.pro.catch(() => { });
+  SAY.q.push(it);
+  SAY.said = true;
+  if (!SAY.pumping) sayPump();
+}
+
+async function sayPump() {
+  if (SAY.pumping) return;
+  SAY.pumping = true;
+  const gen = SAY.gen;
+  speakStart();
+  while (CALL.on && gen === SAY.gen) {
+    if (!SAY.q.length) {
+      if (!SAY.feeding) break;   // 后面没有了
+      await sleep(40); continue; // 他还在说，等下一句
+    }
+    const it = SAY.q.shift();
+    let bytes = null;
+    try { bytes = await it.pro; } catch (e) { }
+    if (!CALL.on || gen !== SAY.gen) break;
+    if (bytes) await playBytes(bytes);
+  }
+  // 被打断之后旧的这条还会醒过来一次，它不能去动新一轮的状态
+  if (gen === SAY.gen) { SAY.pumping = false; speakEnd(); }
+}
+
+// 等这一轮的话说完。她插了话（gen 变了）就不等了，那一轮已经作废
+async function sayWait(gen) {
+  const until = Date.now() + 180000;
+  while (CALL.on && (gen === undefined || gen === SAY.gen)
+         && (SAY.pumping || SAY.q.length) && Date.now() < until) await sleep(50);
+}
+
+// 整段念。流水线一句都没念成的时候兜底用
+async function speakOut(text) {
+  if (!CALL.on || !text) return;
+  speakStart();
+  const b = await ttsFetch(text);
+  if (b) await playBytes(b);
+  speakEnd();
 }
 
 async function endCall(by) {
@@ -2121,6 +2259,7 @@ async function endCall(by) {
   CALL.endedBy = by || 'user';
   if (CALL.raf) cancelAnimationFrame(CALL.raf);
   if (CALL.timer) clearInterval(CALL.timer);
+  try { sayAbort(); } catch (e) { }   // 排队没说完的几句，挂了就别再往外蹦
   srStop();
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
