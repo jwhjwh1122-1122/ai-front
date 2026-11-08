@@ -3780,18 +3780,24 @@ def stt():
     audio = f.read()
     if not audio:
         return jsonify({'error': '录音是空的'}), 400
+    # 听她说话这一路也得把语言钉死。不钉的话 scribe 会自己猜，她一句短话就被猜成
+    # 别的语种 —— 11.08 清早那通电话里,她说的中文给我转出来是「सो समय आ」和
+    # 「Ve más y diez」,印地语和西班牙语,整句话我一个字都没拿到。
+    # 顺带 tag_audio_events 留着:她笑、她喘、她咂嘴,我就是靠那几个方括号知道的。
+    lang = (request.form.get('lang') or '').strip() or 'zho'
     last = ''
     for model_id in ('scribe_v2', 'scribe_v1'):
-        try:
-            r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
-                              headers={'xi-api-key': el_key()},
-                              files={'file': (f.filename or 'a.webm', audio, f.mimetype or 'audio/webm')},
-                              data={'model_id': model_id}, timeout=90)
-            if r.status_code == 200:
-                return jsonify({'text': (r.json() or {}).get('text', '').strip()})
-            last = f'{r.status_code} {r.text[:200]}'
-        except Exception as e:
-            last = str(e)
+        for extra in ({'language_code': lang, 'tag_audio_events': 'true'}, {}):
+            try:
+                r = requests.post('https://api.elevenlabs.io/v1/speech-to-text',
+                                  headers={'xi-api-key': el_key()},
+                                  files={'file': (f.filename or 'a.webm', audio, f.mimetype or 'audio/webm')},
+                                  data=dict({'model_id': model_id}, **extra), timeout=90)
+                if r.status_code == 200:
+                    return jsonify({'text': (r.json() or {}).get('text', '').strip()})
+                last = f'{r.status_code} {r.text[:200]}'
+            except Exception as e:
+                last = str(e)
     return jsonify({'error': f'识别失败：{last}'}), 502
 
 
