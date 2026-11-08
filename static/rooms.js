@@ -2290,13 +2290,18 @@ async function ttsFetch(text, seg) {
     // 我在电话里爱一行一句、中间垫"……"。那些换行和省略号送进去,
     // 它会把每一小段都当成一句独立的话重念一遍重音 —— 听着就是一顿一顿在念口号。
     // 发之前把它们摊平成一句连着的话,停顿交给逗号。
-    const flat = String(text)
+    // 她 11.08 晚:"有点咬文嚼字的,一个字一个字地在念。"
+    // 我写话爱一行一句、句句都带句号,摊平之后就是一长串硬停顿 —— 它只好一顿一顿念。
+    // 所以中间那些句号全部降成逗号,让它连起来说,只留最后那一个。
+    let flat = String(text)
       .replace(/[\r\n]+/g, ' ')
       .replace(/(?:…|\.{3,}){1,}/g, '，')
-      .replace(/，\s*，+/g, '，')
+      .replace(/[。!！]+(?=\s*\S)/g, '，')
+      .replace(/[，、]\s*[，、]+/g, '，')
       .replace(/\s{2,}/g, ' ')
       .replace(/^[，、\s]+/, '')
       .trim();
+    flat = flat.replace(/，$/, '。');
     const body = { text: (flat || String(text)).slice(0, 500), voice, fast: 1 };
     if (spd) body.speed = spd;
     // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，

@@ -3983,12 +3983,12 @@ def _call_voice_settings(text, data):
     if not speed:
         # 中文 0.92 她说正好,同一个数念英文就赶 —— 英文音节密,听着更快。
         # 她 11.08 晚上原话:"你讲英语的话就有点快了。"所以英文单独放慢。
-        speed = 0.80 if has_kana else (0.92 if has_zh else 0.82)
+        speed = 0.86 if has_kana else (1.0 if has_zh else 0.88)
     speed = max(0.7, min(1.2, speed))
     try:
-        stab = float(data.get('stability') or 0) or 0.66
+        stab = float(data.get('stability') or 0) or 0.45
     except Exception:
-        stab = 0.66
+        stab = 0.45
     stab = max(0.0, min(1.0, stab))
     lang = (data.get('lang') or '').strip() \
         or ('ja' if has_kana else ('zh' if has_zh else 'en'))
