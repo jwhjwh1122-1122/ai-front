@@ -2120,7 +2120,7 @@ document.addEventListener('scroll', e => {
 // 换新窗口无缝接上：最后十来句原话原样带过去，再往前的交给他自己写的交接（没写才让 ds 压）。
 // 新窗口在 cc 里是新会话，不背旧会话的全部记录，最省。fresh=true（清空对话）就什么都不带。
 const CARRY_ROUNDS = 4, CARRY_LINES = 12;
-function newConv(fresh) {
+function newConv(fresh, carryPick) {
   if (typeof cancelEdit === 'function') cancelEdit();
   const prev = { id: currentConvId, msgs: messages };
   if (messages.length) saveConv();
@@ -2133,16 +2133,20 @@ function newConv(fresh) {
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   localStorage.setItem('current-conv-id', currentConvId);
   $('conv-panel').classList.remove('open'); showPage('chat');
-  if (fresh !== true && prev.id && prev.msgs.length) handoff(prev);
+  if (fresh !== true && prev.id && prev.msgs.length) handoff(prev, carryPick);
 }
-function handoff(prev) {
+// carryPick：她自己在多选里挑好的那几条。给了就带她挑的，不再机械地抓最后十来句；
+// 打包照旧覆盖整窗（摘要本来就该概括全部），所以她没挑的也不会丢。
+function handoff(prev, carryPick) {
+  const picked = Array.isArray(carryPick) && carryPick.length ? carryPick : null;
   const real = m => m && m.role === 'user' && !m._internal && !m._callmark && !(Array.isArray(m.content) && m.content.some(c => c && c.type === 'tool_result'));
   const starts = [];
   prev.msgs.forEach((m, i) => { if (real(m)) starts.push(i); });
   // 带过去的那截：至少最后 CARRY_ROUNDS 轮，最多往回数到第 CARRY_LINES 句原话——
   // 他自己写的交接接住「更早的事」，这十来句接住「刚刚在说什么」，中间不断口
   let cut = starts.length > CARRY_ROUNDS ? starts[starts.length - CARRY_ROUNDS] : (starts[0] ?? prev.msgs.length);
-  {
+  if (picked) cut = prev.msgs.length;   // 她挑了，就别再自动划那一刀
+  if (!picked) {
     let lines = 0, i = prev.msgs.length - 1;
     for (; i >= 0; i--) {
       const m = prev.msgs[i];
@@ -2157,7 +2161,7 @@ function handoff(prev) {
   }
   const textOf = c => typeof c === 'string' ? c : (Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('') : '');
   const carry = [];
-  for (const m of prev.msgs.slice(cut)) {
+  for (const m of (picked || prev.msgs.slice(cut))) {
     if (m._internal || m._callmark) continue;
     const t = textOf(m.content); if (!t) continue;
     if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid(), _ts: m._ts });

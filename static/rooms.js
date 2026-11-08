@@ -4437,7 +4437,7 @@ function setupMultiSelect() {
   document.head.appendChild(st);
   const bar = document.createElement('div');
   bar.id = 'sel-bar';
-  bar.innerHTML = '<span class="sel-n">点消息来选</span><button data-a="all">全选</button><button data-a="cancel">取消</button><button class="sel-go" data-a="go" disabled>放进新窗口</button>';
+  bar.innerHTML = '<span class="sel-n">点消息来选</span><button data-a="all">全选</button><button data-a="cancel">取消</button><button data-a="go" disabled>只开新窗</button><button class="sel-go" data-a="go2" disabled>带着换窗</button>';
   document.body.appendChild(bar);
   bar.querySelector('[data-a="cancel"]').onclick = exitSelect;
   bar.querySelector('[data-a="all"]').onclick = () => {
@@ -4446,7 +4446,8 @@ function setupMultiSelect() {
     rows.forEach(r => { const i = parseInt(r.dataset.msgIdx); if (allOn) selIdx.delete(i); else selIdx.add(i); r.classList.toggle('sel-on', !allOn); });
     updSelBar();
   };
-  bar.querySelector('[data-a="go"]').onclick = selToNewConv;
+  bar.querySelector('[data-a="go"]').onclick = () => selToNewConv(false);
+  bar.querySelector('[data-a="go2"]').onclick = () => selToNewConv(true);
   const btn = $('btn-select');
   if (btn) btn.onclick = () => { if (selMode) exitSelect(); else enterSelect(); };
   $('messages').addEventListener('click', e => {
@@ -4472,6 +4473,7 @@ function updSelBar() {
   const n = selIdx.size, bar = $('sel-bar'); if (!bar) return;
   bar.querySelector('.sel-n').textContent = n ? `已选 ${n} 条` : '点消息来选';
   bar.querySelector('[data-a="go"]').disabled = !n;
+  bar.querySelector('[data-a="go2"]').disabled = !n;
 }
 function enterSelect() {
   if (isTyping) { toast('等他说完再选'); return; }
@@ -4489,7 +4491,9 @@ function exitSelect() {
   $('messages').querySelectorAll('.sel-on').forEach(r => r.classList.remove('sel-on'));
   $('sel-bar').classList.remove('open');
 }
-function selToNewConv() {
+// withHandoff=false：老路，只把挑的几条复制进一个干净的新窗口，别的什么都不带。
+// withHandoff=true：换窗，但带过去的原话换成她挑的这几条，这一窗照样打包成交接接在前面。
+function selToNewConv(withHandoff) {
   if (!selIdx.size) return;
   // 一条他的回复后面常跟着工具调用/结果：只挑勾上的那几条本身，按原来的先后
   const picked = [...selIdx].sort((a, b) => a - b).map(i => messages[i]).filter(Boolean)
@@ -4497,6 +4501,11 @@ function selToNewConv() {
   if (!picked.length) return;
   const n = picked.length;
   exitSelect();
+  if (withHandoff === true && typeof newConv === 'function') {
+    newConv(false, picked);
+    toast(`带走你挑的 ${n} 条，这一窗正在打包接上`);
+    return;
+  }
   if (messages.length) saveConv();
   const id = genId();
   try { localStorage.setItem('conv-' + id, JSON.stringify(picked)); }
