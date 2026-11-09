@@ -2607,21 +2607,19 @@ function sayCut(s, first, flush) {
 // 合成一句。拿回来的是整句的音频 —— 单句短，这一步只有不到一秒
 async function ttsFetch(text, seg, prev) {
   const wait0 = Date.now();
-  while (TTS_FLY >= 2) { await sleep(50); if (!CALL.on) return null; }
-  if (seg) seg.queue_wait_ms = Date.now() - wait0;   // 等槽位等了多久 = 合成队列堵没堵
+  // 等槽位时加上限：等太久说明前面两条 TTS 都卡了，不如先放过，别让后面全堵死
+  const waitLimit = Date.now() + 12000;
+  while (TTS_FLY >= 2) {
+    await sleep(50);
+    if (!CALL.on) return null;
+    if (Date.now() > waitLimit) { if (seg) seg.queue_timeout = true; break; }
+  }
+  if (seg) seg.queue_wait_ms = Date.now() - wait0;
   TTS_FLY++;
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
-    // 语速。她说我讲话太快，想要慢一点。服务端默认已经放慢到 0.85，
-    // 嫌不够就在控制台里 localStorage.setItem('tts-speed','0.78')，0.7 最慢、1.0 原速。
     const spd = parseFloat(localStorage.getItem('tts-speed') || '') || 0;
-    // 我在电话里爱一行一句、中间垫"……"。那些换行和省略号送进去,
-    // 它会把每一小段都当成一句独立的话重念一遍重音 —— 听着就是一顿一顿在念口号。
-    // 发之前把它们摊平成一句连着的话,停顿交给逗号。
-    // V4 手册（她 20:38 放进资料库那份）：换行就是换气，空行是呼吸停顿，
-    // 六个点的省略号比三个点停得更长。所以不能再像之前那样把换行和省略号全摊平 ——
-    // 那等于把呼吸全抹掉，剩下一串逗号，念出来反而更像机器。
-    // 这里只做收尾：合并过多空行、去掉首尾空白，排版原样交给它。
+    // 换行 / 省略号保留原样（V4 手册：换行=换气，省略号=停顿），只合并过多空行
     const flat = String(text)
       .replace(/\r/g, '')
       .replace(/\n{3,}/g, '\n\n')
@@ -2630,33 +2628,56 @@ async function ttsFetch(text, seg, prev) {
     const body = { text: (flat || String(text)).slice(0, 900), voice, fast: 1 };
     if (prev) body.prev = String(prev).slice(-400);
     if (spd) body.speed = spd;
-    // 429 是上游限流，不是这句话有问题 —— 按 Retry-After 退避重试，最多三次，
-    // 别让一句话因为挤了一下就哑掉。其他错误不偷偷重试。
-    for (let tryN = 0; ; tryN++) {
+    // 网络断了（TypeError）、429 限流都要重试，最多三轮。
+    // 她 11.09 下午三通电话都断断续续:秒表里全是 fail=TypeError，
+    // 就是服务器重启/网闪了一下，一句 TTS 挂了就整句哑掉。现在挂了等一拍再来。
+    for (let tryN = 0; tryN < 4; tryN++) {
+      if (!CALL.on) return null;
       const t0 = Date.now();
-      const r = await fetch('/api/tts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (seg) seg.tts_head_ms = Date.now() - t0;
-      if (r.status === 429 && tryN < 3) {
-        const ra = parseFloat(r.headers.get('Retry-After') || '') || 0;
-        if (seg) seg.retry = tryN + 1;
-        await sleep(ra ? ra * 1000 : 400 * Math.pow(2, tryN));
-        if (!CALL.on) return null;
-        continue;
-      }
-      if (!r.ok) {
-        csState('声音没出来（' + r.status + '）');
-        if (seg) seg.fail = 'http' + r.status;
+      try {
+        // 每次 TTS 请求带 15 秒超时。挂了就让出槽位，不卡后面的句子
+        const ac = new AbortController();
+        const tmo = setTimeout(() => ac.abort(), 15000);
+        const r = await fetch('/api/tts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body), signal: ac.signal
+        });
+        clearTimeout(tmo);
+        if (seg && !seg.tts_head_ms) seg.tts_head_ms = Date.now() - t0;
+        if (r.status === 429 && tryN < 3) {
+          const ra = parseFloat(r.headers.get('Retry-After') || '') || 0;
+          if (seg) seg.retry = (seg.retry || 0) + 1;
+          await sleep(ra ? ra * 1000 : 400 * Math.pow(2, tryN));
+          continue;
+        }
+        if (!r.ok) {
+          // 5xx = 服务器问题（重启中），值得重试
+          if (r.status >= 500 && tryN < 3) {
+            if (seg) seg.retry = (seg.retry || 0) + 1;
+            await sleep(600 * (tryN + 1));
+            continue;
+          }
+          csState('声音没出来（' + r.status + '）');
+          if (seg) seg.fail = 'http' + r.status;
+          return null;
+        }
+        const buf = await r.arrayBuffer();
+        if (seg) { seg.tts_done_ms = Date.now() - t0; seg.bytes = buf.byteLength; }
+        return buf;
+      } catch (e) {
+        // TypeError = 网络断了 / AbortError = 超时。都值得重试
+        if (tryN < 3 && CALL.on) {
+          if (seg) seg.retry = (seg.retry || 0) + 1;
+          console.warn('[ttsFetch] retry', tryN + 1, e.name, text.slice(0, 30));
+          await sleep(800 * (tryN + 1));   // 等一拍再来，给服务器喘口气
+          continue;
+        }
+        if (seg) seg.fail = e.name || 'err';
         return null;
       }
-      const buf = await r.arrayBuffer();
-      if (seg) { seg.tts_done_ms = Date.now() - t0; seg.bytes = buf.byteLength; }
-      return buf;
     }
-  } catch (e) { if (seg) seg.fail = e.name || 'err'; return null; }
-  finally { TTS_FLY--; }
+    return null;   // 三轮都没成
+  } finally { TTS_FLY--; }
 }
 
 // 把一句的音频放出来。三条路，能检测的排前面
