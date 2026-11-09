@@ -1816,7 +1816,11 @@ function csMic(txt) {
 // 所以接通时先偷偷播一小段无声的，把这个元素"解锁"，之后换 src 就能出声了。
 const SILENT_WAV = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YaAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 let CALL_AUD = null;
+let _playBusy = false;   // playBytes 正在用 CALL_AUD，unlockAudio 别碰
 function unlockAudio() {
+  // playBytes 正在用 CALL_AUD 播真句子时不能插静音进去，否则两个 src 打架，
+  // 表现就是隔一句吞一句。
+  if (_playBusy) return;
   try {
     if (!CALL_AUD) {
       CALL_AUD = new Audio();
@@ -2597,19 +2601,11 @@ async function ttsFetch(text, seg, prev) {
 }
 
 // 把一句的音频放出来。三条路，能检测的排前面
-async function playBytes(bytes, seg) {
-  if (!CALL.on || !bytes) return;
-  const pb0 = Date.now();
-  // 每句开播前先确保音频通道活着——上一句播完到这一句之间随时可能被系统挂起
-  audioRescue('playBytes');
-  // 先走 <audio>。上一版反过来，先走 WebAudio ——
-  // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
-  // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
-  // <audio> 失败至少会 reject/onerror,看得见。
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
-  let played = await new Promise(res => {
+// 单次尝试用 <audio> 元素播放
+function _tryAudioElem(url, seg, pb0) {
+  return new Promise(res => {
     if (!CALL_AUD) { CALL_AUD = new Audio(); CALL_AUD.setAttribute('playsinline', ''); }
-    const a = CALL_AUD;                       // 一直用同一个元素，iPhone 才认
+    const a = CALL_AUD;
     CALL.audio = a;
     let done = false, started = false, iv = 0;
     const fin = (ok) => { if (done) return; done = true; if (iv) clearInterval(iv); res(ok); };
@@ -2617,65 +2613,91 @@ async function playBytes(bytes, seg) {
     a.onerror = () => fin(false);
     a.onplaying = () => {
       started = true;
-      if (seg && !seg.play_ms) seg.play_ms = Date.now() - pb0;   // 拿到音频 → 真的出声
-      tmMark('first_sound_ms');                                   // 这一轮第一声
+      if (seg && !seg.play_ms) seg.play_ms = Date.now() - pb0;
+      tmMark('first_sound_ms');
     };
     a.src = url;
     const p = a.play();
     if (p && p.catch) p.catch(() => fin(false));
-    // 真在播就让它播完；一直没动静(0.4 秒还在 0 秒上)就算它没播成
-    setTimeout(() => { if (!done && (a.paused || !a.currentTime)) fin(false); }, 400);
-    // 她插话时是 pause() 掐掉的 —— pause 不会触发 ended，不看着点这个 Promise
-    // 就永远挂在这儿，后面排队的一句都放不出来。被打断、挂断，都算这句说完了。
+    // 给移动端足够的缓冲时间——400ms 在手机上太紧，容易误判为失败
+    setTimeout(() => { if (!done && (a.paused || !a.currentTime)) fin(false); }, 1500);
     iv = setInterval(() => {
       if (!CALL.on || CALL.cutOff || (started && a.paused)) fin(true);
     }, 200);
   });
-  if (!played && CALL.on) {
-    // <audio> 那路不行(多半是 iOS 把它甩到听筒或者拦了自动播放)，
-    // 改走 WebAudio：同一套 ctx，跟录音并存，走正常外放
-    try {
-      const ctx = micCtx();
-      if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { } }
-      if (ctx && ctx.state === 'running') {
-        const abuf = await new Promise((ok, no) => {
-          const p2 = ctx.decodeAudioData(bytes.slice(0), ok, no);
-          if (p2 && p2.then) p2.then(ok, no);
-        });
-        if (abuf && CALL.on) {
-          if (seg) { seg.path = 'webaudio'; if (!seg.play_ms) seg.play_ms = Date.now() - pb0; }
-          tmMark('first_sound_ms');
-          await new Promise(res => {
-            const node = ctx.createBufferSource();
-            node.buffer = abuf;
-            const g = ctx.createGain(); g.gain.value = 1;
-            node.connect(g); g.connect(ctx.destination);
-            CALL.node = node;
-            let done = false;
-            const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
-            node.onended = fin;
-            try { node.start(0); } catch (e) { fin(); return; }
-            setTimeout(fin, (abuf.duration * 1000) + 1500);
+}
+
+async function playBytes(bytes, seg) {
+  if (!CALL.on || !bytes) return;
+  const pb0 = Date.now();
+  _playBusy = true;
+  try {
+    // 每句开播前先确保音频通道活着——上一句播完到这一句之间随时可能被系统挂起
+    audioRescue('playBytes');
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+
+    // ---- 第一条路：<audio> 元素 ----
+    let played = await _tryAudioElem(url, seg, pb0);
+
+    // 第一次没播成？等一拍再试一次。iOS 有时候第一次 play() 被拦，
+    // 紧跟着再来一次就通了（系统刚解完锁）
+    if (!played && CALL.on) {
+      console.log('[playBytes] audio retry');
+      if (seg) seg.audioRetry = true;
+      await sleep(80);
+      if (CALL.on) played = await _tryAudioElem(url, seg, pb0);
+    }
+
+    // ---- 第二条路：WebAudio ----
+    if (!played && CALL.on) {
+      try {
+        const ctx = micCtx();
+        if (ctx && ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { } }
+        if (ctx && ctx.state === 'running') {
+          const abuf = await new Promise((ok, no) => {
+            const p2 = ctx.decodeAudioData(bytes.slice(0), ok, no);
+            if (p2 && p2.then) p2.then(ok, no);
           });
-          played = true;
+          if (abuf && CALL.on) {
+            if (seg) { seg.path = 'webaudio'; if (!seg.play_ms) seg.play_ms = Date.now() - pb0; }
+            tmMark('first_sound_ms');
+            await new Promise(res => {
+              const node = ctx.createBufferSource();
+              node.buffer = abuf;
+              const g = ctx.createGain(); g.gain.value = 1;
+              node.connect(g); g.connect(ctx.destination);
+              CALL.node = node;
+              let done = false;
+              const fin = () => { if (done) return; done = true; CALL.node = null; res(); };
+              node.onended = fin;
+              try { node.start(0); } catch (e) { fin(); return; }
+              setTimeout(fin, (abuf.duration * 1000) + 1500);
+            });
+            played = true;
+          }
         }
-      }
-    } catch (e) { }
+      } catch (e) { }
+    }
+
+    // ---- 都没播成：让她点一下 ----
+    if (!played && CALL.on) {
+      console.log('[playBytes] both paths failed');
+      if (seg) seg.fail = seg.fail || 'noplay';
+      csState('点一下屏幕，声音就出来');
+      const a = CALL_AUD;
+      const once = () => {
+        document.removeEventListener('touchend', once);
+        document.removeEventListener('click', once);
+        unlockAudio();
+        setTimeout(() => { if (a) { a.src = url; a.play().catch(() => { }); } }, 80);
+      };
+      document.addEventListener('touchend', once, { once: true });
+      document.addEventListener('click', once, { once: true });
+    }
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { } }, 60000);
+  } finally {
+    _playBusy = false;
   }
-  if (!played && CALL.on) {
-    // 两条路都没出声：告诉她，并且点一下屏幕就重播这一句
-    csState('点一下屏幕，声音就出来');
-    const a = CALL_AUD;
-    const once = () => {
-      document.removeEventListener('touchend', once);
-      document.removeEventListener('click', once);
-      unlockAudio();
-      setTimeout(() => { if (a) { a.src = url; a.play().catch(() => { }); } }, 80);
-    };
-    document.addEventListener('touchend', once, { once: true });
-    document.addEventListener('click', once, { once: true });
-  }
-  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { } }, 60000);
 }
 
 function speakStart() {
@@ -2738,6 +2760,9 @@ async function sayPump() {
       try { csHL(it.text); } catch (e) { }   // 念到哪一句，字幕上那一句就亮着
       await playBytes(bytes, it.seg);
       if (it.seg) it.seg.played_ms = Date.now() - p0;
+      // 句间留一拍：让 <audio> 元素从上一句的 ended 状态彻底复位。
+      // 不留这一拍，iOS 上连续播第二句时 play() 偶尔会被系统拦住。
+      if (SAY.q.length && CALL.on) await sleep(60);
     } else if (it.seg && !it.seg.fail) it.seg.fail = 'nobytes';
   }
   // 被打断之后旧的这条还会醒过来一次，它不能去动新一轮的状态
