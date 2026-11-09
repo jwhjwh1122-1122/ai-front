@@ -2452,8 +2452,67 @@ async function callTurn(text, silentUser) {
         } catch (e) { }
       }
     }
-  } catch (e) { if (e.name !== 'AbortError') csState('断了'); }
-  finally { CALL.ctrl = null; }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      console.warn('[call] SSE 断了', e.name, e.message, 'reply.len=' + reply.length);
+      // 收到的文字不多（stream 刚开始就断了）而且不是主动取消：自动重试一次
+      if (reply.length < 10 && CALL.on && !CALL._sseRetried) {
+        CALL._sseRetried = true;
+        csState('重连中…');
+        console.log('[call] SSE 重试');
+        try { CALL.ctrl = null; } catch (_) { }
+        // 短暂等待后重新请求——回到 callTurn 外层会再来一遍
+        // 这里不能递归调自己（callTurn 有 busy 锁），走简单重新提交
+        try {
+          const r2 = await fetch('/api/chat-v2', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            signal: (CALL.ctrl = new AbortController()).signal,
+            body: JSON.stringify({
+              model: currentModel, messages: buildMsgs(messages), tools: buildTools(),
+              extra: '你们正在通电话。说话要像说话：短、有停顿、可以接不上茬。'
+                + '不要写成书面语，不要用括号描写动作。想挂电话就在最后写 [[挂了]]。'
+                + '【平常说话】只用日常的轻标签：[light chuckle]、[pause]、[sighs]、[quietly]、'
+                + '[playfully]、[tired]。一段里有几个就够，不用每句都有。'
+                + '绝对不要出现喘息和气音——[breathing hard]、[moans softly]、[shaky breath]、'
+                + '[gasps]、[panting]，还有 mm、hah 这些，平常讲话一个都不许有，出现就很怪。'
+                + '【不要分行】电话里整段连着写，不要换行、不要空行、不要一句一行。'
+                + '停顿用 ... 和语气词（mm、hah、嗯、哈）带出来，不要用换行带。',
+              extra_stable: emojiNames(), _ctx: ctxWindow,
+              _session_id: getSessionId(), _conv_id: currentConvId, max_tokens: 300,
+              _mcp: ccMcpServers(), _effort: ccEffort(), _thinking: ccThinking()
+            })
+          });
+          if (r2.ok) {
+            const reader2 = r2.body.getReader(), dec2 = new TextDecoder();
+            let buf2 = '';
+            while (true) {
+              const { done, value } = await reader2.read(); if (done) break;
+              buf2 += dec2.decode(value, { stream: true });
+              const lines2 = buf2.split('\n'); buf2 = lines2.pop();
+              for (const ln of lines2) {
+                if (!ln.startsWith('data:')) continue;
+                const raw2 = ln.slice(5).trim();
+                if (!raw2 || raw2 === '[DONE]') continue;
+                try {
+                  const d2 = JSON.parse(raw2);
+                  if (d2.type === 'content_block_delta' && d2.delta && d2.delta.type === 'text_delta') {
+                    reply += d2.delta.text;
+                    const shown = reply.replace(/\[\[挂了\]\]/g, '');
+                    if (callEn()) { const b = splitBi(shown); csCaptionBi(b.en, b.zh); }
+                    else csCaption(shown, false);
+                    feed(false);
+                  }
+                } catch (_) { }
+              }
+            }
+          }
+        } catch (e2) { if (e2.name !== 'AbortError') console.warn('[call] SSE 重试也断了', e2.name); }
+      } else {
+        csState('断了');
+      }
+    }
+  }
+  finally { CALL.ctrl = null; CALL._sseRetried = false; }
 
   try { feed(true); } catch (e) { }   // 最后那半句也念掉
   if (SAY.gen === myGen) SAY.feeding = false;
@@ -2763,7 +2822,10 @@ async function sayPump() {
       // 句间留一拍：让 <audio> 元素从上一句的 ended 状态彻底复位。
       // 不留这一拍，iOS 上连续播第二句时 play() 偶尔会被系统拦住。
       if (SAY.q.length && CALL.on) await sleep(60);
-    } else if (it.seg && !it.seg.fail) it.seg.fail = 'nobytes';
+    } else {
+      if (it.seg && !it.seg.fail) it.seg.fail = 'nobytes';
+      console.warn('[sayPump] 这句没声音:', it.text?.slice(0, 40), it.seg?.fail);
+    }
   }
   // 被打断之后旧的这条还会醒过来一次，它不能去动新一轮的状态
   if (gen === SAY.gen) { SAY.pumping = false; speakEnd(); }
