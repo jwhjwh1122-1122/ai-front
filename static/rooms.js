@@ -1861,7 +1861,10 @@ function audioRescue(reason) {
       const p = CALL_CTX.resume(); if (p && p.catch) p.catch(() => { });
     }
   } catch (e) { }
-  unlockAudio();
+  // 只在不会踩到正在播的音频时才 unlock Audio 元素。
+  // playBytes 调用时 Audio 元素马上要用来播真正的句子，这时候不能插一段静音进去，
+  // 否则静音和真句子在同一个元素上打架，听起来就是隔一句哑一句。
+  if (reason !== 'playBytes') unlockAudio();
   console.log('[audioRescue]', reason, 'ctx=' + (CALL_CTX ? CALL_CTX.state : 'none'));
 }
 // 页面从后台回来、或者被系统弹窗覆盖后恢复，音频多半已经挂了
