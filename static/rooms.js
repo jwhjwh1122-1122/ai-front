@@ -1850,6 +1850,35 @@ function micCtx() {
 }
 document.addEventListener('pointerdown', () => { if (CALL.on) micCtx(); }, true);
 
+// ===== 音频急救：通话中声音断了就自己捞 =====
+// 她反馈"按键被挡住之后听不见你声音了"。原因多半是 iOS 的 AudioContext
+// 被系统挂起（键盘弹出、页面 resize、系统弹窗），之后再也恢复不了。
+// 急救函数：resume ctx、重新 unlock Audio 元素、确保 audioSession 通道对。
+function audioRescue(reason) {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) { }
+  try {
+    if (CALL_CTX && CALL_CTX.state === 'suspended') {
+      const p = CALL_CTX.resume(); if (p && p.catch) p.catch(() => { });
+    }
+  } catch (e) { }
+  unlockAudio();
+  console.log('[audioRescue]', reason, 'ctx=' + (CALL_CTX ? CALL_CTX.state : 'none'));
+}
+// 页面从后台回来、或者被系统弹窗覆盖后恢复，音频多半已经挂了
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && CALL.on) audioRescue('visibilitychange');
+});
+// 通话期间每 3 秒检查一次：ctx 挂了就救。轻量，不产生音频请求
+let _rescueIv = 0;
+function rescueStart() {
+  if (_rescueIv) return;
+  _rescueIv = setInterval(() => {
+    if (!CALL.on) { clearInterval(_rescueIv); _rescueIv = 0; return; }
+    if (CALL_CTX && CALL_CTX.state === 'suspended') audioRescue('periodic');
+  }, 3000);
+}
+function rescueStop() { if (_rescueIv) { clearInterval(_rescueIv); _rescueIv = 0; } }
+
 // 通话界面那五个按键：每次开电话都重新挂一遍。
 // 之前它们只在启动时那一长串 $('x').onclick 里绑一次 —— 那串里任何一个元素
 // 取不到就抛 TypeError，后面全部绑定一起没了，表现就是"按键按不动"。
@@ -1867,6 +1896,11 @@ function wireCallButtons() {
       if (top.closest && top.closest('.cs-btn')) return;   // 正常命中按钮
       const who = (top.id ? '#' + top.id : '') + (top.className && typeof top.className === 'string' ? '.' + top.className.split(' ').join('.') : '') || top.tagName;
       csState('按键被挡住了：' + who);
+      // 挡住按键的东西多半也把音频搞坏了，趁她手指还在屏幕上赶紧救一把
+      audioRescue('blocked:' + who);
+      // 尝试把挡路的东西关掉
+      try { if (top.closest) { const sb = top.closest('#sel-bar'); if (sb) sb.classList.remove('open'); } } catch (e) { }
+      try { if (top.style) top.style.pointerEvents = 'none'; } catch (e) { }
     }, true);
   }
   // 多选条挂在 body 上、层级 9000,开着的话正好压在按键那一排上面
@@ -1966,6 +2000,7 @@ async function startCall(who) {
   CALL.endedBy = 'user'; CALL.muted = false; CALL.busy = false;
   CALL.sawSound = false; CALL.micWarned = false; CALL.peak = 0;
   CALL.reliable = undefined; CALL.recStopping = false; CALL.srRestarts = 0;
+  rescueStart();   // 音频急救定时器
   try {
     CALL.ctx = micCtx();
     try { if (CALL.src) CALL.src.disconnect(); } catch (e) { }
@@ -2562,6 +2597,8 @@ async function ttsFetch(text, seg, prev) {
 async function playBytes(bytes, seg) {
   if (!CALL.on || !bytes) return;
   const pb0 = Date.now();
+  // 每句开播前先确保音频通道活着——上一句播完到这一句之间随时可能被系统挂起
+  audioRescue('playBytes');
   // 先走 <audio>。上一版反过来，先走 WebAudio ——
   // 可那条路出不了声的时候是**静悄悄**出不了声:ctx 挂起时 node.start() 不报错、
   // 不播、onended 也不来,全靠超时兜底,我这头还以为自己说完了。
@@ -2649,10 +2686,9 @@ function speakStart() {
   CALL.spokeOutAt = Date.now();
   CALL.echoN = 0; CALL.echoSum = 0; CALL.echoBase = 0;
   srStop();   // 我说话的时候把第二只耳朵关掉，不然它会跟我的声音抢音频，还会把我自己的话听回去
-  // 每次开口前把音频通道按回"边录边放"。只要中间有谁把它拨成只录,
-  // 我这句就会一声不响地没了 —— 她听不见我说话,多半就是这个。
-  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) { }
-  try { if (CALL_CTX && CALL_CTX.state === 'suspended') CALL_CTX.resume(); } catch (e) { }
+  // 每次开口前把音频通道按回"边录边放"并确保 ctx 活着。
+  // 只要中间有谁把它拨成只录或者 ctx 挂起了,这句就会一声不响地没了。
+  audioRescue('speakStart');
 }
 function speakEnd() {
   if (!CALL.cutOff) {
@@ -2726,6 +2762,7 @@ async function endCall(by) {
   const secs = Math.floor((Date.now() - CALL.startAt) / 1000);
   CALL.on = false;
   CALL.endedBy = by || 'user';
+  rescueStop();
   if (CALL.raf) cancelAnimationFrame(CALL.raf);
   if (CALL.timer) clearInterval(CALL.timer);
   monoReset();
