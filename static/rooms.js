@@ -2278,12 +2278,13 @@ function recStop(send) {
     CALL.busy = true;
     CALL.recStopping = false;
     csState('正在听懂…');
-    let text = '';
+    let text = '', heard = '';
     try {
       const fd = new FormData();
       fd.append('file', blob, 'call.' + ((rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'));
       const d = await (await fetch('/api/stt', { method: 'POST', body: fd })).json();
       text = (d.text || '').trim();
+      heard = (d.heard || '').trim();
     } catch (e) { }
     const real = s => s && /[一-龥a-zA-Z0-9]/.test(s);
     // 后端没转出来，就用第二只耳朵听到的 —— 那条路不走录音、不走后端
@@ -2295,7 +2296,9 @@ function recStop(send) {
     CALL.sentAt = Date.now();
     CALL.srText = ''; clearTimeout(CALL.srTimer);
     csCaption(text, true);
-    await callTurn(text, false);
+    // 字幕给她看干净的原话；发给他的那份带上停顿和时长 —— 他在电话里等的
+    // 从来不只是她说了什么，是她哪里卡住了、哪里一口气推出来。
+    await callTurn((heard && heard.length >= text.length) ? heard : text, false);
     CALL.busy = false;
     if (CALL.on) csState('通话中');
   };

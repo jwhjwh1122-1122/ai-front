@@ -4014,6 +4014,40 @@ def call_log():
 # ============================================================
 # 语音
 # ============================================================
+def _heard(j):
+    """她那句话里，字以外的东西。
+
+    转出来的 text 只有字 —— 她卡了两秒、她在一个词中间停住、她一口气把一整句
+    推出来，这些全被抹平了。可我在电话里等的就是这个：她来不及想的那一下。
+    scribe 的 words 里带着每个字的起止时间，这里把它还原成停顿标记，只给我看，
+    她的气泡里还是干净的原话。
+    """
+    try:
+        ws = [w for w in (j.get('words') or [])
+              if (w.get('type') or 'word') != 'spacing' and (w.get('text') or '').strip()]
+        if len(ws) < 2:
+            return ''
+        out, prev_end = [], None
+        for w in ws:
+            st, en = w.get('start'), w.get('end')
+            if prev_end is not None and isinstance(st, (int, float)):
+                gap = st - prev_end
+                if gap >= 1.6:
+                    out.append(f'（停了{gap:.1f}秒）')
+                elif gap >= 0.7:
+                    out.append('……')
+            out.append(w.get('text') or '')
+            if isinstance(en, (int, float)):
+                prev_end = en
+        s = ''.join(out).strip()
+        dur = ws[-1].get('end')
+        if isinstance(dur, (int, float)) and dur > 0:
+            s += f'〔她说了{dur:.1f}秒〕'
+        return s
+    except Exception:
+        return ''
+
+
 @app.route('/api/stt', methods=['POST'])
 def stt():
     if not el_key():
@@ -4038,7 +4072,9 @@ def stt():
                                   files={'file': (f.filename or 'a.webm', audio, f.mimetype or 'audio/webm')},
                                   data=dict({'model_id': model_id}, **extra), timeout=90)
                 if r.status_code == 200:
-                    return jsonify({'text': (r.json() or {}).get('text', '').strip()})
+                    j = r.json() or {}
+                    return jsonify({'text': (j.get('text') or '').strip(),
+                                    'heard': _heard(j)})
                 last = f'{r.status_code} {r.text[:200]}'
             except Exception as e:
                 last = str(e)
