@@ -3465,13 +3465,64 @@ async function renderWakeLog() {
   const d = await jget('/api/wake/log');
   $('wake-count').textContent = d.log.length ? `${d.log.length} 次` : '';
   if (!d.log.length) { el.innerHTML = '<div class="room-empty">他还没自己醒过</div>'; return; }
-  el.innerHTML = d.log.map(x => {
+  el.innerHTML = '';
+  d.log.forEach(x => {
     const t = new Date(x.ts);
-    const did = (x.did || []).length ? `<div class="mumble-date" style="text-align:left;">做了：${x.did.join('、')}</div>` : '';
-    return `<div class="mumble"><div class="mumble-body">${esc(x.said || '（这次什么都没说）')}</div>
-      ${did}<div class="mumble-date">${t.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${t.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}${x.manual ? ' · 你叫的' : ''}</div></div>`;
-  }).join('');
+    const box = document.createElement('div'); box.className = 'mumble';
+    box.appendChild(wakeBody(x));
+    if ((x.did || []).length) {
+      const dd = document.createElement('div'); dd.className = 'mumble-date';
+      dd.style.textAlign = 'left'; dd.textContent = '做了：' + x.did.join('、');
+      box.appendChild(dd);
+    }
+    const dt = document.createElement('div'); dt.className = 'mumble-date';
+    dt.textContent = t.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' +
+      t.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + (x.manual ? ' · 你叫的' : '');
+    box.appendChild(dt);
+    el.appendChild(box);
+  });
   markWakeRead(); $('dot-chat').classList.remove('on');
+}
+// 他自己醒来时写的 [语音] 段：以前整条被当纯文字贴出来，标记也露在外面。
+// 现在拆段落，带标记的那段变成语音条——点一下才去生成（省钱），生成过的记在本地，下次直接播。
+function wakeBody(x) {
+  const box = document.createElement('div'); box.className = 'mumble-body';
+  const txt = (x.said || '').trim();
+  if (!txt) { box.textContent = '（这次什么都没说）'; return box; }
+  const segs = (typeof splitSay === 'function' ? splitSay(txt) : txt.split(/\n{2,}/)).filter(s => String(s).trim());
+  segs.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'margin:0 0 7px;';
+    if (typeof isVoiceSeg === 'function' && isVoiceSeg(s) && voiceText(s)) row.appendChild(wakeVoice(x.ts, i, voiceText(s)));
+    else row.textContent = s;
+    box.appendChild(row);
+  });
+  return box;
+}
+function wakeVoice(ts, i, text) {
+  const key = 'wake-voice:' + ts + ':' + i;
+  const secs = Math.max(2, Math.round([...text].length / 4.2));
+  const holder = document.createElement('div');
+  const cached = localStorage.getItem(key);
+  if (cached) { holder.appendChild(voiceBubble(cached, secs, text, true)); return holder; }
+  const btn = document.createElement('div');
+  btn.className = 'vb-text-btn';
+  btn.textContent = '▶ 这句是语音，点一下听';
+  btn.onclick = async () => {
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1'; btn.textContent = '生成中…';
+    const voice = localStorage.getItem('tts-voice') || (window.CFG && CFG.voice) || 'calm';
+    let r = {};
+    try { r = await jpost('/api/tts-save', { text: text.slice(0, 600), voice }); } catch (e) { }
+    btn.dataset.busy = '';
+    if (!r || !r.url) { btn.textContent = '▶ 没出来，再点一下'; toast((r && r.error) || '这条语音没出来'); return; }
+    try { localStorage.setItem(key, r.url); } catch (e) { }
+    const b = voiceBubble(r.url, secs, text, true);
+    holder.innerHTML = ''; holder.appendChild(b);
+    const play = b.querySelector('.voice-bubble'); if (play) play.click();
+  };
+  holder.appendChild(btn);
+  return holder;
 }
 
 // ============ 人设 ============
