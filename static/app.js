@@ -2031,7 +2031,8 @@ function saveConv() {
       // 手机上真的放不下了：这段话直接存到服务器，宁可本地看不到也不能丢
       if (window.__store) window.__store.push('conv-' + currentConvId, JSON.stringify(messages));
       toast('手机存不下了，这段已经存到服务器');
-      return;
+      // 不 return：下面那段很小，存得下。漏了它这个窗口就不会出现在对话列表里，
+      // 变成一个点不开、也找不回来的空窗——今天就是这么丢的
     }
   }
   const list = getConvs();
