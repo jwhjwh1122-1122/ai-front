@@ -1902,15 +1902,23 @@ const saveConvs = l => localStorage.setItem('conversations', JSON.stringify(l));
 // 手机上的记录被清掉（比如把桌面 app 删了）时，从服务器上 Claude Code 留的会话记录里找回。
 // 只跑一次；手机上已经有的对话不碰，只补回没有的。
 async function recoverFromServer() {
-  if (localStorage.getItem('cc-recovered-1')) return;
+  if (localStorage.getItem('cc-recovered-2')) return;
   let d;
   try { d = await jget('/api/cc-recover'); } catch (e) { return; }
   const list = getConvs(), have = new Set(list.map(c => c.id));
   let n = 0;
   for (const c of (d && d.convs) || []) {
-    if (!c || !c.id || have.has(c.id) || localStorage.getItem('conv-' + c.id)) continue;
-    try { localStorage.setItem('conv-' + c.id, JSON.stringify(c.messages || [])); }
-    catch (e) { toast('手机存储满了，只找回了一部分'); break; }
+    if (!c || !c.id || have.has(c.id)) continue;
+    // 数据还在手机上、只是从对话列表里掉了（那种点不开也找不回来的空窗）：别跳过，
+    // 本地那份留着，只把列表里缺的这一条补回去
+    const body = JSON.stringify(c.messages || []);
+    try { if (!localStorage.getItem('conv-' + c.id)) localStorage.setItem('conv-' + c.id, body); }
+    catch (e) {
+      // 手机满了不代表找不回：腾一次地方，再不行就把这段留在服务器上（点开时再拉）
+      let ok = false;
+      try { offloadOldConvs(Math.max(body.length * 2, 1024 * 1024), 1); localStorage.setItem('conv-' + c.id, body); ok = true; } catch (e2) { }
+      if (!ok) { if (!window.__store) break; window.__store.push('conv-' + c.id, body); }
+    }
     list.push({ id: c.id, title: c.title || '对话', preview: c.preview || '', updatedAt: c.updatedAt || 0 });
     n++;
   }
@@ -1919,7 +1927,7 @@ async function recoverFromServer() {
     try { saveConvs(list); } catch (e) { }
     toast(`从服务器找回了 ${n} 段对话`);
   }
-  localStorage.setItem('cc-recovered-1', String(Date.now()));
+  localStorage.setItem('cc-recovered-2', String(Date.now()));
 }
 // 找回来的是按服务器上一段段会话切的，碎在好几个对话里：按时间拼回一个（只做一次，别的对话不碰）
 function mergeRecovered() {
@@ -1941,8 +1949,24 @@ function mergeRecovered() {
   all.sort((a, b) => ((a.m._ts || 0) - (b.m._ts || 0)) || (a.pi - b.pi) || (a.mi - b.mi));
   const merged = all.map(x => x.m);
   const id = 'rec-all-' + Date.now();
-  try { localStorage.setItem('conv-' + id, JSON.stringify(merged)); }
-  catch (e) { toast('手机存储不够，没合并成'); return; }
+  // 手机放不下不能就这么退出去：以前退出去时连 rec-merged-1 都没写,
+  // 于是每次刷新都重来一遍、每次都弹「存储空间不够」,合并也永远做不成。
+  // 现在先腾地方,还不行就只留服务器那一份(点开时 readConv 会去服务器拉),照样登记进对话列表。
+  let body = JSON.stringify(merged), local = false;
+  try { localStorage.setItem('conv-' + id, body); local = true; }
+  catch (e) {
+    try {
+      const slim = stripDataImages(merged);
+      body = JSON.stringify(slim);
+      freeOldConvImages();
+      offloadOldConvs(Math.max(body.length * 2, 1024 * 1024), 1);
+      localStorage.setItem('conv-' + id, body); local = true;
+    } catch (e2) { local = false; }
+  }
+  if (!local) {
+    if (!window.__store) { localStorage.setItem('rec-merged-1', '1'); return; }
+    window.__store.push('conv-' + id, body);   // 只存服务器,手机上不留
+  }
   const gone = new Set(parts.map(p => p.c.id));
   const nl = list.filter(c => !gone.has(c.id));
   const last = merged[merged.length - 1];
@@ -1952,7 +1976,7 @@ function mergeRecovered() {
   gone.forEach(cid => { localStorage.removeItem('conv-' + cid); localStorage.removeItem('recap-done-' + cid); });
   if (gone.has(localStorage.getItem('current-conv-id'))) localStorage.setItem('current-conv-id', id);
   localStorage.setItem('rec-merged-1', '1');
-  toast(`找回的 ${parts.length} 段已经拼成一个对话了`);
+  toast(`找回的 ${parts.length} 段已经拼成一个对话了${local ? '' : '（存在服务器上，点开就拉回来）'}`);
 }
 // 老记录里直接存着 base64 图片，最占地方。存不下时把它们换成一句文字再存
 const isDataImg = c => c && c.type === 'image_url' && /^data:/.test(c.image_url?.url || '');
@@ -2175,7 +2199,7 @@ function loadConv(id) {
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   const keep = roomCtx; roomCtx = null;
-  renderFrom = Math.max(0, messages.length - RENDER_CHUNK);
+  renderFrom = firstOfLastVisible(RENDER_CHUNK);   // 末尾 60 条「看得见的」，不是末尾 60 个数组元素
   for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
   roomCtx = keep;
   updOlderHint();
@@ -2183,43 +2207,89 @@ function loadConv(id) {
 }
 function updOlderHint() {
   const box = $('messages'); let h = $('older-hint');
-  if (renderFrom > 0) {
+  const n = countVisible(0, renderFrom);
+  if (renderFrom > 0 && n > 0) {
     if (!h) {
       h = document.createElement('div'); h.id = 'older-hint'; h.className = 'sys-msg';
-      h.style.cursor = 'pointer'; h.onclick = () => loadOlder();
     }
-    h.textContent = `↑ 还有更早的 ${renderFrom} 条，往上翻或点这里`;
+    h.style.cursor = 'pointer'; h.onclick = () => loadOlder();   // 每次都重挂，别指望旧元素上的那个还在
+    h.textContent = `↑ 还有更早的 ${n} 条，往上翻或点这里`;
     const first = box.querySelector('.sys-msg');
     if (h.parentNode !== box) box.insertBefore(h, first ? first.nextSibling : box.firstChild);
   } else if (h) h.remove();
+}
+// 这条画出来是看得见的东西吗（跟 renderOneMsgRaw 里那几个提前 return 对上）。
+// 以前「还有更早的 N 条」数的是数组长度，里面混着交接、工具结果这些画不出来的，
+// 所以点开什么都不出现——数的是看得见的那些才对。
+function msgVisible(msg, i) {
+  if (!msg || typeof msg !== 'object') return false;
+  if (msg._callmark) return true;
+  if (msg._call) { const g = callGroupMark(i); if (g >= 0 && !openCalls.has(g)) return false; }
+  if (msg.role === 'tool' || msg._internal) return false;
+  if (Array.isArray(msg.content) && msg.content.some(c => c && c.type === 'tool_result')) return false;
+  if (msg.role === 'user') return true;
+  if (msg.role === 'assistant') {
+    if (msg._thinking || msg._audio || (Array.isArray(msg._tools) && msg._tools.length)) return true;
+    const t = typeof msg.content === 'string' ? msg.content
+      : (Array.isArray(msg.content) ? msg.content.filter(c => c && c.type === 'text').map(c => c.text).join('') : '');
+    return !!t;
+  }
+  return false;
+}
+// 从末尾往回数,数到第 n 条看得见的为止,返回从哪个下标开始画
+function firstOfLastVisible(n) {
+  let i = messages.length, got = 0;
+  while (i > 0 && got < n) { i--; if (msgVisible(messages[i], i)) got++; }
+  while (i > 0 && !msgVisible(messages[i - 1], i - 1)) i--;   // 前面紧挨着的隐藏条一起带上
+  return Math.max(0, i);
+}
+function countVisible(from, to) {
+  let n = 0;
+  for (let i = Math.max(0, from); i < Math.min(to, messages.length); i++) if (msgVisible(messages[i], i)) n++;
+  return n;
 }
 // 往前补一段（toIdx：至少补到这一条，搜索跳转用）。画在临时容器里再整段塞到最前面，位置不跳
 function loadOlder(toIdx) {
   if (renderFrom > messages.length) { renderFrom = Math.max(0, messages.length - RENDER_CHUNK); updOlderHint(); }
   if (loadingOlder || renderFrom <= 0) return false;
   loadingOlder = true;
-  const box = $('messages');
-  const from = Math.max(0, Math.min(renderFrom - RENDER_CHUNK, toIdx == null ? Infinity : toIdx - 10));
-  const tmp = document.createElement('div');
-  tmp.style.display = 'none';
-  box.id = 'messages-real'; tmp.id = 'messages'; document.body.appendChild(tmp);
-  const keep = roomCtx; roomCtx = null;
-  const keepB = currentBubble, keepT = currentThinkWrap, keepR = currentAiRow;
-  try { for (let i = from; i < renderFrom; i++) renderOneMsg(messages[i], i); }
-  finally {
-    roomCtx = keep; currentBubble = keepB; currentThinkWrap = keepT; currentAiRow = keepR;
-    tmp.id = ''; box.id = 'messages'; tmp.remove();
-  }
-  const anchor = box.querySelector('.msg-row[data-msg-idx]') || null;
-  const oldH = box.scrollHeight, oldTop = box.scrollTop;
-  const frag = document.createDocumentFragment();
-  while (tmp.firstChild) frag.appendChild(tmp.firstChild);
-  box.insertBefore(frag, anchor);
-  renderFrom = from;
-  updOlderHint();
-  box.scrollTop = oldTop + (box.scrollHeight - oldH);
-  loadingOlder = false;
-  return true;
+  try {
+    const box = $('messages');
+    // 一次至少补出 RENDER_CHUNK 条「看得见的」。中间全是交接/工具结果的话就接着往回数，
+    // 不然点一下屏幕上什么都不变,看起来就是点不开
+    let from = renderFrom;
+    let want = RENDER_CHUNK, got = 0;
+    while (from > 0 && (got < want || (toIdx != null && from > toIdx - 10))) {
+      from--;
+      if (msgVisible(messages[from], from)) got++;
+      if (renderFrom - from >= 400) break;   // 保险：别一口气把几千条全画出来
+    }
+    const tmp = document.createElement('div');
+    tmp.style.display = 'none';
+    box.id = 'messages-real'; tmp.id = 'messages'; document.body.appendChild(tmp);
+    const keep = roomCtx; roomCtx = null;
+    const keepB = currentBubble, keepT = currentThinkWrap, keepR = currentAiRow;
+    try { for (let i = from; i < renderFrom; i++) renderOneMsg(messages[i], i); }
+    finally {
+      roomCtx = keep; currentBubble = keepB; currentThinkWrap = keepT; currentAiRow = keepR;
+      tmp.id = ''; box.id = 'messages'; tmp.remove();
+    }
+    // 插在第一条消息前面；屏幕上一条消息都没有时(上面渲染出过错)就插在「— 今天 —」后面,
+    // 千万别 insertBefore(frag, null)——那是塞到最底下,等于没出来
+    let anchor = box.querySelector('.msg-row[data-msg-idx]');
+    if (!anchor) {
+      const hint = $('older-hint'), first = box.querySelector('.sys-msg');
+      anchor = (hint && hint.nextSibling) || (first && first.nextSibling) || null;
+    }
+    const oldH = box.scrollHeight, oldTop = box.scrollTop;
+    const frag = document.createDocumentFragment();
+    while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+    box.insertBefore(frag, anchor);
+    renderFrom = from;
+    updOlderHint();
+    box.scrollTop = oldTop + (box.scrollHeight - oldH);
+    return true;
+  } finally { loadingOlder = false; }   // 中间出错也得解锁,否则往上翻和点击永远没反应
 }
 document.addEventListener('scroll', e => {
   const box = $('messages');
