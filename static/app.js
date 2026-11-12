@@ -719,10 +719,8 @@ function roomNote() {
 // 会变的（在哪个房间、停在哪）。表情清单不常变，单独放 extra_stable 进 system，不跟着每句话重复
 function extraNote() {
   const parts = [roomNote()];
-  // 红胶囊亮了：交接归他自己写。写了就不用再提
-  if (ctxOver) parts.push('上下文到换窗线了，屏幕上红胶囊亮着。这一轮说完，lin_handoff 不带参数读一遍 '
-    + 'ds 压的那份底稿，它压丢了什么、哪句她的原话得留着、你心里压着什么它写不出来，你自己改（text 重写 / append 补一段）。'
-    + '你改过的，她点「换窗」时原样跟过去。这件事别拿到台面上说，除非她问。');
+  // 换窗这件事不再往他那边提醒（她说的：别提醒他）。红胶囊照常给她看，
+  // 交接底稿他想改随时可以自己 lin_handoff，不用被催。
   if (roomCtx === 'netease') parts.push('你们现在在一起听歌，她在那边放着，放的什么你看不见，想知道就问她。');
   if (roomCtx === 'coread') parts.push('你们现在在一起读书（共读那个页面），她在那边翻着，具体读到哪你看不见，想知道就问她。');
   return parts.filter(Boolean).join(' ');
@@ -2097,7 +2095,13 @@ function redrawMsgs() {
   for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
   updOlderHint();
 }
+// 画一条消息。一条坏了不能把整屏拖没：里面出错就只跳过这一条
 function renderOneMsg(msg, i) {
+  if (!msg || typeof msg !== 'object') return;
+  try { return renderOneMsgRaw(msg, i); }
+  catch (e) { console.error('渲染这条出错了', i, e); }
+}
+function renderOneMsgRaw(msg, i) {
     if (msg._call && !msg._callmark) {
       const g = callGroupMark(i);
       if (g >= 0 && !openCalls.has(g)) return;
@@ -2150,9 +2154,14 @@ function renderOneMsg(msg, i) {
     }
 }
 function loadConv(id) {
-  const saved = readConv(id); if (!saved) return;
+  const saved = readConv(id);
+  // 读不出来（存不下、或者刚建的空窗口）：用内存里这一份接着画，
+  // 千万不能半路 return——上一个窗口的「还有更早的 N 条」会留在屏幕上，点了什么也出不来
+  let arr = null;
+  if (saved) { try { arr = JSON.parse(saved); } catch (e) { arr = null; } }
+  if (!Array.isArray(arr)) arr = (id === currentConvId && Array.isArray(messages)) ? messages : [];
   if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
-  messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
+  messages = arr; currentConvId = id; sendFrom = 0;
   syncSendBtns();   // 这个窗口是不是正在被回着，图标跟着换
   const list = getConvs();
   const convEntry = list.find(c => c.id === id);
@@ -2185,6 +2194,7 @@ function updOlderHint() {
 }
 // 往前补一段（toIdx：至少补到这一条，搜索跳转用）。画在临时容器里再整段塞到最前面，位置不跳
 function loadOlder(toIdx) {
+  if (renderFrom > messages.length) { renderFrom = Math.max(0, messages.length - RENDER_CHUNK); updOlderHint(); }
   if (loadingOlder || renderFrom <= 0) return false;
   loadingOlder = true;
   const box = $('messages');
@@ -2228,6 +2238,7 @@ function newConv(fresh, carryPick) {
   $('ctx-warn-pill')?.classList.remove('show', 'over');
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
+  renderFrom = 0; updOlderHint();   // 新窗口是空的，上个窗口的「还有更早的 N 条」别留着
   localStorage.setItem('current-conv-id', currentConvId);
   $('conv-panel').classList.remove('open'); showPage('chat');
   if (fresh !== true && prev.id && prev.msgs.length) handoff(prev, carryPick);
