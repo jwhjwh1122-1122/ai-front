@@ -3601,8 +3601,10 @@ async function boot() {
   mergeRecovered();
   setupMultiSelect();
   if (window.__storeRestored) toast('已从服务器恢复你的数据');
+  // 手机存储快满之前先把老对话卸到服务器上，别等到存不下才丢最新的那几句
+  try { if (storeUsed() > 3.4 * 1024 * 1024) offloadOldConvs(1.5 * 1024 * 1024); } catch (e) { }
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
-  if (last && localStorage.getItem('conv-' + last)) loadConv(last);
+  if (last && readConv(last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
   else newConv();
   showPage(localStorage.getItem('cur-page') || 'chat');

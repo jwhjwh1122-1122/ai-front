@@ -5446,6 +5446,14 @@ def store_get():
     return jsonify({'data': _store_load()})
 
 
+@app.route('/api/store-item', methods=['GET'])
+def store_item_get():
+    """单独取一个 key。手机存不下、老对话被卸下来之后，打开它时用这个拉回来。"""
+    k = request.args.get('k') or ''
+    v = _store_load().get(k)
+    return jsonify({'v': v if isinstance(v, str) else None})
+
+
 @app.route('/api/store', methods=['POST'])
 def store_post():
     b = request.get_json(silent=True) or {}

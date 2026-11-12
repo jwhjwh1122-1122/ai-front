@@ -1979,15 +1979,62 @@ function freeOldConvImages() {
     } catch (e) { }
   }
 }
+// ---- 手机存储（localStorage 一般只有 5MB）满了怎么办 ----
+// 服务器上有一份完整备份（store-sync.js），所以老对话可以从手机上卸下来，
+// 点开它的时候再从服务器拉回来。卸载不等于删除，服务器那份一直在。
+const OFFLOADED = '__offloaded__';   // 占位：这个对话在手机上卸掉了
+function convSize(k) { try { return (localStorage.getItem(k) || '').length * 2; } catch (e) { return 0; } }
+function storeUsed() {
+  let n = 0;
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += (k.length + convSize(k) / 2) * 2; }
+  return n;   // 大致字节数（中文一个字算 2 字节）
+}
+// 把最旧的几个对话卸到服务器上去，直到腾出 need 字节；当前这个和最近 keep 个不动
+function offloadOldConvs(need, keep = 4) {
+  if (!window.__store) return 0;
+  const list = getConvs().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  let freed = 0;
+  for (let i = list.length - 1; i >= keep && freed < need; i--) {
+    const id = list[i]?.id;
+    if (!id || id === currentConvId) continue;
+    const k = 'conv-' + id, sz = convSize(k);
+    if (sz < 2000) continue;
+    const v = localStorage.getItem(k);
+    if (v === null || v === OFFLOADED) continue;
+    window.__store.push(k, v);          // 先确保服务器上是最新的
+    window.__store.offload(k);          // 再从手机上卸掉（不同步删除）
+    freed += sz;
+  }
+  return freed;
+}
+// 读一个对话：手机上没有就从服务器拉回来
+function readConv(id) {
+  const k = 'conv-' + id;
+  let v = null;
+  try { v = localStorage.getItem(k); } catch (e) { }
+  if (v !== null) return v;
+  if (window.__store) {
+    const s = window.__store.fetch(k);
+    if (s) { try { localStorage.setItem(k, s); } catch (e) { offloadOldConvs(s.length * 2); try { localStorage.setItem(k, s); } catch (e2) { } } return s; }
+  }
+  return null;
+}
 function saveConv() {
   if (!currentConvId || !messages.length) return;
-  try { localStorage.setItem('conv-' + currentConvId, JSON.stringify(messages)); }
+  const body = JSON.stringify(messages);
+  try { localStorage.setItem('conv-' + currentConvId, body); }
   catch (e) {
     try {
       messages = stripDataImages(messages);
       freeOldConvImages();
+      offloadOldConvs(Math.max(body.length * 2, 600 * 1024));
       localStorage.setItem('conv-' + currentConvId, JSON.stringify(messages));
-    } catch (e2) { toast('存储空间快满了'); return; }
+    } catch (e2) {
+      // 手机上真的放不下了：这段话直接存到服务器，宁可本地看不到也不能丢
+      if (window.__store) window.__store.push('conv-' + currentConvId, JSON.stringify(messages));
+      toast('手机存不下了，这段已经存到服务器');
+      return;
+    }
   }
   const list = getConvs();
   const idx = list.findIndex(c => c.id === currentConvId);
@@ -2103,7 +2150,7 @@ function renderOneMsg(msg, i) {
     }
 }
 function loadConv(id) {
-  const saved = localStorage.getItem('conv-' + id); if (!saved) return;
+  const saved = readConv(id); if (!saved) return;
   if (typeof cancelEdit === 'function') cancelEdit();   // 换对话前把没发完的编辑/带图状态清掉，别带去别的窗口
   messages = JSON.parse(saved); currentConvId = id; sendFrom = 0;
   syncSendBtns();   // 这个窗口是不是正在被回着，图标跟着换

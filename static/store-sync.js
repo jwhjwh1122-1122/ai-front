@@ -20,11 +20,16 @@
       if (x.status === 200) {
         server = (JSON.parse(x.responseText) || {}).data || {};
         var n = 0;
+        // 从小到大写回来：手机只有 5MB，万一放不下，先保住小的那些(设置、索引)，
+        // 剩下的大对话留在服务器上，点开的时候再单独拉
+        var keys = [];
         for (var k in server) {
           if (!Object.prototype.hasOwnProperty.call(server, k) || SKIP.test(k)) continue;
-          if (ls.getItem(k) === null) {
-            try { origSet.call(ls, k, server[k]); n++; } catch (e) { }
-          }
+          if (ls.getItem(k) === null) keys.push(k);
+        }
+        keys.sort(function (a, b) { return String(server[a]).length - String(server[b]).length; });
+        for (var i2 = 0; i2 < keys.length; i2++) {
+          try { origSet.call(ls, keys[i2], server[keys[i2]]); n++; } catch (e) { }
         }
         origSet.call(ls, MARK, String(Date.now()));
         if (n) window.__storeRestored = n;
@@ -68,6 +73,31 @@
     var r = origRemove.apply(this, arguments);
     if (this === ls && !SKIP.test(String(k))) { k = String(k); pendDel[k] = 1; delete pendSet[k]; schedule(1500); }
     return r;
+  };
+  // 手机存储快满时用：把老对话从手机上卸下来，服务器那份原样留着，要看的时候再拉回来
+  window.__store = {
+    // 本地删掉但不告诉服务器（绕过上面的 removeItem 同步）
+    offload: function (k) {
+      try { origRemove.call(ls, k); } catch (e) { }
+      delete pendSet[k]; delete pendDel[k];
+    },
+    // 从服务器单独取一个 key 回来（同步，调用的地方本来就要立刻用）
+    fetch: function (k) {
+      try {
+        var x = new XMLHttpRequest();
+        x.open('GET', '/api/store-item?k=' + encodeURIComponent(k), false);
+        x.send();
+        if (x.status === 200) { var j = JSON.parse(x.responseText); return typeof j.v === 'string' ? j.v : null; }
+      } catch (e) { }
+      return null;
+    },
+    // 不经过手机存储，直接把一份东西存到服务器（手机存不下时的保底）
+    push: function (k, v) {
+      try {
+        var o = {}; o[k] = v;
+        fetch('/api/store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ set: o }) });
+      } catch (e) { }
+    }
   };
   proto.clear = function () {
     // 整个清空不往服务器同步（多半是出问题了），服务器那份留着当后路
