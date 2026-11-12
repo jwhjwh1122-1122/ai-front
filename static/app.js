@@ -570,7 +570,7 @@ async function recapIfNeeded(msgs) {
     });
     if (!r.error) {
       recapDone = cut;
-      localStorage.setItem('recap-done-' + currentConvId, String(cut));
+      lsSet('recap-done-' + currentConvId, String(cut));
       recapFailN = 0;
     } else {
       recapFailN++;
@@ -1898,7 +1898,25 @@ async function regenAt(row) {
 
 // ============ 对话管理 ============
 const getConvs = () => { try { return JSON.parse(localStorage.getItem('conversations') || '[]'); } catch (e) { return []; } };
-const saveConvs = l => localStorage.setItem('conversations', JSON.stringify(l));
+// 手机存储满了以后，连一个几十字节的小 key 都写不进去——配额是整体的，跟这次写多大无关。
+// 「开一个窗丢一个窗」就是这么来的：saveConv 末尾那句写对话列表抛出去，
+// newConv 里后面的代码（建新窗、记 current-conv-id）一行都没跑。
+// 所以凡是必须写进去的东西都走这里：写不进就腾地方再写，腾不动就至少存到服务器。
+function lsSet(k, v) {
+  v = String(v);
+  try { localStorage.setItem(k, v); return true; } catch (e) { }
+  freeOldConvImages();                      // 先把老对话里的大图换成一句字
+  try { localStorage.setItem(k, v); return true; } catch (e) { }
+  // 再从最旧的对话开始往服务器卸，卸一轮试一次；最后一轮连当前这个窗口也卸
+  for (let i = 0; i < 3; i++) {
+    const freed = offloadOldConvs(Math.max(v.length * 2, 512 * 1024), i === 0 ? 2 : 0, i >= 2);
+    if (!freed) break;
+    try { localStorage.setItem(k, v); return true; } catch (e) { }
+  }
+  try { window.__store && window.__store.push(k, v); } catch (e) { }
+  return false;
+}
+const saveConvs = l => lsSet('conversations', JSON.stringify(l));
 // 手机上的记录被清掉（比如把桌面 app 删了）时，从服务器上 Claude Code 留的会话记录里找回。
 // 只跑一次；手机上已经有的对话不碰，只补回没有的。
 async function recoverFromServer() {
@@ -1927,7 +1945,7 @@ async function recoverFromServer() {
     try { saveConvs(list); } catch (e) { }
     toast(`从服务器找回了 ${n} 段对话`);
   }
-  localStorage.setItem('cc-recovered-2', String(Date.now()));
+  lsSet('cc-recovered-2', String(Date.now()));
 }
 // 找回来的是按服务器上一段段会话切的，碎在好几个对话里：按时间拼回一个（只做一次，别的对话不碰）
 function mergeRecovered() {
@@ -1938,7 +1956,7 @@ function mergeRecovered() {
     try { msgs = JSON.parse(localStorage.getItem('conv-' + c.id) || '[]'); } catch (e) { }
     if (msgs.some(m => m && typeof m._mid === 'string' && m._mid.startsWith('rec-'))) parts.push({ c, msgs });
   }
-  if (parts.length < 2) { localStorage.setItem('rec-merged-1', '1'); return; }
+  if (parts.length < 2) { lsSet('rec-merged-1', '1'); return; }
   const seen = new Set(), all = [];
   parts.forEach((p, pi) => p.msgs.forEach((m, mi) => {
     const k = m._mid || (m.role + '|' + (m._ts || '') + '|' + (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)));
@@ -1964,7 +1982,7 @@ function mergeRecovered() {
     } catch (e2) { local = false; }
   }
   if (!local) {
-    if (!window.__store) { localStorage.setItem('rec-merged-1', '1'); return; }
+    if (!window.__store) { lsSet('rec-merged-1', '1'); return; }
     window.__store.push('conv-' + id, body);   // 只存服务器,手机上不留
   }
   const gone = new Set(parts.map(p => p.c.id));
@@ -1974,8 +1992,8 @@ function mergeRecovered() {
   nl.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   saveConvs(nl);
   gone.forEach(cid => { localStorage.removeItem('conv-' + cid); localStorage.removeItem('recap-done-' + cid); });
-  if (gone.has(localStorage.getItem('current-conv-id'))) localStorage.setItem('current-conv-id', id);
-  localStorage.setItem('rec-merged-1', '1');
+  if (gone.has(localStorage.getItem('current-conv-id'))) lsSet('current-conv-id', id);
+  lsSet('rec-merged-1', '1');
   toast(`找回的 ${parts.length} 段已经拼成一个对话了${local ? '' : '（存在服务器上，点开就拉回来）'}`);
 }
 // 老记录里直接存着 base64 图片，最占地方。存不下时把它们换成一句文字再存
@@ -2012,15 +2030,17 @@ function storeUsed() {
   return n;   // 大致字节数（中文一个字算 2 字节）
 }
 // 把最旧的几个对话卸到服务器上去，直到腾出 need 字节；当前这个和最近 keep 个不动
-function offloadOldConvs(need, keep = 4) {
+// allowCurrent=true 时连当前这个窗口也往服务器卸（卸掉不等于丢，readConv 会再拉回来）——
+// 实在腾不出地方的时候，宁可当前这段回服务器，也不能让对话列表写不进去。
+function offloadOldConvs(need, keep = 4, allowCurrent = false) {
   if (!window.__store) return 0;
   const list = getConvs().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   let freed = 0;
   for (let i = list.length - 1; i >= keep && freed < need; i--) {
     const id = list[i]?.id;
-    if (!id || id === currentConvId) continue;
+    if (!id || (id === currentConvId && !allowCurrent)) continue;
     const k = 'conv-' + id, sz = convSize(k);
-    if (sz < 2000) continue;
+    if (sz < 200) continue;
     const v = localStorage.getItem(k);
     if (v === null || v === OFFLOADED) continue;
     window.__store.push(k, v);          // 先确保服务器上是最新的
@@ -2053,7 +2073,12 @@ function saveConv() {
       localStorage.setItem('conv-' + currentConvId, JSON.stringify(messages));
     } catch (e2) {
       // 手机上真的放不下了：这段话直接存到服务器，宁可本地看不到也不能丢
-      if (window.__store) window.__store.push('conv-' + currentConvId, JSON.stringify(messages));
+      if (window.__store) {
+        window.__store.push('conv-' + currentConvId, JSON.stringify(messages));
+        // 本地那份旧的残片也卸掉：不卸的话它继续占着位置，下面写对话列表照样写不进去，
+        // 窗口又变成点不开的空窗。服务器上刚存过，readConv 点开时会拉回来。
+        window.__store.offload('conv-' + currentConvId);
+      }
       toast('手机存不下了，这段已经存到服务器');
       // 不 return：下面那段很小，存得下。漏了它这个窗口就不会出现在对话列表里，
       // 变成一个点不开、也找不回来的空窗——今天就是这么丢的
@@ -2190,7 +2215,7 @@ function loadConv(id) {
   syncSendBtns();   // 这个窗口是不是正在被回着，图标跟着换
   const list = getConvs();
   const convEntry = list.find(c => c.id === id);
-  if (convEntry && convEntry.model) { currentModel = convEntry.model; localStorage.setItem('model', convEntry.model); }
+  if (convEntry && convEntry.model) { currentModel = convEntry.model; lsSet('model', convEntry.model); }
   if (convEntry && convEntry.unread) { convEntry.unread = false; saveConvs(list); }
   syncModelUI();
   recapDone = parseInt(localStorage.getItem('recap-done-' + id) || '0');
@@ -2203,7 +2228,7 @@ function loadConv(id) {
   for (let i = renderFrom; i < messages.length; i++) renderOneMsg(messages[i], i);
   roomCtx = keep;
   updOlderHint();
-  scrollBottom(true); localStorage.setItem('current-conv-id', id);
+  scrollBottom(true); lsSet('current-conv-id', id);
 }
 function updOlderHint() {
   const box = $('messages'); let h = $('older-hint');
@@ -2301,7 +2326,8 @@ const CARRY_ROUNDS = 4, CARRY_LINES = 12;
 function newConv(fresh, carryPick) {
   if (typeof cancelEdit === 'function') cancelEdit();
   const prev = { id: currentConvId, msgs: messages };
-  if (messages.length) saveConv();
+  // 存旧窗口失败不能拦住开新窗口——今天就是卡在这儿，开一个没一个
+  if (messages.length) { try { saveConv(); } catch (e) { } }
   currentConvId = genId(); messages = []; totalTokens = 0; editingMsgIdx = null; sendFrom = 0;
   syncSendBtns();
   recapDone = 0;
@@ -2310,7 +2336,15 @@ function newConv(fresh, carryPick) {
   currentBubble = null; currentThinkWrap = null; currentAiRow = null;
   $('messages').innerHTML = '<div class="sys-msg">— 今天 —</div>';
   renderFrom = 0; updOlderHint();   // 新窗口是空的，上个窗口的「还有更早的 N 条」别留着
-  localStorage.setItem('current-conv-id', currentConvId);
+  lsSet('current-conv-id', currentConvId);
+  // 新窗口当场登记进对话列表：不等第一条消息存成功，哪怕是空窗也看得见、点得开
+  try {
+    const l0 = getConvs();
+    if (!l0.some(c => c.id === currentConvId)) {
+      l0.unshift({ id: currentConvId, title: '新的一窗', preview: '', updatedAt: Date.now(), model: currentModel });
+      saveConvs(l0);
+    }
+  } catch (e) { }
   $('conv-panel').classList.remove('open'); showPage('chat');
   if (fresh !== true && prev.id && prev.msgs.length) handoff(prev, carryPick);
 }
