@@ -363,6 +363,10 @@ def record_usage(data_dir, usage, model, tag):
             'cr': int(usage.get('cache_read_input_tokens') or 0),
             'cw': int(usage.get('cache_creation_input_tokens') or 0),
             'acct': active_token(data_dir)[2]}
+    # 查有没有真拿到 1 小时缓存用的：cache_creation 拆了 1h/5m 两档才有这两个字段
+    if usage.get('cache_creation_1h') is not None or usage.get('cache_creation_5m') is not None:
+        item['cw1h'] = int(usage.get('cache_creation_1h') or 0)
+        item['cw5m'] = int(usage.get('cache_creation_5m') or 0)
     with _rec_lock:
         items = [x for x in _jload(path, []) if x.get('ts', 0) >= (now - USAGE_KEEP_SEC) * 1000]
         items.append(item)
@@ -1355,6 +1359,11 @@ class _Run:
             self.usage = {k: u[k] for k in ('input_tokens', 'output_tokens',
                                             'cache_read_input_tokens',
                                             'cache_creation_input_tokens') if k in u}
+            # cache_creation 底下如果拆了 1h/5m 两档，留一份——不然没法查到底拿没拿到 1 小时缓存
+            cc = u.get('cache_creation')
+            if isinstance(cc, dict):
+                self.usage['cache_creation_1h'] = cc.get('ephemeral_1h_input_tokens')
+                self.usage['cache_creation_5m'] = cc.get('ephemeral_5m_input_tokens')
             return []
         return []
 
