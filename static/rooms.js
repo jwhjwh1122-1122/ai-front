@@ -2967,6 +2967,9 @@ async function checkMissed() {
     return list;
   } catch (e) { return []; }
 }
+// 以前只在开页面那一下、或者手动点电话按钮才查一次：她开着聊天的时候他打过来，
+// 红点和聊天里的未接来电提示都不会冒，非要自己点进电话才翻得到。现在跟 wakeInject 一样定时查。
+setInterval(checkMissed, 60000);
 
 async function openCallLog() {
   $('calllog-panel').classList.add('open');
