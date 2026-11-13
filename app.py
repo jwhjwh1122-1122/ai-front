@@ -536,7 +536,7 @@ def lin_status_api():
 # ============================================================
 # 记忆摘要
 # ============================================================
-MEMORY_SUMMARY_DIR = os.path.join(BASE, 'memory_summaries')
+MEMORY_SUMMARY_DIR = os.path.join(DATA_DIR, 'memory_summaries')   # BASE 是镜像代码目录，每次部署重建都会清空
 os.makedirs(MEMORY_SUMMARY_DIR, exist_ok=True)
 
 
@@ -2670,12 +2670,14 @@ def chat_v2():
         volatile.append(dline)
     if data.get('extra'):
         volatile.append(data['extra'])
+    # 记忆摘要（刚读过哪段记忆、刚看过哪张照片）每次 breath/view_memory 都会更新，
+    # 跟「几点了」一样是会变的，放进 stable/system 会导致 cc 模式整段缓存频繁断。
+    mem = memory_summary_text(sid)
+    if mem:
+        volatile.append(mem)
     stable = []
     if data.get('extra_stable'):
         stable.append(data['extra_stable'])
-    mem = memory_summary_text(sid)
-    if mem:
-        stable.append(mem)
     msgs_in = data.get('messages', []) or []
     if not keepalive:
         # 「隔了多久」上面已经按上一次算好了，这里才记这一次
