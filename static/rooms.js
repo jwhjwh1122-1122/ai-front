@@ -5098,6 +5098,25 @@ function selToNewConv(withHandoff) {
 // 等于我每次自己醒着跟她说的那些，她一句都没收到。现在它直接进聊天，
 // 跟我平时发的消息一样躺在那儿，她一打开就看见。
 const WAKE_INJ_KEY = 'wake-injected-ts';
+// 醒来那句里带 [语音] 的段，跟平时聊天一样直接生成语音——不然进了聊天记录的
+// renderOneMsgRaw 找不到 _voices，就会把标记连文字一起当成大白话贴出来。
+async function wakeVoicesFor(text) {
+  if (!text?.trim() || typeof splitSay !== 'function' || typeof isVoiceSeg !== 'function') return null;
+  const segs = splitSay(text);
+  const idxs = segs.map((s, i) => (isVoiceSeg(s) && voiceText(s) ? i : -1)).filter(i => i >= 0);
+  if (!idxs.length) return null;
+  const voice = localStorage.getItem('tts-voice') || (window.CFG && CFG.voice) || 'calm';
+  const store = [];
+  for (const i of idxs) {
+    const t = voiceText(segs[i]);
+    let d = {};
+    try { d = await jpost('/api/tts-save', { text: t.slice(0, 600), voice }); } catch (e) { }
+    if (!d || !d.url) continue;
+    const secs = Math.max(2, Math.round([...t].length / 4.2));
+    store.push({ i, url: d.url, dur: secs });
+  }
+  return store.length ? store : null;
+}
 async function wakeInject() {
   try {
     // currentConvId 是 app.js 里的 let，挂不到 window 上，只能直接引用
@@ -5121,10 +5140,14 @@ async function wakeInject() {
       return;
     }
     neu.sort((a, b) => a.ts - b.ts);
-    neu.forEach(x => messages.push({
-      role: 'assistant', content: x.said, _ts: x.ts, _wake: true,
-      _mid: 'w' + x.ts.toString(36),
-    }));
+    for (const x of neu) {
+      const voices = await wakeVoicesFor(x.said);
+      messages.push({
+        role: 'assistant', content: x.said, _ts: x.ts, _wake: true,
+        _mid: 'w' + x.ts.toString(36),
+        ...(voices ? { _voices: voices } : {}),
+      });
+    }
     localStorage.setItem(WAKE_INJ_KEY, String(neu[neu.length - 1].ts));
     saveConv();
     if (typeof redrawMsgs === 'function') redrawMsgs();
