@@ -1053,6 +1053,9 @@ def child_env(data_dir=None):
         env.setdefault('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '1')
         env.setdefault('CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', '1')
         env.setdefault('CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING', '1')
+    # 官方文档：订阅登录、没超出套餐额度时本来就该自动给 1 小时缓存，超出额度转按量计费
+    # 那一刻会掉回 5 分钟。显式开这个开关，不管哪种情况都明着要 1 小时，能要到就要到。
+    env.setdefault('ENABLE_PROMPT_CACHING_1H', '1')
     heap = (os.environ.get('CC_NODE_MAX_OLD_SPACE_MB') or '').strip()
     if heap.isdigit() and int(heap) > 0:
         opts = env.get('NODE_OPTIONS') or ''
