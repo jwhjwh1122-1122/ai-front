@@ -1060,13 +1060,15 @@ function updateBubble(wrap, text, done, rawText, rowRef, tokens, ts) {
   markUnreadIfAway();   // 这条回复真的说完了，不在最底下就记一条未读——不是流式更新时记的
   scrollBottom();
 }
-// 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97%——这行跟其它小字一个颜色，命中率不单独变色
+// 新输入 1.0k · 读缓存 33.7k · 输出 432 · 命中 97% · 上下文 48.6k——这行跟其它小字一个颜色，命中率不单独变色
+// 「上下文」= 这一轮模型实际看到的窗口总量（新输入+读缓存+写缓存），tk.in 本来就是这三项加一起
 function tokLine(tk) {
   if (!tk || (!tk.in && !tk.out)) return '';
   const cr = tk.cr || 0, fresh = Math.max(0, (tk.in || 0) - cr), out = tk.out || 0;
   let hit = '';
   if (fresh + cr > 0) hit = ` · 命中 ${Math.round(cr / (fresh + cr) * 100)}%`;
-  return `新输入 ${fmtTok(fresh)} · 读缓存 ${fmtTok(cr)} · 输出 ${fmtTok(out)}${hit}`;
+  const ctx = tk.in ? ` · 上下文 ${fmtTok(tk.in)}` : '';
+  return `新输入 ${fmtTok(fresh)} · 读缓存 ${fmtTok(cr)} · 输出 ${fmtTok(out)}${hit}${ctx}`;
 }
 async function showTrans(wrap, text) {
   let box = wrap.querySelector('.trans-box');
