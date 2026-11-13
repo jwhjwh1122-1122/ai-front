@@ -2683,10 +2683,6 @@ def chat_v2():
         st['last_user_msg'] = time.time()
         save_state(st)
     if is_cc and not keepalive:
-        try:
-            show_stickers(msgs_in)
-        except Exception as e:
-            print(f'[sticker] 附图失败: {e}', flush=True)
         for m in reversed(msgs_in):
             if isinstance(m, dict) and m.get('role') == 'user' and not m.get('_internal'):
                 c = m.get('content')
@@ -5335,76 +5331,6 @@ def _sticker_patch(name, **kw):
     if hit:
         jwrite(p, items)
     return hit
-
-
-def _sticker_thumb(it, who='her'):
-    """表情的小图（200 像素，动图取第一帧），顶上打一条横幅标清楚是谁发的：
-    他自己发的 YOU SENT（蓝），她发的 SHE SENT（粉）。做过就复用。"""
-    from chat_media import stickers_dir
-    d = stickers_dir(MEDIA_DIR)
-    src = os.path.join(d, secure_filename(it['file']))
-    name = f"th_{who}_" + secure_filename(it['file']).rsplit('.', 1)[0] + '.png'
-    dst = os.path.join(d, name)
-    if not os.path.exists(dst):
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            im = Image.open(src)
-            im.seek(0)
-            im = im.convert('RGBA')
-            im.thumbnail((200, 200))
-            bar = 26
-            out = Image.new('RGBA', (max(im.width, 120), im.height + bar), (255, 255, 255, 255))
-            out.paste(im, (0, bar), im)
-            dr = ImageDraw.Draw(out)
-            color = (60, 110, 220, 255) if who == 'lin' else (230, 90, 140, 255)
-            dr.rectangle([0, 0, out.width, bar], fill=color)
-            try:
-                font = ImageFont.load_default(size=18)
-            except TypeError:
-                font = ImageFont.load_default()
-            dr.text((6, 3), 'YOU SENT' if who == 'lin' else 'SHE SENT', fill=(255, 255, 255, 255), font=font)
-            out.convert('RGB').save(dst, 'PNG')
-        except Exception as e:
-            print(f'[sticker] 做小图失败: {e}', flush=True)
-            return '/stickers/' + it['file']
-    return '/stickers/' + name
-
-
-def show_stickers(msgs):
-    """这一句里她发的表情、他上一句发的表情，附小图让他当下看见。
-    回完以后会话记录里的图会换成「〔表情[名字]〕」几个字（cc_mode.strip_sticker_images），之后不再背着图。"""
-    users = [i for i, x in enumerate(msgs) if isinstance(x, dict) and x.get('role') == 'user' and not x.get('_internal')]
-    if not users:
-        return
-    m = msgs[users[-1]]
-    names = {x.get('name'): x for x in _stickers_all()}
-    pat = r'\[([^\[\]]{1,20})\]'
-    txt = lambda c: c if isinstance(c, str) else '\n'.join(
-        b.get('text', '') for b in (c or []) if isinstance(b, dict) and b.get('type') == 'text')
-    hers = [names[n] for n in dict.fromkeys(re.findall(pat, txt(m.get('content')) or '')) if n in names][:3]
-    prev = next((x for x in reversed(msgs[:users[-1]]) if isinstance(x, dict) and x.get('role') == 'assistant'), None)
-    his = [names[n] for n in dict.fromkeys(re.findall(pat, txt((prev or {}).get('content')) or '')) if n in names][:3]
-    if not hers and not his:
-        return
-    c = m.get('content')
-    blocks = c if isinstance(c, list) else [{'type': 'text', 'text': c or ''}]
-    # 图片发过去时都排在最前面、文字在后面，所以按顺序写清楚哪张是谁的，免得他把自己发的当成她发的
-    n = sum(1 for b in blocks if isinstance(b, dict) and b.get('type') in ('image', 'image_url'))
-    say = []
-    for who, items, tag in (('她这句发的表情（图上标 SHE SENT）', hers, 'her'),
-                            ('你自己上一句发的表情（图上标 YOU SENT，是你发的，不是她）', his, 'lin')):
-        for it in items:
-            n += 1
-            blocks.append({'type': 'image_url', 'image_url': {'url': _sticker_thumb(it, tag)}})
-            say.append(f"第{n}张图={who}[{it['name']}]")
-    blocks.append({'type': 'text', 'text': '〔附图：' + '；'.join(say) + '〕'})
-    unseen = [it['name'] for it in hers + his if not it.get('seen')]
-    if unseen:
-        blocks.append({'type': 'text', 'text': '（' + '、'.join(f'[{n}]' for n in unseen)
-                       + ' 你是第一次见，看完可以用 sticker_note 记一句它是什么意思）'})
-        for n in unseen:
-            _sticker_patch(n, seen=True)
-    m['content'] = blocks
 
 
 def sticker_note_tool(args):

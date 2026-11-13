@@ -845,49 +845,6 @@ def _entry_text(entry):
     return _NOTE_HEAD.sub('', t).strip()
 
 
-def strip_sticker_images(session_id):
-    """（停用：改了旧记录会让 Claude Code 的缓存每句都断，整段会话按全价重算，反而更费。
-    小图本身只有约 50 token、走缓存，留着更省；换新会话时自然就没了。）
-    他看过的表情图，在会话记录里换成「〔表情[名字]〕」几个字：当下看见，之后不再每句背着图。"""
-    p = _session_path(session_id)
-    if not p:
-        return 0
-    try:
-        with open(p, encoding='utf-8') as f:
-            lines = f.read().split('\n')
-    except Exception:
-        return 0
-    n = 0
-    for i, l in enumerate(lines):
-        if '〔' not in l or '"image"' not in l:
-            continue
-        try:
-            d = json.loads(l)
-        except Exception:
-            continue
-        c = (d.get('message') or {}).get('content')
-        if d.get('type') != 'user' or not isinstance(c, list):
-            continue
-        # 发给 claude 时图片在前、文字合成一段在后；表情图是附在最后的那几张，按说明的个数从后往前去掉
-        alltext = ''.join(str(b.get('text', '')) for b in c if isinstance(b, dict) and b.get('type') == 'text')
-        k = alltext.count('〔她发的表情[') + alltext.count('〔你刚才发的表情[')
-        if not k:
-            continue
-        img_idx = [j for j, b in enumerate(c) if isinstance(b, dict) and b.get('type') == 'image']
-        gone = set(img_idx[-k:])
-        out = [b for j, b in enumerate(c) if j not in gone]
-        n += len(gone)
-        if len(out) != len(c):
-            d['message']['content'] = out
-            lines[i] = json.dumps(d, ensure_ascii=False)
-    if n:
-        tmp = p + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-        os.replace(tmp, p)
-    return n
-
-
 def regen_fork(session_id, target_text):
     """重新生成：在会话记录里找到她要重来的那句话（按内容找，不管是不是最后一句），
     把它之前的记录复制成一份新会话，返回新会话号。找不到就返回 None（调用方开新会话）。
