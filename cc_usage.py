@@ -45,8 +45,9 @@ LABELS = {
     'seven_day': '每周 · 全部模型',
     'seven_day_sonnet': '每周 · Sonnet',
     'seven_day_opus': '每周 · Opus',
+    'seven_day_fable': '每周 · Fable',
 }
-ORDER = ['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_opus']
+ORDER = ['five_hour', 'seven_day', 'seven_day_sonnet', 'seven_day_opus', 'seven_day_fable']
 SEV_CLASS = {'critical': 'full', 'warning': 'warn', 'normal': ''}   # 服务器给的 severity -> 前端的颜色 class
 
 # 跟官方 CLI 同一套：登录凭据（.credentials.json）快过期/过期了，用 refresh_token 换新的再查用量。
@@ -227,6 +228,8 @@ def _row_key(row, idx):
             return 'seven_day_opus'
         if 'sonnet' in low:
             return 'seven_day_sonnet'
+        if 'fable' in low:
+            return 'seven_day_fable'
         return 'seven_day_scoped_' + low.replace(' ', '_')
     return f'row_{idx}_{kind or "other"}'
 
