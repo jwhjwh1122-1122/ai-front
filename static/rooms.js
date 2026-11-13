@@ -4398,7 +4398,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = $('model-list'); if (!el) return;
     const list = (models && models.length) ? models
       : ['anthropic/claude-sonnet-4-6', 'anthropic/claude-opus-4-6', 'anthropic/claude-haiku-4-5',
-         'anthropic/claude-opus-4-7', 'anthropic/claude-opus-4-8', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5-5'];
+         'anthropic/claude-opus-4-7', 'anthropic/claude-opus-4-8', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5-5',
+         'anthropic/claude-sonnet-5-5', 'anthropic/claude-fable-5-2'];
     if (!list.includes(currentModel)) { currentModel = list[0]; localStorage.setItem('model', currentModel); }
     el.innerHTML = '';
     list.forEach(mo => {
