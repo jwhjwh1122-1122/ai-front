@@ -304,6 +304,7 @@ LAST_CC_SYS = os.path.join(DATA_DIR, 'cc_last_system.json')
 LAST_CC_REQ = os.path.join(DATA_DIR, 'cc_last_req.json')
 RECAP_FROZEN = os.path.join(DATA_DIR, 'cc_recap_frozen.json')
 BRAIN_FROZEN = os.path.join(DATA_DIR, 'cc_brain_frozen.json')   # 每个会话开头定下来的「整份记忆」
+NB_FROZEN = os.path.join(DATA_DIR, 'cc_nb_frozen.json')         # 每个会话开头定下来的小本子（聊天中锁着，换窗才换新）
 CTX_WIN_FILE = os.path.join(DATA_DIR, 'cc_ctx_win.json')   # 每个对话当前会话是按几轮上下文开的
 
 
@@ -361,13 +362,29 @@ def load_nb():
     return jread(_nb_file(), {'text': '', 'pending': None})
 
 
-def nb_current(prev_talk=None):
-    """他写的先挂着；隔了快一小时（缓存早过期了）才换进 system，平时不为它断缓存。"""
+def nb_commit():
+    """换窗的时候调：把他（或她）聊天中写下、先挂着的那份正式换进小本子，返回换好的全文。"""
     nb = load_nb()
-    if nb.get('pending') is not None and (prev_talk is None or time.time() - prev_talk > 55 * 60):
+    if nb.get('pending') is not None:
         nb['text'], nb['pending'] = nb['pending'], None
         jwrite(_nb_file(), nb)
     return nb.get('text', '')
+
+
+def nb_for_session(cc_key, new_session):
+    """cc 模式下这个会话眼前的小本子。聊天过程中是锁着的：他照常写（写在 pending 上，read 也读得到），
+    但 system 里那份一个字不动，缓存不断；只有换窗（开新会话）时才把挂着的换进去。
+    以前是「隔 55 分钟没聊就换进去」，那是按 5 分钟缓存想的；现在缓存 1 小时，55 分钟时还活着，一换就整段作废。"""
+    frozen = jread(NB_FROZEN, {})
+    if new_session:
+        frozen[cc_key] = nb_commit()
+        jwrite(NB_FROZEN, frozen)
+    elif cc_key not in frozen:
+        # 会话已经聊着、但还没给它定过（刚升级上来，或者她点了「立刻生效」）：
+        # 用现在正式的那份，挂着的不动，等换窗
+        frozen[cc_key] = load_nb().get('text', '')
+        jwrite(NB_FROZEN, frozen)
+    return frozen.get(cc_key, '')
 
 
 def notebook_tool(args):
@@ -389,7 +406,8 @@ def notebook_tool(args):
         return f'写不下了（{len(new)}/{NOTEBOOK_MAX} 字）。先 read 看看，再 rewrite 精简一下。'
     nb['pending'] = new
     jwrite(_nb_file(), nb)
-    return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）'
+    # 眼前（system 里）那份这个窗口里不变，不然每记一笔整段缓存就作废；换窗时才换成新的
+    return f'记上了（{len(new)}/{NOTEBOOK_MAX} 字）。这个窗口里眼前那份先不变，换窗后就是新的；现在想看最新的就 read'
 
 
 def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook=None, recap_text=None,
@@ -2732,7 +2750,8 @@ def chat_v2():
         # 醒来时用跟这次聊天一样的设置（思考、深度、MCP、模型不一样，整段缓存也会断）
         jwrite(LAST_CC_REQ, {'effort': data.get('_effort'), 'thinking': data.get('_thinking') is not False,
                              'mcp': data.get('_mcp'), 'model': data.get('model')})
-        notebook = nb_current(prev_talk)
+        # 小本子也一样：聊天中锁着，他写的先挂着，换窗（开新会话）时才换进 system
+        notebook = nb_for_session(cc_key, cc_mode.get_session(DATA_DIR, cc_key) is None)
         system_prompt = build_system(persona, "\n".join(x for x in stable if x),
                                      conv_id=data.get('_conv_id'), extra_title='手边', notebook=notebook,
                                      recap_text=frozen.get(cc_key, ''), brain_text=brain_frozen.get(cc_key, ''),
@@ -5529,7 +5548,7 @@ def cc_pending():
 @app.route('/api/notebook', methods=['GET', 'POST'])
 def notebook_get():
     """同一本：他自己 notebook 工具写，宝宝在设置里也能直接改。
-    改完先挂在 pending 上，和他自己写一样 —— 平时不为这个断掉提示缓存；
+    改完先挂在 pending 上，和他自己写一样 —— 聊天中不为这个断掉提示缓存，换窗时才换进 system；
     传 now=1 就立刻换进 system（下一句就带新的，代价是这轮缓存作废）。"""
     nb = load_nb()
     if request.method == 'POST':
@@ -5539,6 +5558,7 @@ def notebook_get():
             return jsonify({'error': f'写不下了（{len(t)}/{NOTEBOOK_MAX} 字）'}), 400
         if d.get('now'):
             nb['text'], nb['pending'] = t, None
+            jwrite(NB_FROZEN, {})      # 各个会话锁着的那份都作废，下一句就按新的来
         else:
             nb['pending'] = t
         jwrite(_nb_file(), nb)

@@ -4954,7 +4954,7 @@ async function nbSave(now) {
   $('nb-text').textContent = nbCur || '还是空的';
   $('nb-text').style.color = nbCur ? 'var(--text)' : 'var(--text-muted)';
   nbShow(false);
-  toast(now ? '存下了，他下一句就看得见' : '存下了，过一会儿换进他眼前');
+  toast(now ? '存下了，他下一句就看得见' : '存下了，换窗的时候换进他眼前');
 }
 async function renderNotebook() {
   const el = $('nb-text'); if (!el) return;
