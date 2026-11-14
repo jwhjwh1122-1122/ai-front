@@ -326,20 +326,50 @@ def _pick(d, *keys):
     return None
 
 
-def note_rate_limit(data_dir, info):
-    """stream-json 里的 rate_limit_event。字段名有驼峰也有下划线，两种都认。没有百分比。"""
-    kind = str(_pick(info, 'rateLimitType', 'rate_limit_type') or 'unknown')[:30]
-    resets = _pick(info, 'resetsAt', 'resets_at')
+# rate_limit_event 里窗口的名字 -> 这边用的 key。Fable 的周上限 Claude Code 内部叫 overage_included
+RATE_WINDOW_KEYS = {'seven_day_overage_included': 'seven_day_fable'}
+
+
+def _rate_item(w, now_ms):
+    """一个窗口的记录：重置时间统一成毫秒，百分比统一成 0–100（事件里是 0–1 的小数）。"""
+    resets = _pick(w, 'resetsAt', 'resets_at')
     try:
         resets = float(resets)
         if resets < 1e12:      # 秒 -> 毫秒
             resets *= 1000
     except (TypeError, ValueError):
         resets = None
-    util = _pick(info, 'utilization', 'used_percentage')
-    item = {'status': str(info.get('status') or '')[:30], 'resets_at': resets, 'ts': int(time.time() * 1000)}
-    if isinstance(util, (int, float)):
+    item = {'status': str(w.get('status') or '')[:30], 'resets_at': resets, 'ts': now_ms}
+    util = _pick(w, 'utilization', 'used_percentage')
+    if isinstance(util, (int, float)) and not isinstance(util, bool):
         item['pct'] = float(util) * 100 if util <= 1 else float(util)
+    return item
+
+
+def note_rate_limit(data_dir, info):
+    """stream-json 里的 rate_limit_event。字段名有驼峰也有下划线，两种都认。
+    百分比不在外层，在 unifiedWindows 里：每个窗口（5 小时 / 每周 / Fable 每周）各一条，
+    setup-token 这种查不了用量接口的令牌，百分比只有这一个来源。
+    Fable 那条只有这次跑的是 Fable 才带，所以按窗口合并着存，没带的那条留着上次的。"""
+    now_ms = int(time.time() * 1000)
+    items = {}
+    wins = _pick(info, 'unifiedWindows', 'unified_windows')
+    if isinstance(wins, dict):
+        for name, w in wins.items():
+            if isinstance(w, dict):
+                key = RATE_WINDOW_KEYS.get(str(name), str(name))[:30]
+                items[key] = _rate_item(w, now_ms)
+    # 外层说的是「这次是哪个窗口在管事」，它的 status 最准（快用完 / 已用完）
+    kind = str(_pick(info, 'rateLimitType', 'rate_limit_type') or 'unknown')[:30]
+    kind = RATE_WINDOW_KEYS.get(kind, kind)
+    top = _rate_item(info, now_ms)
+    if kind in items:
+        if top['status']:
+            items[kind]['status'] = top['status']
+        if items[kind]['resets_at'] is None:
+            items[kind]['resets_at'] = top['resets_at']
+    else:
+        items[kind] = top
     path = os.path.join(data_dir, 'cc_ratelimit.json')
     acct = active_token(data_dir)[2]
     with _rec_lock:
@@ -349,7 +379,7 @@ def note_rate_limit(data_dir, info):
         # 按账号分开存：{账号键: {窗口: 记录}}。以前不分账号的老记录留在文件里，但不再被读
         if not isinstance(d.get(acct), dict):
             d[acct] = {}
-        d[acct][kind] = item
+        d[acct].update(items)
         _jsave(path, d)
 
 

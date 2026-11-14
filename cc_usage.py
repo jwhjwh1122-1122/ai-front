@@ -307,14 +307,23 @@ def build_usage(data_dir):
                     'resets_at': ra, 'stale': stale,
                     'sev_cls': SEV_CLASS.get(row.get('severity'), ''),
                 }
-    # 接口没给的，用 Claude Code 自己报的限额事件补上重置时间（没有百分比）
-    for k in ('five_hour', 'seven_day'):
+    # 接口没给的，用 Claude Code 每次回话顺带报的限额事件补上（百分比 + 重置时间）。
+    # setup-token / 环境变量令牌查不了用量接口，百分比全靠这个。
+    # 会话和每周两条总是列出来；Fable 每周那条只有用 Fable 聊过才有记录，有才列
+    events_ts = 0
+    for k in ('five_hour', 'seven_day', 'seven_day_fable'):
         ev = events.get(k) or {}
+        if not ev and k not in ('five_hour', 'seven_day'):
+            continue
         ev_ra = ev.get('resets_at')
         ev_old = bool(ev_ra and ev_ra < int(time.time() * 1000))   # 那个窗口已经重置过，事件里的数不作数
         if k not in limits:
-            limits[k] = {'key': k, 'label': LABELS[k], 'pct': None if ev_old else ev.get('pct'),
-                         'resets_at': ev_ra}
+            pct = None if ev_old else ev.get('pct')
+            limits[k] = {'key': k, 'label': LABELS[k], 'pct': pct, 'resets_at': ev_ra}
+            if pct is not None:
+                limits[k]['from_event'] = True
+                limits[k]['ts'] = ev.get('ts')
+                events_ts = max(events_ts, int(ev.get('ts') or 0))
         if ev.get('status') and not ev_old:
             limits[k]['status'] = ev['status']
     now_ms = int(time.time() * 1000)
@@ -331,6 +340,8 @@ def build_usage(data_dir):
     return {
         'ok': True, 'cc_active': True, 'source': 'api' if api else 'local', 'api_error': '' if api else api_err,
         'scope_limited': scope_limited,
+        # 用量接口没查到、但 Claude Code 回话时报过百分比：这是那批百分比最后一次更新的时刻
+        'events_ts': events_ts if (not api and events_ts) else None,
         'updated': now_ms, 'limits': ordered, 'tokens': windows, 'account': acct,
         'context': ({'tokens': int(last.get('in', 0)) + int(last.get('cr', 0)) + int(last.get('cw', 0)),
                      'out': int(last.get('out', 0)), 'ts': last.get('ts'), 'model': last.get('model')}
