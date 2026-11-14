@@ -19,7 +19,7 @@ try:
 except AttributeError:
     pass
 
-from flask import Flask, request, Response, send_from_directory, jsonify
+from flask import Flask, request, Response, send_from_directory, jsonify, g as flask_g, has_request_context
 from flask_cors import CORS
 import requests, json, base64, hashlib, hmac, io, re, threading, uuid
 import cc_mode
@@ -2018,9 +2018,24 @@ def load_recap(conv_id):
     return jread(_recap_file(conv_id), {'text': '', 'covered': 0, 'ts': 0})
 
 
+def _req_conv():
+    """这次工具调用是哪个窗口的他发来的（cc 模式下每个窗口的 claude 请求头里带着自己的窗口号）。拿不到返回 ''。"""
+    try:
+        if has_request_context():
+            return getattr(flask_g, 'lin_conv', '') or ''
+    except Exception:
+        pass
+    return ''
+
+
 def _cur_conv():
     """他现在正在说话的那个窗口。以前这里拿的是浏览器会话 id，
-    写出去的前情提要落在一个谁都读不到的文件上。"""
+    写出去的前情提要落在一个谁都读不到的文件上。
+    工具调用自己带了窗口号就用它的；没带（API 模式）才按「最后说话的是哪个窗口」算——
+    那个是全局的，两个窗口同时聊会串。"""
+    rc = _req_conv()
+    if rc:
+        return rc
     st = load_state()
     return st.get('conv_id') or st.get('session_id') or 'default'
 
@@ -2777,12 +2792,13 @@ def chat_v2():
         if keepalive:
             return Response(cc_mode.keepalive_stream(), mimetype='text/event-stream', headers=sse_headers)
         cc_key = str(data.get('_conv_id') or sid)[:256]
-        # 全局只跑一个 claude：正在跑时短暂排队，等不到就回 429，不让请求无限堆积
-        slot = cc_mode.acquire_slot()
+        # 每个窗口一次只跑一个 claude（不同窗口可以同时跑）：这个窗口上一句还在回时短暂排队，
+        # 等不到就回 429，不让请求无限堆积
+        slot = cc_mode.acquire_slot(key=cc_key)
         if slot is None:
             return jsonify({'error': cc_mode.BUSY_TEXT, 'busy': True}), 429, {'Retry-After': '10'}
         try:
-            lin_doors_reset()   # 新的一轮，钥匙开的门都关上
+            lin_doors_reset(cc_key)   # 新的一轮，这个窗口钥匙开的门都关上
             holder = {}
             gen = cc_mode.stream_chat(messages=msgs_in,
                                       system_prompt=system_prompt, key=cc_key,
@@ -4960,13 +4976,18 @@ KEY_LABEL = {'memory': '照片墙', 'status': '状态', 'note': '碎碎念', 'fa
              'drawer': '抽屉', 'library': '资料库', 'desire': '欲望', 'reader': '书房', 'stage': '影音',
              'self': '唤醒闹钟电话', 'notebook': '小本子', 'emoji': '表情包'}
 DOOR_FREE = {'how_to'}   # 说明书不算门
-_lin_doors = set()
+_lin_doors_by = {}          # 窗口号 -> 这一轮开着的门。每个窗口各管各的，这个窗口新开一轮不关别的窗口的门
 _lin_doors_lock = threading.Lock()
 
 
-def lin_doors_reset():
+def _doors(conv=None):
+    """调用时要拿着 _lin_doors_lock。conv 不给就按这次工具调用是哪个窗口来的算。"""
+    return _lin_doors_by.setdefault(_req_conv() if conv is None else str(conv), set())
+
+
+def lin_doors_reset(conv=''):
     with _lin_doors_lock:
-        _lin_doors.clear()
+        _doors(conv).clear()
 
 
 def keys_given(p=None):
@@ -5035,7 +5056,7 @@ def _lin_open(which):
             if w in given:
                 already.append(KEY_LABEL[w])
                 continue
-            _lin_doors.add(w)
+            _doors().add(w)
             lines = []
             for n in KEY_GROUPS[w]:
                 t = defs.get(n)
@@ -5060,7 +5081,7 @@ def _lin_gate(name):
     if any(g in given for g in gs):
         return None
     with _lin_doors_lock:
-        if any(g in _lin_doors for g in gs):
+        if any(x in _doors() for x in gs):
             return None
     return f'「{KEY_LABEL[gs[0]]}」关着，先 open_tools 开 {gs[0]}。'
 
@@ -5119,6 +5140,9 @@ def lin_mcp():
         return ('', 204)
     if request.method == 'GET':
         return Response('', status=405, headers={'Allow': 'POST'})
+    # 哪个窗口的他在调：写交接、开门这些都落在他自己那个窗口上
+    from urllib.parse import unquote
+    flask_g.lin_conv = unquote(request.headers.get('X-Lin-Conv') or '')[:256]
     req = request.get_json(force=True, silent=True) or {}
     batch = req if isinstance(req, list) else [req]
     out = []
@@ -5161,10 +5185,11 @@ def do_wake_cc(manual=False, reason=''):
     """cc 模式的自己醒来：不走付费 API，跑一次 Claude Code（和聊天同一个会话、同一套工具）。"""
     p = load_persona()
     # 你正在跟他聊：自动醒来这次先跳过（下一分钟再看）；你手动叫的就排队等一会儿
-    slot = cc_mode.acquire_slot(wait=60 if manual else 0)
+    wake_key = _wake_cc_key()
+    slot = cc_mode.acquire_slot(wait=60 if manual else 0, key=wake_key)
     if slot is None:
         return {'error': '他正在回你的消息，等会儿再叫他', 'busy': True}
-    lin_doors_reset()   # 醒来时门都是关的，要用自己开
+    lin_doors_reset(wake_key)   # 醒来时门都是关的，要用自己开
     note = p.get('wake_prompt') or DEFAULT_PERSONA['wake_prompt']
     if reason:
         note = f'（叫你起来是因为：{reason}）' + note
@@ -5182,7 +5207,7 @@ def do_wake_cc(manual=False, reason=''):
     try:
         lr = jread(LAST_CC_REQ, {})
         gen = cc_mode.stream_chat(messages=[{'role': 'user', 'content': '（没有人说话）', '_note': now_context(p, note)}],
-                                  system_prompt=system_prompt, key=_wake_cc_key(), data_dir=DATA_DIR,
+                                  system_prompt=system_prompt, key=wake_key, data_dir=DATA_DIR,
                                   upstream_cfg=load_upstream(), model=lr.get('model') or _wake_cc_model(p),
                                   web_mcp=lr.get('mcp'), effort=lr.get('effort'),
                                   thinking=lr.get('thinking', True))

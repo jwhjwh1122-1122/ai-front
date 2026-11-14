@@ -22,7 +22,7 @@
                        保证走订阅登录；设为 1 则保留
 
 省内存相关（2GB 小机器，防止容器被 Evicted）：
-  CC_MAX_CONCURRENT    同时最多跑几个 claude，默认 1
+  CC_MAX_CONCURRENT    同时最多跑几个 claude，默认 3（不同窗口可以同时说话；同一个窗口永远一次只跑一个）
   CC_QUEUE_WAIT        正在跑的时候，新请求最多排队等几秒，默认 20；等不到就返回 429「他还在回上一条」
   CC_LEAN_ENV=0        关掉下面这几个默认省资源开关（默认开）：
                          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1（不自动更新/不上报/不拉实验开关）
@@ -105,8 +105,17 @@ def _env_int(name, default, lo=None):
     return max(lo, v) if lo is not None else v
 
 
-MAX_CONCURRENT = _env_int('CC_MAX_CONCURRENT', 1, lo=1)
+MAX_CONCURRENT = _env_int('CC_MAX_CONCURRENT', 3, lo=1)
 _slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+# 每个窗口（对话）自己一把锁：同一个窗口一次只跑一个 claude（两个同时续同一个会话会把会话记录写乱），
+# 不同窗口互不相干，可以同时跑。以前全局只许跑一个，这个窗口在说话，另一个窗口就只能等。
+_key_locks = {}
+_key_guard = threading.Lock()
+
+
+def _key_lock(key):
+    with _key_guard:
+        return _key_locks.setdefault(str(key), threading.Lock())
 _stat_lock = threading.Lock()
 _stat = {'running': 0, 'waiting': 0}
 BUSY_TEXT = '他还在回上一条消息，等他说完再发一次吧'
@@ -120,10 +129,11 @@ def concurrency():
 class Slot:
     """拿到的一个运行名额。release() 可以重复调用，只会真正还一次。"""
 
-    def __init__(self, waited):
+    def __init__(self, waited, key_lock=None):
         self.waited = waited
         self._done = False
         self._lock = threading.Lock()
+        self._key_lock = key_lock
 
     def release(self):
         with self._lock:
@@ -133,6 +143,11 @@ class Slot:
         with _stat_lock:
             _stat['running'] = max(0, _stat['running'] - 1)
         _slots.release()
+        if self._key_lock is not None:
+            try:
+                self._key_lock.release()
+            except RuntimeError:
+                pass
 
     def __del__(self):
         # 兜底：万一响应对象没被正常关闭，被回收时也把名额还回去
@@ -142,16 +157,25 @@ class Slot:
             pass
 
 
-def acquire_slot(wait=None):
-    """排队拿名额。最多等 CC_QUEUE_WAIT 秒，拿不到返回 None（调用方回 429）。"""
+def acquire_slot(wait=None, key=None):
+    """排队拿名额。最多等 CC_QUEUE_WAIT 秒，拿不到返回 None（调用方回 429）。
+    key：哪个窗口。先等这个窗口自己上一句说完，再拿全局名额；别的窗口在说话不挡它。"""
     if wait is None:
         wait = _env_int('CC_QUEUE_WAIT', 20, lo=0)
     t0 = time.time()
     ok = False
+    kl = _key_lock(key) if key else None
     with _stat_lock:
         _stat['waiting'] += 1
     try:
-        ok = _slots.acquire(timeout=wait) if wait > 0 else _slots.acquire(blocking=False)
+        mine = True
+        if kl is not None:
+            mine = kl.acquire(timeout=wait) if wait > 0 else kl.acquire(blocking=False)
+        if mine:
+            left = wait - (time.time() - t0)
+            ok = _slots.acquire(timeout=left) if left > 0 else _slots.acquire(blocking=False)
+            if not ok and kl is not None:
+                kl.release()
     finally:
         with _stat_lock:
             _stat['waiting'] -= 1
@@ -165,7 +189,7 @@ def acquire_slot(wait=None):
         return None
     if waited >= 0.5:
         print(f'[cc] 排队 {waited:.1f}s 后拿到名额 (running={st["running"]}/{st["max"]})', flush=True)
-    return Slot(waited)
+    return Slot(waited, kl)
 
 
 class GuardedStream:
@@ -729,7 +753,7 @@ def _write_if_changed(path, text, private=False):
     except Exception:
         old = None
     if old != text:
-        tmp = path + '.tmp'
+        tmp = f'{path}.tmp{os.getpid()}_{threading.get_ident()}'   # 几个窗口同时跑，各写各的临时文件
         with open(tmp, 'w', encoding='utf-8') as f:
             f.write(text)
         if private:
@@ -761,12 +785,22 @@ def register_local_mcp(name, url, headers=None):
     _LOCAL_MCP[name] = {'type': 'http', 'url': url, 'headers': dict(headers or {})}
 
 
-def local_mcp_config(cwd):
-    """写本地 MCP 的配置文件（里面有访问令牌，权限 600），返回 (路径, [名字])；关掉了返回 ('', [])。"""
+def local_mcp_config(cwd, conv=None):
+    """写本地 MCP 的配置文件（里面有访问令牌，权限 600），返回 (路径, [名字])；关掉了返回 ('', [])。
+    conv：这次是哪个窗口。每个窗口一份配置，请求头里带着自己的窗口号，
+    他调家里的工具（写交接、开门……）时服务器才知道是哪个窗口的他在调——
+    以前靠「最后说话的是哪个窗口」猜，两个窗口同时聊就会写到对方那里去。"""
     if os.environ.get('CC_LIN_MCP') == '0' or not _LOCAL_MCP:
         return '', []
-    path = os.path.join(cwd, '.mcp_local.json')
-    _write_if_changed(path, json.dumps({'mcpServers': _LOCAL_MCP}, ensure_ascii=False), private=True)
+    if not conv:
+        path = os.path.join(cwd, '.mcp_local.json')
+        _write_if_changed(path, json.dumps({'mcpServers': _LOCAL_MCP}, ensure_ascii=False), private=True)
+        return path, list(_LOCAL_MCP)
+    from urllib.parse import quote
+    servers = {n: dict(c, headers=dict(c.get('headers') or {}, **{'X-Lin-Conv': quote(str(conv), safe='')}))
+               for n, c in _LOCAL_MCP.items()}
+    path = os.path.join(cwd, f'.mcp_local_{_short(conv)}.json')
+    _write_if_changed(path, json.dumps({'mcpServers': servers}, ensure_ascii=False), private=True)
     return path, list(_LOCAL_MCP)
 
 
@@ -1760,7 +1794,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                                         ensure_ascii=False) + '\n'
             cmd = build_cmd(system_prompt, resume_id, upstream_cfg, sys_file,
                             auto_mcp=auto_mcp_config(cwd), req_model=model,
-                            local_mcp=local_mcp_config(cwd), image_input=bool(images),
+                            local_mcp=local_mcp_config(cwd, key), image_input=bool(images),
                             web_mcp=web, effort=eff, thinking=thinking is not False, resume_at=resume_at)
             run = _Run(data_dir, key, mids=[_mid(m) for m in this_turn if _mid(m)])
             sf =_session_file_size(resume_id)
