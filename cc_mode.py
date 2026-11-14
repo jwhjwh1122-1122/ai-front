@@ -925,6 +925,17 @@ def regen_fork(session_id, target_text):
 
 
 _FORK_FLAG_BROKEN = False
+
+# 为什么这一次开的是新会话（新会话 = 整段缓存重写一遍，两万多 token）。记进排查记录，
+# 不然只有容器日志里有，一部署就没了，事后查不出是换窗、重新生成没接上、还是会话文件丢了。
+_new_reason = {}          # 对话 key -> app 那边换窗时留的话，开跑时取走
+_FORK_WHY = {'no-file': '原会话的文件找不到', 'read-fail': '原会话的文件读不出来',
+             'not-found': '在原会话里找不到要重来的那句话', 'first-turn': '要重来的是这个会话的第一句',
+             'write-fail': '分叉出来的会话写不进去'}
+
+
+def note_new_session(key, reason):
+    _new_reason[str(key)] = str(reason)[:120]
 _TOOLS_FLAG_BROKEN = False   # 这个版本不认 --tools 就记住，以后不加
 
 
@@ -1691,6 +1702,10 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
 
     resume_id = get_session(data_dir, key)
     resume_at = None
+    pre_why = _new_reason.pop(str(key), '')
+    # new_why：这次为什么是新会话；regen_how：重新生成时是接着原会话分叉（缓存还在）还是重开
+    new_why = '' if resume_id else (pre_why or '这个对话还没有会话（第一次聊，或之前的被清掉了）')
+    regen_how = ''
     if not regen and resume_id and tail:
         # 这一轮她的话全都已经送进过会话（网页把他那条回复删了又发一遍 = 重新生成，
         # 或者上次没收到回复又发了一遍）：都当重新生成，从这一轮之前重来，不让他看到之前的版本
@@ -1705,6 +1720,10 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
         # 切好了就接新那份；切不了（第一轮、找不到）：开新会话，只带网页里剩下的历史（已经去掉 roll 的那些）
         resume_id = new_id
         print(f'[cc] 重新生成 #{_short(key)} fork={"yes" if new_id else "no"} ({why})', flush=True)
+        regen_how = 'fork' if new_id else 'new'
+        if not new_id:
+            new_why = (f'重新生成没接上原会话：{_FORK_WHY.get(why, why)}'
+                       f'（要找的话 {len(target)} 字，这一轮 {len(tail)} 条，{"编辑重发" if regen_target.strip() else "原话重来"}）')
     eff = pick_effort(effort)
     attempt = 0
     run = None
@@ -1817,6 +1836,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     holder['detached'] = True
                     meta = {'ts': int(t_start * 1000), 'conv': tag, 'model': pick_model(model, upstream_cfg) or 'default',
                             'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
+                            'new_why': '' if resume_id else new_why, 'regen': regen_how,
                             'skipped_dup': skipped, 'error': ''}
                     print(f'[cc] 她那边断开了 #{tag}，让他在后台说完', flush=True)
                     threading.Thread(target=_finish_detached, daemon=True,
@@ -1842,6 +1862,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                             'ts': int(t_start * 1000), 'conv': tag, 'outcome': outcome,
                             'dur': round(dur, 1), 'model': pick_model(model, upstream_cfg) or 'default',
                             'resume': bool(resume_id), 'images': len(images), 'image_problems': img_problems,
+                            'new_why': '' if resume_id else new_why, 'regen': regen_how,
                             'skipped_dup': skipped, 'mcp': run.mcp, 'error': err_short,
                             'tools': [v['name'] for v in run.tools.values()][:30],
                             'peak_mb': round(peak / 1048576), 'tokens': {
@@ -1898,6 +1919,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                         _FORK_FLAG_BROKEN = True
                     print(f'[cc] 重新生成分叉失败，改开新会话：{detail[:200]}', flush=True)
                     resume_id, resume_at = None, None
+                    new_why, regen_how = '重新生成分叉失败，Claude Code 不认分叉出来的会话', 'new'
                     continue
                 # 续会话失败（比如凭据目录没持久化，旧会话文件没了）：丢掉映射，重开一次
                 if (resume_id and attempt == 1 and not run.text_emitted
@@ -1905,6 +1927,7 @@ def stream_chat(*, messages, system_prompt, key, data_dir, upstream_cfg, model=N
                     print(f'[cc] 续会话 {resume_id} 失败，重开新会话：{detail[:200]}', flush=True)
                     set_session(data_dir, key, None)
                     resume_id = None
+                    new_why = '续会话失败：Claude Code 说找不到上次的会话，只好重开'
                     continue
                 print(f'[cc] 出错：{detail[:400]}', flush=True)
                 for c in run.text(_error_text(detail[:300])):

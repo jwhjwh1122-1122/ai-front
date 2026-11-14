@@ -2723,6 +2723,8 @@ def chat_v2():
                 cc_mode.session_turns(DATA_DIR, cc_key) >= win or sf > max_mb * 1048576):
             print(f'[cc] 会话聊满（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮 / {sf // 1048576}MB），'
                   f'换新会话 #{cc_mode._short(cc_key)}', flush=True)
+            cc_mode.note_new_session(cc_key, f'换窗：这个会话聊满了（{cc_mode.session_turns(DATA_DIR, cc_key)} 轮，上限 {win} 轮；'
+                                             f'会话文件 {sf / 1048576:.1f}MB，上限 {max_mb:g}MB）')
             cc_mode.set_session(DATA_DIR, cc_key, None)
         # 改了上下文设置：马上换新会话，把网页按新设置带来的全部原话一次给他，
         # 不然旧会话里只有改之前那几轮，要等聊满新轮数才「生效」
@@ -2731,6 +2733,7 @@ def chat_v2():
         if win_map.get(cc_key) != win:
             if prev_win != win and not data.get('_regen') and cc_mode.get_session(DATA_DIR, cc_key):
                 print(f'[cc] 上下文从 {prev_win} 改成 {win}，换新会话 #{cc_mode._short(cc_key)}', flush=True)
+                cc_mode.note_new_session(cc_key, f'上下文设置从 {prev_win or "全部"} 改成了 {win or "全部"}')
                 cc_mode.set_session(DATA_DIR, cc_key, None)
             win_map[cc_key] = win
             jwrite(CTX_WIN_FILE, win_map)

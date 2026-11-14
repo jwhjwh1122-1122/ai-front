@@ -201,7 +201,9 @@ async function loadCcRuns() {
     const t = `${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
     const [word, cls] = RUN_OUT[r.outcome] || [r.outcome, ''];
     const bad = r.error || (r.image_problems || []).length || (r.mcp || []).some(m => m.status !== 'connected');
-    const lines = [`${esc(r.model || '')} · ${r.resume ? '续上次的会话' : '新会话'} · 峰值内存 ${r.peak_mb || 0}MB`];
+    const lines = [`${esc(r.model || '')} · ${r.resume ? (r.regen === 'fork' ? '重新生成 · 接着原会话（缓存还在）' : '续上次的会话') : '新会话'} · 峰值内存 ${r.peak_mb || 0}MB`];
+    // 新会话 = 整段缓存重写一遍：写明这次为什么开了新的
+    if (!r.resume && r.new_why) lines.push(`<span class="${r.regen === 'new' ? 'run-bad' : ''}">为什么是新会话：${esc(r.new_why)}</span>`);
     if (r.images || (r.image_problems || []).length) {
       let s2 = '图片：';
       if (r.images) s2 += `<span class="run-ok">✓ 送进去 ${r.images} 张</span> `;
