@@ -262,6 +262,50 @@ def _sum(items, since_ms):
     return t
 
 
+HOST_RATE_FILE = 'host_rate_limits.json'   # 服务器终端里那个 claude 的状态栏脚本抄过来的一份（同一个账号、同一份额度）
+HOST_RATE_KEYS = {'seven_day_overage_included': 'seven_day_fable'}
+
+
+def _newer_reading(old, new):
+    """new 是不是比 old 新。先看重置时间（晚的是新窗口），一样就看用量（一个窗口里只涨不降，多的更新），再看记的时刻。"""
+    o, n = old.get('resets_at'), new.get('resets_at')
+    if isinstance(o, (int, float)) and isinstance(n, (int, float)) and abs(n - o) > 60000:
+        return n > o
+    op, np_ = old.get('pct'), new.get('pct')
+    if np_ is None:
+        return False
+    if op is None:
+        return True
+    if op != np_:
+        return np_ > op
+    return (new.get('ts') or 0) > (old.get('ts') or 0)
+
+
+def merge_host_readings(data_dir, events):
+    """前端自己记的额度只在这边聊天时才更新；她在服务器终端里用 claude 时，花的是同一份额度，
+    这边却不知道，数就卡在上次聊天那一刻。终端那边的状态栏脚本会把它看到的数抄一份到数据目录，
+    这里拿来跟自己记的比，哪个新用哪个。CC_USE_HOST_RATE=0 可以关（两边不是同一个账号时）。"""
+    if os.environ.get('CC_USE_HOST_RATE') == '0':
+        return events
+    doc = cc_mode._jload(os.path.join(data_dir, HOST_RATE_FILE), {})
+    wins = doc.get('windows') if isinstance(doc, dict) else None
+    if not isinstance(wins, dict):
+        return events
+    out = dict(events)
+    for name, w in wins.items():
+        if not isinstance(w, dict) or not isinstance(w.get('utilization'), (int, float)):
+            continue
+        k = HOST_RATE_KEYS.get(name, name)
+        ra, at = w.get('resets_at'), w.get('at')
+        item = {'pct': float(w['utilization']),
+                'resets_at': ra * 1000 if isinstance(ra, (int, float)) and ra < 1e12 else ra,
+                'ts': int(at * 1000) if isinstance(at, (int, float)) else 0, 'status': ''}
+        old = out.get(k)
+        if not isinstance(old, dict) or _newer_reading(old, item):
+            out[k] = item
+    return out
+
+
 def build_usage(data_dir):
     src, tok, acct = cc_mode.active_token(data_dir)
     if src.startswith('登录凭据'):
@@ -272,6 +316,7 @@ def build_usage(data_dir):
             tok, src = refreshed, '登录凭据'
     api, api_err, scope_limited = _fetch_api(data_dir, src, tok, acct)
     events = cc_mode.load_rate_limits(data_dir, acct)   # 只看当前账号的
+    events = merge_host_readings(data_dir, events)      # 终端那边看到的更新就用它的
     limits = {}
     if isinstance(api, dict):
         for k, v in api.items():

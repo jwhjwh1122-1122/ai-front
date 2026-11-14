@@ -179,7 +179,7 @@ async function loadCcUsage(force) {
   const evAt = d.events_ts ? new Date(d.events_ts) : null;
   $('cc-usage-src').textContent = d.source === 'api'
     ? '百分比来自 Claude 用量接口 · 刚刚更新'
-    : evAt ? `百分比是他每次回话时 Claude 顺带报的，最后一次是 ${evAt.getMonth() + 1}/${evAt.getDate()} ${String(evAt.getHours()).padStart(2, '0')}:${String(evAt.getMinutes()).padStart(2, '0')}，之后没聊过就不会变。Fable 那条只在用 Fable 聊时更新。token 数是这边自己记的（只算当前账号）`
+    : evAt ? `百分比是 Claude 回话时顺带报的（这边聊天、或者你在服务器终端里用 claude 时都会更新），最后一次是 ${evAt.getMonth() + 1}/${evAt.getDate()} ${String(evAt.getHours()).padStart(2, '0')}:${String(evAt.getMinutes()).padStart(2, '0')}，两边都没用就不会变。Fable 那条只在这边用 Fable 聊时更新。token 数是这边自己记的（只算当前账号）`
     : `${ccScopeLimited ? '百分比查不到' : '百分比暂时查不到'}：${d.api_error || '未知原因'}。token 数是这边自己记的（只算当前账号）`;
   const five = (d.limits || []).find(x => x.key === 'five_hour');
   const fq = five && qs.five_hour;
