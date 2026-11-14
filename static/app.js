@@ -2051,6 +2051,45 @@ function offloadOldConvs(need, keep = 4, allowCurrent = false) {
   }
   return freed;
 }
+// 对话列表里没有的 conv-*（以前「找回聊天」留下的几百个碎片）：列表里点不到，上面腾地方的逻辑
+// 只按列表找，也看不见它们，于是它们白占着手机那 5MB，每发一句都弹「存不下了」。
+// 这里把它们卸到服务器：一批批传，服务器回了「收到」才从手机上卸；服务器那份原样留着，手机上不删服务器的。
+let orphanOffloading = false;
+async function offloadOrphanConvs() {
+  if (!window.__store || orphanOffloading) return 0;
+  orphanOffloading = true;
+  let done = 0;
+  try {
+    // 列表读不出来（空的 / 坏了）时谁都像「不在列表里」，这种时候一个都不碰
+    const listed = () => { const l = getConvs(); return l.length ? new Set(l.map(c => 'conv-' + c.id)) : null; };
+    const isOrphan = (k, have) => k && k.startsWith('conv-') && !have.has(k) && k !== 'conv-' + currentConvId;
+    let have = listed();
+    if (!have) return 0;
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (isOrphan(k, have)) keys.push(k); }
+    while (keys.length) {
+      const set = {}; let size = 0;
+      while (keys.length && size < 400000) {
+        const k = keys.pop(), v = localStorage.getItem(k);
+        if (v === null) continue;
+        if (v === OFFLOADED) { window.__store.offload(k); continue; }   // 只剩个占位，直接清掉
+        set[k] = v; size += v.length;
+      }
+      const ks = Object.keys(set);
+      if (!ks.length) continue;
+      const r = await fetch('/api/store', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ set }) });
+      if (!r.ok) break;                   // 服务器没收下：这批和后面的都留在手机上，下次打开再试
+      have = listed();                    // 传的这会儿可能新开了对话，重新看一眼列表
+      if (!have) break;
+      for (const k of ks) {
+        // 还是不在列表里、内容也还是刚传上去的那份，才卸
+        if (isOrphan(k, have) && localStorage.getItem(k) === set[k]) { window.__store.offload(k); done++; }
+      }
+    }
+  } catch (e) { }
+  finally { orphanOffloading = false; }
+  return done;
+}
 // 读一个对话：手机上没有就从服务器拉回来
 function readConv(id) {
   const k = 'conv-' + id;

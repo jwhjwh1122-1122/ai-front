@@ -3608,6 +3608,8 @@ async function boot() {
   if (window.__storeRestored) toast('已从服务器恢复你的数据');
   // 手机存储快满之前先把老对话卸到服务器上，别等到存不下才丢最新的那几句
   try { if (storeUsed() > 3.4 * 1024 * 1024) offloadOldConvs(1.5 * 1024 * 1024); } catch (e) { }
+  // 列表里没有的旧碎片在后台卸到服务器（不等它，不耽误打开页面）
+  offloadOrphanConvs().then(n => { if (n) toast(`手机上腾出地方了：${n} 段不在列表里的旧记录已挪到服务器`); }).catch(() => { });
   const last = localStorage.getItem('current-conv-id'), convs = getConvs();
   if (last && readConv(last)) loadConv(last);
   else if (convs.length) loadConv(convs[0].id);
