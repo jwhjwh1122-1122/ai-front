@@ -1101,6 +1101,11 @@ def child_env(data_dir=None):
     # 官方文档：订阅登录、没超出套餐额度时本来就该自动给 1 小时缓存，超出额度转按量计费
     # 那一刻会掉回 5 分钟。显式开这个开关，不管哪种情况都明着要 1 小时，能要到就要到。
     env.setdefault('ENABLE_PROMPT_CACHING_1H', '1')
+    # Claude Code 自己的自动压缩关掉：上下文快满时它会自作主张把整段对话压成摘要，
+    # 那一下整段缓存作废、还要花一大笔 token 去压，他前面说过的原话也没了。
+    # 这边有自己的换窗（聊满轮数 / 会话文件太大就开新会话，更早的压成「更早的事」），不用它来。
+    # 想恢复就在环境变量里设 DISABLE_AUTO_COMPACT=0。
+    env.setdefault('DISABLE_AUTO_COMPACT', '1')
     heap = (os.environ.get('CC_NODE_MAX_OLD_SPACE_MB') or '').strip()
     if heap.isdigit() and int(heap) > 0:
         opts = env.get('NODE_OPTIONS') or ''
