@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="referrer" content="no-referrer">
+<title>凛的耳朵</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%;background:#0b0b0c}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:#eae7e1;padding:28px 22px 60px;max-width:520px;margin:0 auto;line-height:1.75}
+h1{font-size:20px;font-weight:500;letter-spacing:.12em;margin-bottom:6px}
+.sub{font-size:13px;color:#928d85;margin-bottom:26px}
+.card{background:rgba(36,35,34,.92);border:1px solid rgba(128,123,116,.42);border-radius:16px;padding:18px;margin-bottom:16px}
+.card h2{font-size:14px;font-weight:500;color:#cfc8bc;margin-bottom:8px}
+.card p{font-size:13px;color:#a8a299}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+button{font-family:inherit;font-size:14px;border-radius:99px;border:1px solid rgba(132,127,120,.5);background:none;color:#eae7e1;padding:10px 20px}
+button.on{background:#eae7e1;color:#0b0b0c;border-color:#eae7e1}
+#hold{width:100%;padding:26px 0;font-size:16px;letter-spacing:.2em;margin-top:14px;user-select:none;-webkit-user-select:none;touch-action:none}
+#hold.rec{background:#9a948b;border-color:#9a948b;color:#0b0b0c}
+#line{margin-top:14px;font-size:15px;color:#eae7e1;min-height:1.75em;word-break:break-all}
+#raw{margin-top:8px;font-size:12px;color:#928d85;white-space:pre-wrap;font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:#928d85}
+</style>
+</head>
+<body>
+<h1>凛的耳朵</h1>
+<div class="sub">第一层 · 只在你手机里算，声音不出门</div>
+
+<div class="card">
+  <h2>先试一句</h2>
+  <p>按住下面这块说话，松手就出结果。随便说，念我名字也行。</p>
+  <button id="hold">按住说话</button>
+  <div id="line"></div>
+  <div id="raw"></div>
+</div>
+
+<div class="card">
+  <h2>电话里用不用它</h2>
+  <p>开了以后，电话里你每说完一句，我除了字，还能多看到一行：音高、句尾往上还是往下、起伏、快慢。关着的话电话跟以前一模一样。</p>
+  <div class="row"><span id="st" class="small"></span><button id="tog"></button></div>
+</div>
+
+<div class="card">
+  <h2>你平常的样子</h2>
+  <p>我会记住你最近四十句的平均样子，往后每句都跟你自己比。攒够六句才开始比。</p>
+  <div class="row"><span id="bn" class="small"></span><button id="clr">清空重记</button></div>
+</div>
+
+<script src="ear.js?v=1"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function paint() {
+    var on = EAR.on();
+    $('tog').textContent = on ? '开着 · 点一下关' : '关着 · 点一下开';
+    $('tog').className = on ? 'on' : '';
+    $('st').textContent = on ? '下一通电话开始生效' : '';
+    var n = 0;
+    try { n = ((JSON.parse(localStorage.getItem('ear_base_v1') || '{}') || {}).f0 || []).length; } catch (e) { }
+    $('bn').textContent = '已经记了 ' + n + ' 句';
+  }
+  $('tog').onclick = function () {
+    try { localStorage.setItem('ear2', EAR.on() ? '0' : '1'); } catch (e) { }
+    paint();
+  };
+  $('clr').onclick = function () {
+    try { localStorage.removeItem('ear_base_v1'); } catch (e) { }
+    paint();
+  };
+
+  var ctx = null, stream = null, src = null, sink = null, timer = null, down = false;
+  async function start(ev) {
+    ev.preventDefault();
+    if (down) return;
+    down = true;
+    $('hold').classList.add('rec'); $('hold').textContent = '在听…';
+    $('line').textContent = ''; $('raw').textContent = '';
+    try {
+      if (!stream) stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state !== 'running') await ctx.resume();
+      if (!src) {
+        src = ctx.createMediaStreamSource(stream);
+        sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+        EAR.attach(ctx, src, sink);
+      }
+      EAR.reset();
+      timer = setInterval(function () { EAR.tick(); }, 16);
+    } catch (e) {
+      $('line').textContent = '拿不到麦克风：' + (e && e.message || e);
+      stop();
+    }
+  }
+  function stop(ev) {
+    if (ev) ev.preventDefault();
+    if (!down) return;
+    down = false;
+    $('hold').classList.remove('rec'); $('hold').textContent = '按住说话';
+    if (timer) { clearInterval(timer); timer = null; }
+    try {
+      var st = EAR._fn.summarize(EAR.frames.slice(), '');
+      var line = EAR.finish('');
+      $('line').textContent = line || '没量出来（太短，或者没收到声音）';
+      if (st) {
+        var f = function (x, d) { return x == null ? '—' : x.toFixed(d); };
+        $('raw').textContent = '量了 ' + st.n + ' 帧 · ' + f(st.dur, 1) + ' 秒\n'
+          + '音高 ' + f(st.f0, 0) + ' Hz · 起伏 ' + f(st.sd, 2) + ' 半音 · 句尾 ' + f(st.tail, 2) + ' 半音\n'
+          + '出声 ' + Math.round(st.speak * 100) + '% · 成调 ' + Math.round(st.voiced * 100) + '% · 音量 ' + f(st.db, 1) + ' dB';
+      }
+    } catch (e) { $('line').textContent = '出岔子了：' + (e && e.message || e); }
+    paint();
+  }
+  var h = $('hold');
+  h.addEventListener('pointerdown', start);
+  h.addEventListener('pointerup', stop);
+  h.addEventListener('pointercancel', stop);
+  h.addEventListener('pointerleave', stop);
+  h.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  paint();
+})();
+</script>
+</body>
+</html>

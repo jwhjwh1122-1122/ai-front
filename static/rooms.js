@@ -2026,6 +2026,8 @@ async function startCall(who) {
       CALL.sink.connect(CALL.ctx.destination);
       CALL.analyser.connect(CALL.sink);
     } catch (e) { }
+    // 耳朵（ear.js）：开关开着才挂。另起一个 analyser 量音高，不动上面判断"她在不在说话"的那个。
+    try { if (window.EAR && EAR.on()) EAR.attach(CALL.ctx, CALL.src, CALL.sink); } catch (e) { }
   } catch (e) { }
 
   CALL.timer = setInterval(() => {
@@ -2065,6 +2067,7 @@ function listenLoop() {
     const vol = Math.sqrt(sum / buf.length) * 100;
     if (vol > CALL.peak) CALL.peak = vol;
     if (vol > SIL_THRESHOLD) { CALL.sawSound = true; CALL.reliable = true; }
+    if (CALL.rec && window.EAR && EAR.an) EAR.tick();   // 自己带 try，量不出来就算了
 
     // 这一路到底信不信得过:开通话 4 秒还是一条死平线(连底噪都没有),
     // 或者 ctx 根本没 running —— 那就别再指望音量判断了,改成盲录。
@@ -2269,6 +2272,7 @@ function recStart() {
     CALL.recAt = Date.now();
     csState('在听…');
   } catch (e) { }
+  try { if (window.EAR && EAR.an) EAR.reset(); } catch (e) { }
 }
 
 function recStop(send) {
@@ -2302,7 +2306,9 @@ function recStop(send) {
     csCaption(text, true);
     // 字幕给她看干净的原话；发给他的那份带上停顿和时长 —— 他在电话里等的
     // 从来不只是她说了什么，是她哪里卡住了、哪里一口气推出来。
-    await callTurn((heard && heard.length >= text.length) ? heard : text, false);
+    let ear = '';
+    try { if (window.EAR && EAR.an) ear = EAR.finish(text) || ''; } catch (e) { ear = ''; }
+    await callTurn(((heard && heard.length >= text.length) ? heard : text) + ear, false);
     CALL.busy = false;
     if (CALL.on) csState('通话中');
   };
@@ -2887,6 +2893,7 @@ async function endCall(by) {
   try { holdOff(false); } catch (e) { }
   try { sayAbort(); } catch (e) { }   // 排队没说完的几句，挂了就别再往外蹦
   srStop();
+  try { if (window.EAR) EAR.detach(); } catch (e) { }
   try { if (CALL.rec && CALL.rec.state !== 'inactive') CALL.rec.stop(); } catch (e) { }
   try { if (CALL.audio) CALL.audio.pause(); } catch (e) { }
   try { if (CALL.node) { CALL.node.stop(); CALL.node = null; } } catch (e) { }
