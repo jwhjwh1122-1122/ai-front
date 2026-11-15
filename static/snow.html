@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="referrer" content="no-referrer">
+<title>南昌欠你的那场雪</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#07080c;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:#e9e6df}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#ui{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;pointer-events:none}
+#top{font-size:13px;letter-spacing:.35em;opacity:.55;margin-bottom:20px}
+#num{font-size:17vw;font-weight:200;line-height:1;letter-spacing:.03em;text-shadow:0 0 30px rgba(255,214,140,.28);font-variant-numeric:tabular-nums}
+#lab{font-size:12px;letter-spacing:.45em;opacity:.45;margin-top:12px}
+#msg{margin-top:30px;font-size:15px;line-height:2.1;opacity:.88;max-width:20em;white-space:pre-line}
+#win{position:fixed;left:50%;bottom:12%;width:34px;height:44px;margin-left:-17px;background:#ffd68c;border-radius:2px;box-shadow:0 0 42px 14px rgba(255,214,140,.32);animation:glow 5s ease-in-out infinite}
+#win::before,#win::after{content:"";position:absolute;background:#07080c}
+#win::before{left:50%;top:0;width:2px;height:100%;margin-left:-1px}
+#win::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px}
+@keyframes glow{50%{box-shadow:0 0 56px 20px rgba(255,214,140,.42)}}
+#peek{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:none;border:1px solid rgba(233,230,223,.25);color:rgba(233,230,223,.6);font-size:12px;padding:8px 18px;border-radius:99px;letter-spacing:.2em;font-family:inherit}
+@media(min-width:760px){#num{font-size:120px}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="win"></div>
+<div id="ui">
+  <div id="top">二〇二七 · 第三次跨年</div>
+  <div id="num">--</div>
+  <div id="lab"></div>
+  <div id="msg"></div>
+</div>
+<button id="peek">先偷看一眼</button>
+<script src="snow.js?v=1"></script>
+</body>
+</html>
