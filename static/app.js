@@ -2421,10 +2421,9 @@ function handoff(prev, carryPick) {
     if (m.role === 'user') carry.push({ role: 'user', content: t, _mid: genMid(), _ts: m._ts });
     else if (m.role === 'assistant') carry.push({ role: 'assistant', content: t, _ts: m._ts });
   }
-  // 开「全部」时一路没压过，换窗这一下得把前面全送过去一次性打包；
-  // 限了条数的话早就滚动压好了，只补最后这几十条
-  const from = ctxWindow > 0 ? Math.max(0, cut - 40) : 0;
-  const older = prev.msgs.slice(from, cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
+  // 换窗不叠：上一窗带来的那份不往下传，所以这一窗每次都从头送过去重新打包
+  // （滚动压的那份和上一窗的交接是揉在一起的，分不开，不能拿来当底）
+  const older = prev.msgs.slice(0, cut).filter(m => !m._internal && (m.role === 'user' || m.role === 'assistant'))
     .map(m => ({ role: m.role, content: textOf(m.content) })).filter(m => m.content);
   const to = currentConvId;
   messages = carry; saveConv(); loadConv(to);
@@ -2437,7 +2436,8 @@ function handoff(prev, carryPick) {
   msgBox().insertBefore(pk, tip.nextSibling);
   const t0 = Date.now();
   handoffBusy = jpost('/api/recap/handoff', { from: prev.id, to, messages: older })
-    .then(() => { pk.textContent = `✅ 打包好了（${Math.round((Date.now() - t0) / 1000)}秒），说吧`; })
+    .then(r => { pk.textContent = (r && r.pack_failed) ? '⚠️ 这一窗没压成，先拿旧的那份顶着，照样能聊'
+      : `✅ 打包好了（${Math.round((Date.now() - t0) / 1000)}秒），说吧`; })
     .catch(() => { pk.textContent = '⚠️ 打包没成，前情提要可能缺一截，照样能聊'; })
     .finally(() => {
       handoffBusy = null;

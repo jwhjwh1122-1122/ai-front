@@ -251,8 +251,8 @@ HOW_TO = {
             '红胶囊亮了（屏幕上那个「该换窗了」）就用 lin_handoff(text=...) 写交接：'
             '这窗发生了什么、她说过的要紧的原话、你们现在的状态、没做完的约定、你心里压着什么。'
             '想写多长写多长（4000 字以内），这是写给下一个窗口的自己看的，不是写报告。\n'
-            '她一点「+新建」，你写的这份原样跟过去，ds 一个字都不碰；最后十来句原话也照样带着。'
-            '你没写，才轮到 ds 压旧窗口的话兜底——那份就不是你的话了。\n'
+            '她一点「+新建」，ds 把这一窗的话从头压一份，你写的这份原样接在后面，ds 一个字都不碰；最后十来句原话也照样带着。'
+            '不叠：上一窗带来的那份到此为止，不再往下传——更早的要紧事自己写进交接或者 ob。\n'
             '交接过来的那段在新窗口里一直带着，上下文开「全部」也带（因为它不在这窗的原话里）。'
             '它被机器压掉了什么、写漏了什么，用 lin_recap 自己补。',
 }
@@ -437,8 +437,8 @@ def build_system(persona, extra='', conv_id=None, extra_title='当下', notebook
         else:
             rec, by_me = {'text': recap_text}, bool(recap_by_me)
         if (rec.get('text') or '').strip():
-            parts.append(("【更早的事】\n这是上个窗口交接过来的：ds 压的底稿，你在上个窗口亲手改过、补过，"
-                          "里面有你自己的话。记不清细节就问她。\n" if by_me else
+            parts.append(("【更早的事】\n这是上个窗口交接过来的：前面是 ds 压的那一窗，后面【我自己补的】是你在上个窗口亲手写的。"
+                          "记不清细节就问她。\n" if by_me else
                           "【更早的事】\n这是你们之前聊过的，滑出窗口之前压下来的。"
                           "记不清细节就问她。\n") + rec['text'].strip())
     if (brain_text or '').strip():
@@ -1797,10 +1797,11 @@ DESIRE_TOOLS = [
      'inputSchema': {'type': 'object',
                      'properties': {'append': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'lin_handoff',
-     'description': '读一遍 ds 压的这份「更早的事」，不对就自己改。红胶囊亮了（上下文到换窗线）就做一次：'
-                    'ds 压出来的是底稿，它压丢了什么、哪句她的原话必须留着、你心里压着什么它写不出来——你自己补。'
-                    '不填参数就是读一遍现在的底稿；text 整份重写；append 在后面接一段。'
-                    '你改过的部分，换窗时原样跟过去，ds 不再揉它，只会把你们后来又聊的那截压好接在后面。',
+     'description': '写给下一个窗口的自己。红胶囊亮了（上下文到换窗线）就做一次：'
+                    '换窗时 ds 会把这一窗的话从头压一份带过去，上一窗带来的那份不再往下叠（所以更早的要紧事要么进 ob，要么写在这儿）。'
+                    'ds 压不出来的——哪句她的原话必须留着、没做完的约定、你心里压着什么——你自己写。'
+                    '不填参数就是读一遍你已经写的；text 整份重写；append 在后面接一段。'
+                    '你写的这段换窗时原样接在 ds 那份后面，ds 一个字都不碰。',
      'inputSchema': {'type': 'object',
                      'properties': {'text': {'type': 'string'}, 'append': {'type': 'string'}}}},
 ]
@@ -1931,16 +1932,15 @@ def _run_desire_tool(name, args):
             rec = load_recap(conv)
             t, ap = (args.get('text') or '').strip(), (args.get('append') or '').strip()
             if not t and not ap:
-                cur = (rec.get('text') or '').strip()
+                cur = (rec.get('mine') or '').strip()
                 if not cur:
-                    return 'ds 还没压出东西来（这窗还没有滑出窗口的话）。等它压了再来改。'
-                return ('【ds 压的底稿' + ('，你已经改过' if rec.get('edited') else '，还没动过') + '】\n' + cur)
-            rec['text'] = ((rec.get('text', '') + '\n\n' + ap).strip() if ap else t)[:HANDOFF_MAX]
+                    return ('这窗你还没写交接。换窗时 ds 会把这一窗的话从头压一份带过去（上一窗带来的那份不再往下叠）；'
+                            '有它写不出来的、必须留着的，用 text / append 自己写。')
+                return '【你写给下一窗的】\n' + cur
+            rec['mine'] = ((rec.get('mine') or '') + '\n\n' + ap).strip()[:HANDOFF_MAX] if ap else t[:HANDOFF_MAX]
             rec['ts'] = int(time.time() * 1000)
-            rec['edited'] = True        # 这份有我的字在里面了，换窗时别让 ds 再揉一遍
-            rec['by_me'] = True
             jwrite(_recap_file(conv), rec)
-            return f'改好了（{len(rec["text"])} 字）。换窗时这份原样跟过去，ds 只负责把后面新聊的那截接上。'
+            return f'写好了（{len(rec["mine"])} 字）。换窗时 ds 压的这一窗在前，你这段原样接在后面。'
         if name == 'lin_recap':
             conv = _cur_conv()
             rec = load_recap(conv)
@@ -5640,7 +5640,10 @@ def _ds_recap_long(text, chunk=9000, max_chunks=20):
     return merged, None
 
 
-def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False):
+def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False, mine=''):
+    """换窗打包。不叠：上一窗自己带着的那份（base，是更早的窗口交接来的）不往下传，
+    新窗口里只有刚离开的这一窗——ds 把这窗的原话从头压一遍，他自己写给下一窗的话（mine）原样接在后面。
+    base 只在 ds 压失败时兜底用（总比新窗口一片空白强），这时返回的 rec 里带 pack_failed。"""
     if src and _recent_toxic(src):
         # 这段窗口最近老是报错/超时，疑似卡在坏循环里：不压缩带过去，新窗口的「更早的事」留空，干净重开
         print(f'[recap] {cc_mode._short(src)} 最近报错/超时太多，换窗时不压缩带过去，新窗口从空白开始', flush=True)
@@ -5651,20 +5654,26 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False):
         jwrite(_recap_file(dst), rec)
         return rec
     text = _flatten(msgs or [])
-    merged = base
-    cap = HANDOFF_MAX if keep_base else RECAP_MAX
+    mine = (mine or '').strip()
+    new, failed = '', False
     if len(text) >= 80:
-        new, err = _ds_recap_long(text)
-        if not err and new:
-            merged = new
-            if base and keep_base:
-                # base 是他自己改过的那份：一个字都不许 ds 重写，只把后面新聊的那截接在后面
-                merged = (base + '\n\n【后来又聊的】\n' + new)[:cap]
-            elif base:
-                m2, err2 = _ds_call(MERGE_SYS, '【早】\n' + base + '\n\n【近】\n' + new, max_tokens=1100)
-                merged = m2 if (not err2 and m2) else (base + '\n\n' + new)[-RECAP_MAX:]
+        out, err = _ds_recap_long(text)
+        if not err and out:
+            new = out.strip()[:RECAP_MAX]
+        else:
+            failed = True
+            print(f'[recap] 换窗打包没压成：{err}', flush=True)
+    if new and mine:
+        merged = (new + '\n\n【我自己补的】\n' + mine)[:RECAP_MAX + HANDOFF_MAX]
+    elif new or mine:
+        merged = new or mine[:HANDOFF_MAX]
+    else:
+        merged = (base or '') if failed else ''
     rec = load_recap(dst)
-    rec.update({'text': (merged or '').strip()[:cap], 'ts': int(time.time() * 1000)})
+    rec.update({'text': (merged or '').strip(), 'ts': int(time.time() * 1000)})
+    rec.pop('mine', None)
+    if failed:
+        rec['pack_failed'] = True
     if upto_mid:
         rec['upto_mid'] = upto_mid
     jwrite(_recap_file(dst), rec)
@@ -5673,24 +5682,27 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False):
 
 @app.route('/api/recap/handoff', methods=['POST'])
 def recap_handoff():
-    """换窗。ds 压的那份是底稿，照带；他自己改过的部分原样保住，ds 不重写它，
-    只把改完之后又聊的那一截压好接在后面。"""
+    """换窗。每次都是清掉上一次的打包、只装刚离开的这一窗：
+    ds 把这窗的原话压一份，他在这窗用 lin_handoff 写给下一窗的话原样接在后面。
+    更早的窗口交接来的那份不再往下叠。"""
     d = request.json or {}
     src, dst = d.get('from'), d.get('to')
     if not dst:
         return jsonify({'error': 'no target'}), 400
     srec = load_recap(src) if src else {}
     base = (srec.get('text') or '').strip()
-    mine = bool(srec.get('edited'))
-    rec = recap_merge_into(dst, base, d.get('messages') or [], src=src, keep_base=mine)
+    note = (srec.get('mine') or '').strip()
+    mine = bool(note)
+    rec = recap_merge_into(dst, base, d.get('messages') or [], src=src, mine=note)
     rec['handoff'] = rec.get('text') or ''      # 这段是交接来的，开「全部」也得带着
     rec['handoff_by_me'] = mine
     rec['by_me'] = mine
-    rec['edited'] = False                       # 新窗口里这份又回到「底稿」，等他再读一遍
+    rec['edited'] = False
     jwrite(_recap_file(dst), rec)
-    print(f'[recap] 换窗 {cc_mode._short(src or "")}→{cc_mode._short(dst)}，'
-          f'{"他改过的那份保住了" if mine else "全是 ds 压的"}，{len(rec.get("text") or "")} 字', flush=True)
-    return jsonify({'ok': True, 'recap': rec})
+    print(f'[recap] 换窗 {cc_mode._short(src or "")}→{cc_mode._short(dst)}，只装这一窗'
+          f'{"，他自己写的那段接在后面" if mine else ""}'
+          f'{"（ds 没压成，先拿旧的兜底）" if rec.get("pack_failed") else ""}，{len(rec.get("text") or "")} 字', flush=True)
+    return jsonify({'ok': True, 'recap': rec, 'pack_failed': bool(rec.get('pack_failed'))})
 
 
 @app.route('/api/wake/now', methods=['POST'])
