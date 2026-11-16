@@ -12,6 +12,7 @@
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
 <link rel="stylesheet" href="/static/style.css?v=46">
+<link rel="stylesheet" href="/static/brain.css?v=1">
 <script>
 // 出错了直接摆在脸上，别白屏
 window.__err = [];
@@ -102,8 +103,8 @@ window.addEventListener('error', function (e) {
           <div class="rc-dot" id="dot-music"></div>
         </div>
         <div class="room-card" data-room="mailbox">
-          <svg width="90" height="72" viewBox="0 0 96 72"><path class="ic" d="M25 16 H71 V54 H25 Z"/><path class="ic thin" d="M25 16 L48 36 L71 16"/><path class="ic fillbg" d="M48 45 C41.6 38.6 36.4 35.2 36.4 30.3 C36.4 27 39 24.8 41.8 24.8 C44.3 24.8 46.7 26.4 48 28.6 C49.3 26.4 51.7 24.8 54.2 24.8 C57 24.8 59.6 27 59.6 30.3 C59.6 35.2 54.4 38.6 48 45 Z"/><g transform="translate(21,35)"><path class="ic thin" d="M0 0 C-3 -6.5 -11.5 -7 -11.5 -2.8 C-11.5 -0.6 -8.4 0 -5.4 0 C-8.4 0 -11.5 0.6 -11.5 2.8 C-11.5 7 -3 6.5 0 0 Z"/><circle class="ic hair" cx="-16" cy="-3.6" r="1.8"/></g><g transform="translate(75,35) scale(-1,1)"><path class="ic thin" d="M0 0 C-3 -6.5 -11.5 -7 -11.5 -2.8 C-11.5 -0.6 -8.4 0 -5.4 0 C-8.4 0 -11.5 0.6 -11.5 2.8 C-11.5 7 -3 6.5 0 0 Z"/><circle class="ic hair" cx="-16" cy="-3.6" r="1.8"/></g></svg>
-          <div><div class="rc-name">信 箱</div><div class="rc-sub" id="st-mail">—</div></div>
+          <svg width="90" height="72" viewBox="0 0 96 72"><path class="ic hair" d="M22 46 L34 28 L48 38 L60 20 L74 34 M34 28 L44 14 M48 38 L52 56 L68 52 M22 46 L36 58 L52 56"/><circle class="ic fillbg" cx="48" cy="38" r="5.2"/><circle class="ic thin fillbg" cx="34" cy="28" r="3.4"/><circle class="ic thin fillbg" cx="60" cy="20" r="3.8"/><circle class="ic thin fillbg" cx="22" cy="46" r="2.6"/><circle class="ic thin fillbg" cx="74" cy="34" r="2.8"/><circle class="ic thin fillbg" cx="52" cy="56" r="3"/><circle class="ic hair fillbg" cx="44" cy="14" r="2"/><circle class="ic hair fillbg" cx="68" cy="52" r="2.2"/><circle class="ic hair fillbg" cx="36" cy="58" r="1.8"/></svg>
+          <div><div class="rc-name">记 忆</div><div class="rc-sub" id="st-mail">—</div></div>
           <div class="rc-dot" id="dot-mail"></div>
         </div>
         <div class="room-card" data-room="moments">
@@ -1034,17 +1035,29 @@ window.addEventListener('error', function (e) {
 <input type="file" id="restore-input" accept=".zip,application/zip" style="display:none">
 <input type="file" id="post-img-input" accept="image/*" multiple style="display:none">
 
-<!-- ============ 信箱 ============ -->
+<!-- ============ 记忆（原来的信箱） ============ -->
 <div class="room" id="mailbox">
   <div class="room-head">
-    <div><div class="room-title">信 箱</div><div class="room-sub" id="mail-sub">—</div></div>
+    <div><div class="room-title">记 忆</div><div class="room-sub" id="mail-sub">—</div></div>
     <div class="room-acts">
       <button class="room-btn" id="btn-write-letter">写 信</button>
       <button class="room-btn" id="btn-ask-letter">讨一封</button>
       <button class="room-x" data-close="mailbox">✕</button>
     </div>
   </div>
+  <div class="brain-top">
+    <div class="brain-chips" id="brain-chips"></div>
+    <input class="brain-q" id="brain-q" placeholder="找一个词…" autocomplete="off">
+    <div class="brain-legend">一个点是一件事。越大越要紧，越亮越常想起。点一下看原话。</div>
+  </div>
   <div class="mail-list" id="mail-list"></div>
+  <div class="brain-card" id="brain-card">
+    <div class="bc-grip"></div>
+    <div class="bc-head"><div class="bc-title" id="bc-title"></div><button class="room-x" id="bc-x">✕</button></div>
+    <div class="bc-meta" id="bc-meta"></div>
+    <div class="bc-tags" id="bc-tags"></div>
+    <div class="bc-body" id="bc-body"></div>
+  </div>
 </div>
 
 <div class="sheet" id="write-letter-modal">
@@ -1335,6 +1348,7 @@ window.addEventListener('error', function (e) {
 
 <script src="/static/app.js?v=85"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=103"></script>
+<script src="/static/rooms.js?v=104"></script>
+<script src="/static/brain.js?v=1"></script>
 </body>
 </html>

@@ -263,7 +263,7 @@ async function refreshHome() {
     put('st-study', s.book ? `《${s.book.title}》第 ${s.book.page}/${s.book.total} 页` : '书架空着');
     put('st-cinema', s.video ? s.video.name : '没有片子');
     put('st-music', s.music ? s.music.name : '安静');
-    put('st-mail', '看看有没有信');
+    put('st-mail', '翻翻他记得什么');
     put('st-moments', s.posts ? `${s.posts} 条` : '还没有人发');
     try {
       const dz = await jget('/api/desire/state');
