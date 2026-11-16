@@ -1976,6 +1976,26 @@ function wireCallButtons() {
     toast(on ? '你不出声他也接着往下说' : '改成一人一句，你不说他就等着');
     if (on) monoArm(); else monoCancel();
   });
+  // 耳朵开关：放在通话界面上。试音页在浏览器里，她从桌面图标打电话，两边 localStorage 不通，
+  // 在那边点的开关这边不知道 —— 所以开关得长在电话上。通话中点也当场生效。
+  const earPaint = () => {
+    const b = $('cs-ear'); if (!b) return;
+    const on = !!(window.EAR && EAR.on());
+    b.classList.toggle('off', on);
+    b.querySelector('i').textContent = on ? '耳朵开' : '耳朵关';
+  };
+  tap('cs-ear', () => {
+    if (!window.EAR) { toast('耳朵没装上，刷新一下再试'); return; }
+    const on = !EAR.on();
+    try { localStorage.setItem('ear2', on ? '1' : '0'); } catch (e) { }
+    try {
+      if (on) { if (CALL.on && CALL.ctx && CALL.src && !EAR.an) EAR.attach(CALL.ctx, CALL.src, CALL.sink); }
+      else EAR.detach();
+    } catch (e) { }
+    earPaint();
+    toast(on ? '耳朵开了：你说的每句，他能多看到一行声音' : '耳朵关了：他只收字');
+  });
+  try { earPaint(); } catch (e) { }
   // 开通话界面时按上次的设置把这个键点亮或灰掉
   try {
     const b = $('cs-mono');
