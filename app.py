@@ -2984,6 +2984,140 @@ def mcp():
 
 
 
+# ============ 记忆室：把他的脑子摊开看 ============
+_BRAIN_CACHE = {'t': 0, 'data': None}
+_BRAIN_KIND = {'📌': 'pin', '💭': 'mem', '💌': 'letter', '📋': 'plan', '🫧': 'feel', '🗄': 'arch'}
+_BRAIN_LINE = re.compile(r'^(\S+?)\s*\[(\w{6,})\]\s*(.*?)《(.*?)》\s*(.*?)主题:(\S*)\s*情感:V([\d.]+)/A([\d.]+)\s*重要:(\d+)\s*权重:([\d.]+)(.*)$')
+_BRAIN_DAY = {}
+
+
+def _brain_text(name, args, timeout=90):
+    res, _ = _mcp_once(cc_mode.ob_url(), {'jsonrpc': '2.0', 'method': 'tools/call',
+                                          'params': {'name': name, 'arguments': args or {}},
+                                          'id': int(time.time())}, timeout=timeout)
+    if isinstance(res, dict):
+        if res.get('error'):
+            raise RuntimeError(str(res['error']))
+        c = res.get('content')
+        if isinstance(c, list) and c and isinstance(c[0], dict):
+            return c[0].get('text') or ''
+    return ''
+
+
+def _brain_parse(text):
+    stats, items = {}, []
+    for line in text.splitlines():
+        line = line.strip()
+        m = _BRAIN_LINE.match(line)
+        if not m:
+            sm = re.match(r'^(固化桶|动态桶|归档桶|feel 桶|plan 桶|letter 桶|总占用)\s*[:：]\s*(.+)$', line)
+            if sm:
+                stats[sm.group(1)] = sm.group(2).strip()
+            continue
+        icon, bid, pre, name, post, dom, v, a, imp, w, rest = m.groups()
+        kind = next((k for e, k in _BRAIN_KIND.items() if icon.startswith(e)), 'mem')
+        if 'anchor' in pre and kind == 'mem':
+            kind = 'pin'
+        done = '已解决' in post
+        dm = re.match(r'^(\d{4})-(\d{2})-(\d{2})[ _](\d{2})-(\d{2})-(\d{2})\s*(.*)$', name)
+        date, title = '', name
+        if dm:
+            date = f'{dm.group(1)}-{dm.group(2)}-{dm.group(3)} {dm.group(4)}:{dm.group(5)}'
+            title = dm.group(7).strip()
+        tags, extra = [], ''
+        tm = re.search(r'标签:(.*)$', rest)
+        if tm:
+            tags = [t.strip() for t in tm.group(1).split(',') if t.strip()][:12]
+        em = re.search(r'\[([^\]]+)\]', rest.split('标签:')[0])
+        if em:
+            extra = em.group(1)
+        items.append({'id': bid, 'kind': kind, 'date': date, 'title': title,
+                      'domain': '' if dom in ('未分类', 'letter', 'plan', 'feel') else dom,
+                      'v': float(v), 'a': float(a), 'imp': int(imp), 'w': float(w),
+                      'tags': tags, 'extra': extra, 'done': done})
+    return stats, items
+
+
+@app.route('/api/brain')
+def brain_api():
+    """他的记忆库整张目录：每条一个点（种类、日期、标题、重要度、权重、标签），不带正文。"""
+    now = time.time()
+    fresh = request.args.get('fresh')
+    if not fresh and _BRAIN_CACHE['data'] and now - _BRAIN_CACHE['t'] < 90:
+        return jsonify(_BRAIN_CACHE['data'])
+    try:
+        text = _brain_text('pulse', {'include_archive': True})
+    except Exception as e:
+        if _BRAIN_CACHE['data']:
+            return jsonify(dict(_BRAIN_CACHE['data'], stale=True))
+        return jsonify({'error': f'记忆库没连上：{e}'}), 502
+    stats, items = _brain_parse(text)
+    if not items:
+        return jsonify({'error': '记忆库回了话，但一条都没认出来'}), 502
+    data = {'stats': stats, 'items': items, 'at': int(now)}
+    _BRAIN_CACHE.update(t=now, data=data)
+    return jsonify(data)
+
+
+@app.route('/api/brain/one')
+def brain_one():
+    """点开某一条，把正文拿回来。记忆库没有「按编号取」的入口，所以用它的标题/标签去搜，再认编号。"""
+    bid = (request.args.get('id') or '').strip()
+    if not re.match(r'^[0-9a-f]{6,}$', bid):
+        return jsonify({'error': '编号不对'}), 400
+    it = next((x for x in ((_BRAIN_CACHE['data'] or {}).get('items') or []) if x['id'] == bid), None)
+    if not it:
+        return jsonify({'error': '目录里没找到这条，退出去重新进一次'}), 404
+    try:
+        if it['kind'] == 'letter':
+            q = it['title'] or it['date'][:10]
+            args = {'query': q, 'limit': 8}
+            if it['date']:
+                args['date_from'] = args['date_to'] = it['date'][:10]
+            text = _brain_text('letter_read', args)
+            segs = re.split(r'\n(?=\[[0-9a-f]{6,}\] )', text)
+            for sg in segs:
+                if sg.startswith(f'[{bid}]'):
+                    return jsonify({'text': sg.split('\n', 1)[1].strip() if '\n' in sg else sg})
+            return jsonify({'text': '', 'miss': True})
+        if it['kind'] == 'arch':
+            return jsonify({'text': '', 'miss': True, 'why': '这条已经沉到底了，正文平时翻不出来'})
+        day = it['date'][:10]
+
+        def pick(text):
+            text = text.split('=== ombre:result-ids ===')[0]
+            for sg in re.split(r'\n?---\n(?=\[bucket_id:)', text):
+                if sg.lstrip().startswith(f'[bucket_id:{bid}]'):
+                    body = sg.split(']', 1)[1]
+                    return re.sub(r'\n?👣 Footprint[^\n]*', '', body).strip()
+            return None
+
+        def day_text(d):
+            c = _BRAIN_DAY.get(d)
+            if c and time.time() - c[0] < 300:
+                return c[1]
+            t = _brain_text('breath_advanced', {'query': '', 'date_from': d, 'date_to': d, 'max_results': 50})
+            if len(_BRAIN_DAY) > 40:
+                _BRAIN_DAY.clear()
+            _BRAIN_DAY[d] = (time.time(), t)
+            return t
+
+        q = (it['title'] + ' ' + ' '.join(it['tags'][:5])).strip()
+        if q:
+            got = pick(_brain_text('breath_search', {'query': q, 'max_results': 30}))
+            if got is not None:
+                return jsonify({'text': got})
+        if day:
+            d0 = datetime.strptime(day, '%Y-%m-%d')
+            for off in (0, -1, 1):
+                got = pick(day_text((d0 + timedelta(days=off)).strftime('%Y-%m-%d')))
+                if got is not None:
+                    return jsonify({'text': got})
+        return jsonify({'text': '', 'miss': True})
+    except Exception as e:
+        return jsonify({'error': f'没拿到：{e}'}), 502
+
+
 @app.route('/api/ask-letter', methods=['POST'])
 def ask_letter():
     """她在信箱点「讨一封」：后端直接让他写，写完自己寄进信箱，不经过聊天。"""
