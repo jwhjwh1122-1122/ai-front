@@ -267,7 +267,7 @@ HOST_RATE_KEYS = {'seven_day_overage_included': 'seven_day_fable'}
 
 
 def _newer_reading(old, new):
-    """new 是不是比 old 新。先看重置时间（晚的是新窗口），一样就看用量（一个窗口里只涨不降，多的更新），再看记的时刻。"""
+    """new 是不是比 old 新。先看重置时间（晚的是新窗口），再看读数时间（差 10 分钟以上晚的新），都接近就看用量（一个窗口里只涨不降，多的更新），再看记的时刻。"""
     o, n = old.get('resets_at'), new.get('resets_at')
     if isinstance(o, (int, float)) and isinstance(n, (int, float)) and abs(n - o) > 60000:
         return n > o
@@ -276,6 +276,11 @@ def _newer_reading(old, new):
         return False
     if op is None:
         return True
+    # 读数时间差得明显（10 分钟以上）就信时间：额度会被官方提前重置（用量掉回去、重置时间不变），
+    # 只比百分比的话，重置前的高数会永远压住重置后的真数
+    ot, nt = old.get('ts') or 0, new.get('ts') or 0
+    if ot <= time.time() * 1000 + 60000 and abs(nt - ot) > 600000:
+        return nt > ot
     if op != np_:
         return np_ > op
     return (new.get('ts') or 0) > (old.get('ts') or 0)
