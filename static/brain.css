@@ -7,32 +7,42 @@
 .b-chip.on{color:var(--ink);border-color:var(--ink-soft);background:var(--paper);}
 .brain-q{width:100%;background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:9px 12px;font-size:14px;color:var(--ink);font-family:inherit;outline:none;}
 .brain-legend{font-size:11px;color:var(--ink-soft);letter-spacing:.5px;line-height:1.7;margin-top:7px;opacity:.8;}
-/* 她设的聊天背景原样透过来，不压黑。星星是银的。 */
-#mailbox{--room:#0b0c12;--paper:rgba(22,24,34,.72);--ink:#ece6da;--ink-soft:#9a968d;--room-deep:rgba(236,230,218,.16);--star:#f4f6ff;--lamp:255,214,150;
-  background:var(--sky-img,none) center/cover no-repeat,#0b0c12;color:var(--ink);}
+/* 这间是一片雨夜的水面。默认就是这片黑水；她挑了图就垫在水底下，不压黑。 */
+#mailbox{--room:#0b0c12;--paper:rgba(22,24,34,.72);--ink:#ece6da;--ink-soft:#9a968d;--room-deep:rgba(236,230,218,.16);--lamp:255,214,150;
+  background:#08090b radial-gradient(120% 85% at 50% 42%,#191b20 0%,#101115 55%,#050608 100%) center/cover no-repeat;color:var(--ink);}
+#mailbox.has-bg{background-image:var(--sky-img);}
 #mailbox .brain-q,#mailbox .b-chip.on,#mailbox .b-hit{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
 #mailbox .brain-card{background:rgba(18,20,29,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
-.b-month{background:transparent;border:0;border-top:1px solid var(--room-deep);border-radius:0;padding:14px 4px 6px;}
-.b-month-h{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--ink);letter-spacing:2px;margin-bottom:6px;opacity:.85;}
-.b-month-h span{font-size:11px;color:var(--ink-soft);letter-spacing:1px;}
-.b-dots{display:flex;flex-wrap:wrap;gap:0;align-items:center;}
-/* 一颗星：外壳管光晕和闪，里面那层剪成四个尖。光晕不能跟剪形放同一层，会被一起剪掉。 */
-.b-dot{--c:var(--star);cursor:pointer;flex-shrink:0;position:relative;opacity:var(--op,1);
-  filter:drop-shadow(0 0 6px var(--c)) drop-shadow(0 0 14px var(--c));animation:b-twinkle var(--dur,4s) ease-in-out var(--delay,0s) infinite;}
-.b-dot::before{content:'';position:absolute;inset:0;background:var(--c);transform:rotate(var(--rot,0deg));
-  clip-path:polygon(50% 0,54% 46%,100% 50%,54% 54%,50% 100%,46% 54%,0 50%,46% 46%);}
-.b-dot::after{content:'';position:absolute;inset:-7px;}
-.b-dot:active{transform:scale(1.6);}
-@keyframes b-twinkle{0%,100%{opacity:var(--op,1);transform:scale(1);}50%{opacity:calc(var(--op,1)*.38);transform:scale(.8);}}
-.b-dot.k-pin{--c:rgb(var(--lamp));filter:drop-shadow(0 0 6px rgb(var(--lamp))) drop-shadow(0 0 14px rgba(var(--lamp),.7)) drop-shadow(0 0 24px rgba(var(--lamp),.35));}
-.b-dot.k-letter{--c:#eab0c2;}
-.b-dot.k-plan{--c:#9dbbd6;}
-.b-dot.k-feel{--c:#c3b0ee;filter:drop-shadow(0 0 6px #c3b0ee) drop-shadow(0 0 14px rgba(195,176,238,.6));}
-.b-dot.k-arch{animation:none;filter:none;}
-.b-dot.k-arch::before{clip-path:none;border-radius:50%;background:var(--ink-soft);}
-.b-dot.dim{opacity:.05 !important;animation:none;pointer-events:none;}
-.b-dot.sel{animation:none;opacity:1;transform:scale(2.0);filter:drop-shadow(0 0 8px var(--c)) drop-shadow(0 0 18px var(--c)) drop-shadow(0 0 30px var(--c));}
-@media (prefers-reduced-motion:reduce){.b-dot{animation:none;}}
+#pond-cv{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+#mailbox>.room-head,#mailbox>.brain-top,#mailbox>.mail-list{position:relative;z-index:1;}
+#mailbox .mail-list{overflow-x:hidden;}
+.p-mon{position:relative;flex-shrink:0;}
+.p-mon h4{position:absolute;left:2px;top:14px;margin:0;font-weight:400;font-size:12px;letter-spacing:4px;color:rgba(220,224,232,.38);}
+.p-mon h4 span{margin-left:10px;font-size:10px;letter-spacing:1px;opacity:.7;}
+/* 一朵花：最外层管漂，中间那层把它压扁躺在水面上，最里层慢慢转。先转再压，才是躺着转。 */
+.p-f{position:absolute;cursor:pointer;opacity:var(--op,1);-webkit-tap-highlight-color:transparent;}
+.p-f.live{animation:p-drift var(--d) ease-in-out var(--dl) infinite;}
+.p-f::before{content:'';position:absolute;left:-14%;right:-14%;top:8%;bottom:-38%;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),rgba(0,0,0,0));}
+.p-f::after{content:'';position:absolute;inset:-9px;}
+.p-sq{position:relative;transform-origin:50% 0;transform:scaleY(.54);transition:transform .3s;}
+.p-rot{width:100%;height:100%;transform:rotate(var(--r));}
+.p-f.live .p-rot{animation:p-sway var(--d2) ease-in-out var(--dl) infinite;}
+.p-rot svg{display:block;width:100%;height:100%;overflow:visible;}
+.p-f.k-pin svg{filter:drop-shadow(0 0 4px rgba(255,222,150,.85));}
+.p-f.k-feel svg{filter:drop-shadow(0 0 4px rgba(200,180,245,.8));}
+.p-f.k-arch,.p-f.k-arch .p-rot{animation:none !important;}
+.p-f.k-arch::before{display:none;}
+.p-f.hit .p-sq{animation:p-hit .4s ease-out;}
+.p-f.sel{opacity:1;}
+.p-f.sel .p-sq{transform:scale(1.5,.81);}
+.p-f.dim{opacity:.06 !important;pointer-events:none;animation:none;}
+@keyframes p-drift{0%,100%{transform:translate(0,0);}33%{transform:translate(var(--bx),var(--by));}66%{transform:translate(var(--cx),var(--cy));}}
+@keyframes p-sway{0%,100%{transform:rotate(calc(var(--r) - 11deg));}50%{transform:rotate(calc(var(--r) + 11deg));}}
+@keyframes p-hit{0%,100%{transform:scaleY(.54);}25%{transform:translateY(1.8px) scale(.88,.475);}}
+.p-sp{position:absolute;width:3px;height:2px;border-radius:50%;background:#f4e08e;box-shadow:0 0 3px rgba(244,224,142,.7);pointer-events:none;}
+.p-sp.tw{animation:p-tw var(--d) ease-in-out var(--dl) infinite;}
+@keyframes p-tw{0%,100%{opacity:1;}50%{opacity:.15;}}
+@media (prefers-reduced-motion:reduce){.p-f,.p-rot,.p-sp{animation:none !important;}}
 .b-hit{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:10px 12px;cursor:pointer;}
 .b-hit-t{font-size:14px;color:var(--ink);line-height:1.6;}
 .b-hit-s{font-size:11px;color:var(--ink-soft);margin-top:3px;letter-spacing:.5px;}
