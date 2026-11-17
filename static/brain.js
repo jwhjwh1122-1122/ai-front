@@ -34,9 +34,9 @@ function brainSeed(str) {
 //   紫 = 心底话；沉底的不是星，是远处一粒尘，不闪。
 function brainDotStyle(x) {
   const r = brainSeed(String(x.id || x.title || '') + x.date);
-  let size = Math.round(8 + x.imp * 1.2);
+  let size = Math.round(10 + x.imp * 1.4);
   const hot = Math.min(1, Math.log10(x.w + 1) / Math.log10(6));
-  let op = 0.42 + 0.58 * hot;
+  let op = 0.55 + 0.45 * hot;
   if (x.kind === 'pin' || x.kind === 'feel') op = 1;
   if (x.kind === 'letter') op = 0.95;
   if (x.kind === 'plan') op = x.done ? 0.3 : 0.95;
