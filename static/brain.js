@@ -22,18 +22,43 @@ function brainName(x) {
   if (x.tags.length) return x.tags.slice(0, 4).join(' · ');
   return x.kind === 'plan' ? '一件答应过的事' : '没起名字的一条';
 }
+// 每颗星的位置和闪法从它自己的编号里算出来：稳定，下次进来还在老地方，不会乱跳。
+function brainSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
+}
+// 我自己定的认法：
+//   大小 = 要紧；亮度 = 常想起；越常想起闪得越快。
+//   暖白 = 记着的；灯黄 = 钉住的（最亮、光晕最大、闪得最慢最稳）；粉 = 信；蓝灰 = 答应过的（做完了就暗下去）；
+//   紫 = 心底话；沉底的不是星，是远处一粒尘，不闪。
 function brainDotStyle(x) {
-  const size = Math.round(6 + x.imp * 1.3);
-  let op = 0.28 + 0.72 * Math.min(1, Math.log10(x.w + 1) / Math.log10(6));
-  if (x.kind === 'arch') op = 0.45;
-  if (x.kind === 'pin' || x.kind === 'feel' || x.kind === 'letter' || x.kind === 'plan') op = 1;
-  return `width:${size}px;height:${size}px;opacity:${op.toFixed(2)}`;
+  const r = brainSeed(String(x.id || x.title || '') + x.date);
+  let size = Math.round(11 + x.imp * 1.9);
+  const hot = Math.min(1, Math.log10(x.w + 1) / Math.log10(6));
+  let op = 0.34 + 0.66 * hot;
+  if (x.kind === 'pin' || x.kind === 'feel') op = 1;
+  if (x.kind === 'letter') op = 0.95;
+  if (x.kind === 'plan') op = x.done ? 0.3 : 0.95;
+  if (x.kind === 'arch') { op = 0.3; size = 4; }
+  const dur = x.kind === 'pin' ? 5.5 + r() * 2 : (5.2 - 2.6 * hot) + r() * 1.6;
+  const dx = Math.round((r() - 0.5) * 8), dy = Math.round((r() - 0.5) * 16);
+  const rot = Math.round((r() - 0.5) * 24);
+  return `width:${size}px;height:${size}px;--op:${op.toFixed(2)};--dur:${dur.toFixed(2)}s;--delay:-${(r() * 6).toFixed(2)}s;--rot:${rot}deg;margin:${8 + dy}px ${3 + dx}px ${8 - dy}px ${3 - dx}px`;
+}
+// 背景跟聊天页是同一张：从她设的那张图透过来，上面压一层夜色，星星才亮得起来。
+function brainSky() {
+  try {
+    const bg = localStorage.getItem('chat-bg');
+    $('mailbox').style.setProperty('--sky-img', bg ? 'url("' + bg.replace(/"/g, '%22') + '")' : 'none');
+  } catch (e) { }
 }
 
 async function openMailbox(fresh) {
   // 房间已经开着又被叫一次，说明刚写完信或讨完信，要重新拉
   if (fresh === undefined && $('mailbox').classList.contains('open')) fresh = true;
   $('mailbox').classList.add('open');
+  brainSky();
   const el = $('mail-list');
   if (!brainData || fresh) el.innerHTML = '<div class="room-empty">正在翻…</div>';
   let d;

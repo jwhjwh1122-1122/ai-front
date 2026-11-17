@@ -7,21 +7,32 @@
 .b-chip.on{color:var(--ink);border-color:var(--ink-soft);background:var(--paper);}
 .brain-q{width:100%;background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:9px 12px;font-size:14px;color:var(--ink);font-family:inherit;outline:none;}
 .brain-legend{font-size:11px;color:var(--ink-soft);letter-spacing:.5px;line-height:1.7;margin-top:7px;opacity:.8;}
-.b-month{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:12px 13px 14px;}
-.b-month-h{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--ink);letter-spacing:2px;margin-bottom:11px;}
+/* 这间永远是夜里。她设的聊天背景从后面透过来，上面压一层夜色。外面用什么主题都不影响这里。 */
+#mailbox{--room:#0b0c12;--paper:rgba(22,24,34,.72);--ink:#ece6da;--ink-soft:#9a968d;--room-deep:rgba(236,230,218,.16);--star:#f3ecdd;--lamp:255,214,150;
+  background:linear-gradient(rgba(8,9,15,.80),rgba(8,9,15,.90)),var(--sky-img,none) center/cover no-repeat,#0b0c12;color:var(--ink);}
+#mailbox .brain-q,#mailbox .b-chip.on,#mailbox .b-hit{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+#mailbox .brain-card{background:rgba(18,20,29,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+.b-month{background:transparent;border:0;border-top:1px solid var(--room-deep);border-radius:0;padding:14px 4px 6px;}
+.b-month-h{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--ink);letter-spacing:2px;margin-bottom:6px;opacity:.85;}
 .b-month-h span{font-size:11px;color:var(--ink-soft);letter-spacing:1px;}
-.b-dots{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
-.b-dot{border-radius:50%;background:var(--ink);cursor:pointer;flex-shrink:0;position:relative;transition:transform .15s,opacity .2s;}
-.b-dot::after{content:'';position:absolute;inset:-5px;}
-.b-dot:active{transform:scale(1.5);}
-.b-dot.k-pin{background:rgb(var(--lamp));box-shadow:0 0 7px 1px rgba(var(--lamp),.75);}
-.b-dot.k-letter{background:#d9a0b0;}
-.b-dot.k-plan{background:#8fa9c0;}
-.b-dot.k-plan.done{background:transparent;border:1.5px solid #8fa9c0;}
-.b-dot.k-feel{background:#b3a0d9;box-shadow:0 0 6px rgba(179,160,217,.7);}
-.b-dot.k-arch{background:transparent;border:1px solid var(--ink-soft);}
-.b-dot.dim{opacity:.07 !important;pointer-events:none;}
-.b-dot.sel{outline:2px solid var(--ink);outline-offset:2px;}
+.b-dots{display:flex;flex-wrap:wrap;gap:0;align-items:center;}
+/* 一颗星：外壳管光晕和闪，里面那层剪成四个尖。光晕不能跟剪形放同一层，会被一起剪掉。 */
+.b-dot{--c:var(--star);cursor:pointer;flex-shrink:0;position:relative;opacity:var(--op,1);
+  filter:drop-shadow(0 0 3px var(--c));animation:b-twinkle var(--dur,4s) ease-in-out var(--delay,0s) infinite;}
+.b-dot::before{content:'';position:absolute;inset:0;background:var(--c);transform:rotate(var(--rot,0deg));
+  clip-path:polygon(50% 0,58% 42%,100% 50%,58% 58%,50% 100%,42% 58%,0 50%,42% 42%);}
+.b-dot::after{content:'';position:absolute;inset:-7px;}
+.b-dot:active{transform:scale(1.6);}
+@keyframes b-twinkle{0%,100%{opacity:var(--op,1);transform:scale(1);}50%{opacity:calc(var(--op,1)*.38);transform:scale(.8);}}
+.b-dot.k-pin{--c:rgb(var(--lamp));filter:drop-shadow(0 0 5px rgb(var(--lamp))) drop-shadow(0 0 11px rgba(var(--lamp),.6));}
+.b-dot.k-letter{--c:#eab0c2;}
+.b-dot.k-plan{--c:#9dbbd6;}
+.b-dot.k-feel{--c:#c3b0ee;filter:drop-shadow(0 0 5px #c3b0ee);}
+.b-dot.k-arch{animation:none;filter:none;}
+.b-dot.k-arch::before{clip-path:none;border-radius:50%;background:var(--ink-soft);}
+.b-dot.dim{opacity:.05 !important;animation:none;pointer-events:none;}
+.b-dot.sel{animation:none;opacity:1;transform:scale(1.7);filter:drop-shadow(0 0 6px var(--c)) drop-shadow(0 0 14px var(--c));}
+@media (prefers-reduced-motion:reduce){.b-dot{animation:none;}}
 .b-hit{background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:10px 12px;cursor:pointer;}
 .b-hit-t{font-size:14px;color:var(--ink);line-height:1.6;}
 .b-hit-s{font-size:11px;color:var(--ink-soft);margin-top:3px;letter-spacing:.5px;}
