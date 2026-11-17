@@ -46,11 +46,13 @@ function brainDotStyle(x) {
   const rot = Math.round((r() - 0.5) * 24);
   return `width:${size}px;height:${size}px;--op:${op.toFixed(2)};--dur:${dur.toFixed(2)}s;--delay:-${(r() * 6).toFixed(2)}s;--rot:${rot}deg;margin:${8 + dy}px ${3 + dx}px ${8 - dy}px ${3 - dx}px`;
 }
-// 背景跟聊天页是同一张：从她设的那张图透过来，上面压一层夜色，星星才亮得起来。
+// 背景：她给这间单独挑过图就用那张（brain-bg），没挑就借聊天页那张。原样透过来，不压黑。
 function brainSky() {
   try {
-    const bg = localStorage.getItem('chat-bg');
+    const own = localStorage.getItem('brain-bg');
+    const bg = own || localStorage.getItem('chat-bg');
     $('mailbox').style.setProperty('--sky-img', bg ? 'url("' + bg.replace(/"/g, '%22') + '")' : 'none');
+    const c = $('brain-bg-clear'); if (c) c.style.display = own ? 'inline' : 'none';
   } catch (e) { }
 }
 
@@ -158,6 +160,19 @@ async function brainOpen(x, dot) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const bb = $('btn-brain-bg'), bi = $('brain-bg-input'), bc = $('brain-bg-clear');
+  if (bb && bi) {
+    bb.onclick = () => bi.click();
+    bi.onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      e.target.value = '';
+      let url;
+      try { url = await shrinkToDataUrl(f, 1280, 0.8); } catch (err) { toast('这张图打不开'); return; }
+      try { localStorage.setItem('brain-bg', url); } catch (err) { toast('图片太大了，存不下'); return; }
+      brainSky(); toast('换好了');
+    };
+  }
+  if (bc) bc.onclick = () => { localStorage.removeItem('brain-bg'); brainSky(); toast('换回去了'); };
   const q = $('brain-q');
   if (q) q.oninput = () => { if (brainData) brainDraw(); };
   const x = $('bc-x');
