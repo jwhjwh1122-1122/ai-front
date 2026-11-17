@@ -8,7 +8,7 @@
 .brain-q{width:100%;background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:9px 12px;font-size:14px;color:var(--ink);font-family:inherit;outline:none;}
 .brain-legend{font-size:11px;color:var(--ink-soft);letter-spacing:.5px;line-height:1.7;margin-top:7px;opacity:.8;}
 /* 她设的聊天背景原样透过来，不压黑。星星是银的。 */
-#mailbox{--room:#0b0c12;--paper:rgba(22,24,34,.72);--ink:#ece6da;--ink-soft:#9a968d;--room-deep:rgba(236,230,218,.16);--star:#eef1f7;--lamp:255,214,150;
+#mailbox{--room:#0b0c12;--paper:rgba(22,24,34,.72);--ink:#ece6da;--ink-soft:#9a968d;--room-deep:rgba(236,230,218,.16);--star:#f4f6ff;--lamp:255,214,150;
   background:var(--sky-img,none) center/cover no-repeat,#0b0c12;color:var(--ink);}
 #mailbox .brain-q,#mailbox .b-chip.on,#mailbox .b-hit{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
 #mailbox .brain-card{background:rgba(18,20,29,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
@@ -18,16 +18,16 @@
 .b-dots{display:flex;flex-wrap:wrap;gap:0;align-items:center;}
 /* 一颗星：外壳管光晕和闪，里面那层剪成四个尖。光晕不能跟剪形放同一层，会被一起剪掉。 */
 .b-dot{--c:var(--star);cursor:pointer;flex-shrink:0;position:relative;opacity:var(--op,1);
-  filter:drop-shadow(0 0 2px var(--c));animation:b-twinkle var(--dur,4s) ease-in-out var(--delay,0s) infinite;}
+  filter:drop-shadow(0 0 3px var(--c)) drop-shadow(0 0 7px var(--c));animation:b-twinkle var(--dur,4s) ease-in-out var(--delay,0s) infinite;}
 .b-dot::before{content:'';position:absolute;inset:0;background:var(--c);transform:rotate(var(--rot,0deg));
   clip-path:polygon(50% 0,54% 46%,100% 50%,54% 54%,50% 100%,46% 54%,0 50%,46% 46%);}
 .b-dot::after{content:'';position:absolute;inset:-7px;}
 .b-dot:active{transform:scale(1.6);}
 @keyframes b-twinkle{0%,100%{opacity:var(--op,1);transform:scale(1);}50%{opacity:calc(var(--op,1)*.38);transform:scale(.8);}}
-.b-dot.k-pin{--c:rgb(var(--lamp));filter:drop-shadow(0 0 3px rgb(var(--lamp))) drop-shadow(0 0 7px rgba(var(--lamp),.5));}
+.b-dot.k-pin{--c:rgb(var(--lamp));filter:drop-shadow(0 0 4px rgb(var(--lamp))) drop-shadow(0 0 10px rgba(var(--lamp),.6)) drop-shadow(0 0 18px rgba(var(--lamp),.25));}
 .b-dot.k-letter{--c:#eab0c2;}
 .b-dot.k-plan{--c:#9dbbd6;}
-.b-dot.k-feel{--c:#c3b0ee;filter:drop-shadow(0 0 3px #c3b0ee);}
+.b-dot.k-feel{--c:#c3b0ee;filter:drop-shadow(0 0 4px #c3b0ee) drop-shadow(0 0 10px rgba(195,176,238,.5));}
 .b-dot.k-arch{animation:none;filter:none;}
 .b-dot.k-arch::before{clip-path:none;border-radius:50%;background:var(--ink-soft);}
 .b-dot.dim{opacity:.05 !important;animation:none;pointer-events:none;}
