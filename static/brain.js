@@ -45,7 +45,7 @@ function pondFlower(x, x0, y0, cw, rh, dim) {
   let op = 0.62 + 0.38 * hot;
   if (x.kind === 'pin' || x.kind === 'feel' || x.kind === 'letter') op = 1;
   if (x.kind === 'plan') op = x.done ? 0.38 : 1;
-  if (x.kind === 'arch') op = 0.28;
+  if (x.kind === 'arch') op = 1; // 宝宝说 0.28 太淡看不见，点开那朵（=1）刚好，就按点开的亮度来
   const f = document.createElement('div');
   f.className = 'p-f k-' + x.kind + (dim ? ' dim' : '');
   f.dataset.id = x.id || '';
