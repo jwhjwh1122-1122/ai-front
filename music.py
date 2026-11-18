@@ -2397,6 +2397,35 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         out.sort(key=lambda x: x[0])
         return out
 
+    _CJK = re.compile(r'[一-鿿]')
+
+    def _fold_bilingual(lines, trans):
+        """有的歌 lrc 本身就是一句原文、紧跟一句译文（时间戳一样），译文不在
+        tlyric 里。不折起来的话：▶ 会落在译文那一行上，而且「前两句后四句」
+        一半名额被译文吃掉——她问「你现在只能听到这两句吗」就是这么来的。
+        折法：相邻两行时间几乎相同、一行有中文一行没有，就把没中文的当原文、
+        有中文的当译文塞进 trans，于是跟 tlyric 那条路完全一样处理。
+        """
+        out = []
+        i = 0
+        n = len(lines)
+        while i < n:
+            t, s = lines[i]
+            if i + 1 < n and abs(lines[i + 1][0] - t) < 0.35:
+                s2 = lines[i + 1][1]
+                a, b = bool(_CJK.search(s)), bool(_CJK.search(s2))
+                if a != b:
+                    orig, tr = (s2, s) if a else (s, s2)
+                    k = round(t, 1)
+                    if k not in trans:
+                        trans[k] = tr
+                    out.append((t, orig))
+                    i += 2
+                    continue
+            out.append((t, s))
+            i += 1
+        return out
+
     def _mcp_lyric(before=2, after=4):
         d = _listen_load()
         now = d.get('now') or {}
@@ -2420,6 +2449,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not lines:
             return '%s - %s：这首没有歌词（可能是纯音乐）。' % (now.get('name'), now.get('artist', ''))
         trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
+        lines = _fold_bilingual(lines, trans)
         idx = 0
         for i, (t, _s) in enumerate(lines):
             if t <= pos:
@@ -2484,6 +2514,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 return ''
             lines = [(t, s) for t, s in _parse_lrc(ly.get('lyric')) if s]
             trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
+            lines = _fold_bilingual(lines, trans)
             if len(_LYRIC_PARSED) > 60:
                 _LYRIC_PARSED.clear()
             _LYRIC_PARSED[key] = cut = (lines, trans)
