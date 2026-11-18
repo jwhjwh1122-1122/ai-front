@@ -1126,8 +1126,8 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
   $('pl-back').onclick=()=>{if(onBack)onBack();else renderMine();};
   plFilterN=-1;
   // view=当前显示的那一列。没搜的时候就是整张歌单；搜了就是筛出来的那几首
-  let view=songs,hitQueue=queue;
-  if(playAllText)$('play-all').onclick=()=>{setQueue(view,0);expand();};
+  let view=songs;
+  if(playAllText)$('play-all').onclick=()=>{setQueue(queue,0);expand();};
   const rows=$('song-rows'),tip=$('more-tip');
   let shown=0;
   function chunk(){
@@ -1150,10 +1150,10 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
   const q=$('pl-q');
   if(q)q.addEventListener('input',()=>{
     const k=q.value.trim().toLowerCase();
-    if(!k){view=songs;hitQueue=queue;plFilterN=-1;}
+    if(!k){view=songs;plFilterN=-1;}
     else{
       view=songs.filter(s=>(((s.name||'')+' '+(s.artist||'')+' '+(s.album||'')).toLowerCase()).indexOf(k)>=0);
-      hitQueue=view;plFilterN=view.length;
+      plFilterN=view.length;
     }
     rows.innerHTML='';shown=0;
     if(!view.length){tip.textContent='没找到「'+q.value.trim()+'」';setListTotal(0,0,true);return;}
@@ -1166,9 +1166,14 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
     const ed=e.target.closest('[data-edit]');
     if(ed){e.stopPropagation();openEditor(view[+ed.dataset.edit],()=>openList('/api/music/my/cloud','音乐网盘',true));return;}
     const add=e.target.closest('[data-add]');
-    if(add){e.stopPropagation();addNext(hitQueue[+add.dataset.add]);return;}
+    if(add){e.stopPropagation();addNext(view[+add.dataset.add]);return;}
     const row=e.target.closest('.res[data-i]');
-    if(row){setQueue(hitQueue,+row.dataset.i);expand();}
+    if(row){
+      // 搜出来的只是挑歌的入口：队列永远是整张列表，所以这首放完接着原来的顺序往下走
+      const s=view[+row.dataset.i];
+      const qi=queue.indexOf(s);
+      setQueue(queue,qi>=0?qi:0);expand();
+    }
   };
   const body=$('lp-body');
   body.onscroll=()=>{
