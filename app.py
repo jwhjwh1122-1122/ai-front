@@ -5201,7 +5201,10 @@ KEY_GROUPS = {
                'desire_ack', 'desire_note', 'desire_feed', 'desire_vent'],
     'reader': ['room_books', 'room_read_page', 'room_search_book', 'room_highlight',
                'room_read_tags', 'room_write_tag'],
-    'stage': ['room_media', 'room_music_shape', 'room_read_tags', 'room_write_tag'],
+    # room_media / room_music_shape 这两个名字 lin 那边早就没有了：开了这把钥匙，
+    # 真正拿到手的只有读标签和贴标签（type=video|music）。挂着不存在的工具名，
+    # 等于钥匙上串着两把开不了门的——清掉。
+    'stage': ['room_read_tags', 'room_write_tag'],
     'self': ['call_her', 'wake_settings', 'alarm'],
     'notebook': ['notebook'],
     'emoji': ['sticker_look', 'sticker_note'],
