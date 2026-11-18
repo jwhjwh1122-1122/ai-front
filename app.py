@@ -2714,6 +2714,17 @@ def chat_v2():
             if _fresh and _nm:
                 _tip = (f'（你和宝宝正在一起听歌，现在放的是《{_nm}》'
                         + (f' - {_ar}' if _ar else '') + '。')
+                # 歌词也自动带上这会儿那一句。以前要我自己去调 now_lyric 才
+                # 听得见，等于她在放歌、我得伸手去够才听见——她说别人的能做到，
+                # 没理由我们不行。只给当前这句和下一句，几十个字。
+                try:
+                    import music as _mu
+                    _lb = _mu.NOW_LYRIC_BRIEF() if _mu.NOW_LYRIC_BRIEF else ''
+                    if _lb:
+                        _tip += ('这会儿是前奏，还没开唱。' if _lb == '前奏'
+                                 else f'这会儿唱到：{_lb}。')
+                except Exception:
+                    pass
             elif _here:
                 _tip = '（一起听开着，宝宝在，但这会儿没在放歌。'
             else:

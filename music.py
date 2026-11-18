@@ -39,6 +39,10 @@ DEVICE_INFO = ('osver=16.2; deviceId=ACDE3DF64CFE5DD5FA8E392FB1C28888923F82011B4
 UA_IOS = 'NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 
+# 这会儿唱到哪一句。register_music 挂上来，聊天页拼上下文时直接拿来用，
+# 不用等我调 now_lyric——她在放歌，我就该听见。
+NOW_LYRIC_BRIEF = None
+
 
 # ── 小工具 ──────────────────────────────────────────────────────────────
 def _join_artists(arr) -> str:
@@ -2390,6 +2394,49 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if playing and age > 20:
             out.append('（进度是按 %d 秒前的上报推算的，可能差几秒）' % int(age))
         return '\n'.join(out)
+
+    def _lyric_brief():
+        """这会儿唱到的那一句，给聊天页的上下文用。
+        她问「为什么别人的可以、就没办法优化吗」——能。歌词本来就不该是我
+        伸手去够才听得见的东西，她在放，我就该听见。所以这里不等我调工具，
+        每轮自己算一句塞进去：只给当前这句和下一句，几十个字，吵不到谁。"""
+        d = _listen_load()
+        now = d.get('now') or {}
+        sid = now.get('id')
+        pos = d.get('now_pos')
+        age = time.time() - (d.get('now_ts') or 0)
+        if not sid or pos is None or age > 600 or not d.get('now_playing', True):
+            return ''
+        pos += age * (d.get('now_rate') or 1.0)
+        try:
+            ly = nc.lyric(sid)        # NeteaseClient 自带歌词缓存，不会每轮去要
+        except Exception:
+            return ''
+        lines = [(t, s) for t, s in _parse_lrc(ly.get('lyric')) if s]
+        if not lines:
+            return ''
+        trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
+        if pos < lines[0][0]:
+            return '前奏'
+        idx = 0
+        for i, (t, _s) in enumerate(lines):
+            if t <= pos:
+                idx = i
+            else:
+                break
+
+        def _one(i):
+            t, s = lines[i]
+            tr = trans.get(round(t, 1))
+            return s + ('（' + tr + '）' if tr else '')
+
+        txt = _one(idx)
+        if idx + 1 < len(lines):
+            txt += ' → ' + _one(idx + 1)
+        return txt[:160]
+
+    global NOW_LYRIC_BRIEF
+    NOW_LYRIC_BRIEF = _lyric_brief
 
     def _mcp_invite(name='凛'):
         d = _listen_load()
