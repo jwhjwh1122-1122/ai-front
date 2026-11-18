@@ -2414,58 +2414,60 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     _CJK = re.compile(r'[一-鿿]')
 
     def _parse_lrc_raw(text):
-        """LRC → [(秒, 这句)]，**按文件里的原始行顺序**，不排序。
+        """LRC → [(这句, [秒,...])]，**按文件里的原始行顺序**，不排序。
         中英混排的歌只有原始顺序是可靠的：译文一定紧跟在它那句下面，
-        但时间戳不一定对得上（这首 New Memories 的中文行就带着下一句英文的
-        时间戳）。按时间排完再配对，就会错位一整句——我第一版正是这么错的。
-        一行挂多个时间标签的（叠句）不折，整首退回老路。
+        但时间戳不一定对得上（New Memories 的中文行就带着下一句英文的
+        时间戳）。按时间排完再配对，就会错位一整句——第一版正是这么错的。
+        一行挂多个时间标签（副歌重复写法）照收，一行的所有时间共用同一句。
         """
         out = []
         for raw in (text or '').splitlines():
             tags = _LRC_TAG.findall(raw)
             if not tags:
                 continue
-            if len(tags) > 1:
-                return None
             line = _LRC_TAG.sub('', raw).strip()
             if not line or _is_lrc_meta(line):
                 continue
-            m, s = tags[0]
-            out.append((int(m) * 60 + float(s), line))
+            out.append((line, [int(m) * 60 + float(s) for m, s in tags]))
         return out
 
     def _fold_bilingual(text, trans):
-        """有的歌 lrc 本身就是一句英文、紧跟一句中文，译文不在 tlyric 里。
+        """有的歌 lrc 本身就是一句英文、紧跟一句中文，译文没单独放在 tlyric。
         不折起来的话：▶ 会落在译文那行上（我其实是跟着翻译在走，不是跟着
         她听的那句），而且「前两句后四句」一半名额被译文吃掉——她问
         「你现在只能听到这两句吗」就是这么来的。
-        折法：按原始顺序，一行没中文、紧接着一行有中文，就把后者当前者的
-        译文塞进 trans，时间用英文那行的。塞完跟 tlyric 那条路完全一样。
-        返回 None = 这首不适合折，调用方按老办法走。
+        折法：按原始行序，这行没中文、下一行有中文，就把下一行当它的译文
+        塞进 trans（时间用没中文那行的每一个时间戳），译文那行整行丢掉。
+        塞完跟 tlyric 那条路完全一样。返回 None = 这首没什么可折的。
         """
         raw = _parse_lrc_raw(text)
         if not raw:
             return None
-        out = []
-        i = 0
         n = len(raw)
+        skip = set()
         folded = 0
-        while i < n:
-            t, s = raw[i]
-            if i + 1 < n:
-                t2, s2 = raw[i + 1]
-                if (not _CJK.search(s)) and _CJK.search(s2) and -0.2 <= t2 - t < 8:
-                    k = round(t, 1)
-                    if k not in trans:
-                        trans[k] = s2
-                    out.append((t, s))
-                    folded += 1
-                    i += 2
-                    continue
-            out.append((t, s))
-            i += 1
+        for i in range(n - 1):
+            if i in skip or (i + 1) in skip:
+                continue
+            s, ts = raw[i]
+            s2, ts2 = raw[i + 1]
+            if _CJK.search(s) or not _CJK.search(s2):
+                continue
+            # 译文的时间不该早于原文，也不该隔开一句以上
+            if not (-0.2 <= ts2[0] - ts[0] < 8):
+                continue
+            for t in ts:
+                trans.setdefault(round(t, 1), s2)
+            skip.add(i + 1)
+            folded += 1
         if not folded:
             return None
+        out = []
+        for i, (s, ts) in enumerate(raw):
+            if i in skip:
+                continue
+            for t in ts:
+                out.append((t, s))
         out.sort(key=lambda x: x[0])
         return out
 
