@@ -337,6 +337,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (bc) bc.onclick = () => { localStorage.removeItem('brain-bg'); brainSky(); toast('换回去了'); };
   const q = $('brain-q');
   if (q) q.oninput = () => { if (brainData) brainDraw(); };
+  // 弹窗高度她自己拖：按住顶上那条把手上下拉。拖到多高就记住，下次点开还是这个高度。
+  const card = $('brain-card'), drag = $('bc-drag');
+  if (card && drag) {
+    const fit = h => { const box = $('mailbox'); const top = box ? box.clientHeight - 70 : 600; return Math.max(110, Math.min(top, h)); };
+    const saved = +localStorage.getItem('brain-card-h') || 0;
+    if (saved) { card.classList.add('sized'); card.style.height = saved + 'px'; }
+    let y0 = 0, h0 = 0, on = false;
+    drag.addEventListener('pointerdown', e => { on = true; y0 = e.clientY; h0 = card.getBoundingClientRect().height; drag.setPointerCapture(e.pointerId); e.preventDefault(); });
+    drag.addEventListener('pointermove', e => { if (!on) return; card.classList.add('sized'); card.style.height = fit(h0 + (y0 - e.clientY)) + 'px'; });
+    const end = () => { if (!on) return; on = false; const h = Math.round(card.getBoundingClientRect().height); if (h) localStorage.setItem('brain-card-h', h); };
+    drag.addEventListener('pointerup', end); drag.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => { if (card.classList.contains('sized')) card.style.height = fit(parseFloat(card.style.height) || 300) + 'px'; });
+  }
   const x = $('bc-x');
   if (x) x.onclick = () => {
     $('brain-card').classList.remove('open');
