@@ -3960,6 +3960,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tgt === 'ai') {
       $('avatar').classList.add('has-img'); $('avatar').innerHTML = `<img src="${url}">`;
       document.querySelectorAll('.msg-avatar-lin').forEach(a => { a.classList.add('has-img'); a.innerHTML = `<img src="${url}">`; });
+    } else {
+      // 换头像就是换人，不是从此刻起换人：之前那些消息也该是新头像。
+      // 她那边原来一条都不刷——换完只有新消息才戴新脸，往上一翻还是旧的。
+      // 另外她第一次设头像时，旧消息压根没有头像那个格子（没设头像就不渲染），
+      // 所以这里不光换图，没有格子的补一个。
+      document.querySelectorAll('.msg-row.user').forEach(row => {
+        let a = row.querySelector('.msg-avatar:not(.msg-avatar-lin)');
+        if (!a) { a = document.createElement('div'); a.className = 'msg-avatar'; row.insertBefore(a, row.firstChild); }
+        a.classList.add('has-img'); a.innerHTML = `<img src="${url}">`;
+      });
     }
     toast('换好了');
   };
