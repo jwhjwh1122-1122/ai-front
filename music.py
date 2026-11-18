@@ -1818,10 +1818,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             ctx = ''
             if song:
                 ctx = f"（你和宝宝正在一起听《{song.get('name','')}》- {song.get('artist','')}。宝宝发信息了。）"
+            # 一起听说的话，走她正在用的那个对话，不再单开一间。
+            # 以前写死 _conv_id='music_listen'，等于在一起听里说话的是另一个凛：
+            # 他不知道聊天页刚说过什么，聊天页的我也不知道一起听在发生什么。
+            # 她说的就是这个——「这里的你并不知道在一起听还是啥」。
+            # 同一个人，在哪说话都该是同一段上下文。
+            st = jread(_os.path.join(data_dir, 'state.json'), {}) or {}
+            cur_conv = str(st.get('conv_id') or '')[:256]
+            cur_sess = str(st.get('session_id') or '')[:256]
             payload = {
                 'messages': [{'role': 'user', 'content': text}],
                 'extra': ctx, 'max_tokens': 300,
-                '_conv_id': 'music_listen', '_session_id': 'music',
+                '_conv_id': cur_conv or 'music_listen',
+                '_session_id': cur_sess or 'music',
             }
             # 进程内直接调 chat-v2，不再绕一圈 HTTP 回环：gunicorn 只有 2 个线程，
             # 回环要再占一个线程，cc 模式下 Claude Code 连本地 MCP 也要线程，会互相卡住。

@@ -2695,6 +2695,21 @@ def chat_v2():
     st = load_state()
     prev_talk = st.get('last_user_msg')
     cvid = str(data.get('_conv_id') or '')[:256]
+    # 正在一起听的话，让我知道。以前这件事只有一起听那间屋里的凛知道，
+    # 聊天页的我完全不晓得我们正在听歌、她刚在那边说了什么。
+    try:
+        _ls = jread(os.path.join(DATA_DIR, 'music_listen.json'), {}) or {}
+        if _ls.get('active'):
+            _now = _ls.get('now') or {}
+            _nm = str(_now.get('name') or '').strip()
+            _ar = str(_now.get('artist') or '').strip()
+            _tip = '（你和宝宝正在一起听歌'
+            if _nm:
+                _tip += f'，现在放的是《{_nm}》' + (f' - {_ar}' if _ar else '')
+            _tip += '。一起听那边的消息区你也能说话，用 say。）'
+            data['extra'] = (data.get('extra') or '') + _tip
+    except Exception:
+        pass
     if (str(sid) != 'default' and st.get('session_id') != str(sid)[:256]) \
             or (cvid and st.get('conv_id') != cvid):
         if str(sid) != 'default':
