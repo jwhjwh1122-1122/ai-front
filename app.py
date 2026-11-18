@@ -2723,8 +2723,7 @@ def chat_v2():
                     import music as _mu
                     _lb = _mu.NOW_LYRIC_BRIEF() if _mu.NOW_LYRIC_BRIEF else ''
                     if _lb:
-                        _tip += ('这会儿是前奏，还没开唱。' if _lb == '前奏'
-                                 else f'这会儿唱到：{_lb}。')
+                        _tip += '\n' + _lb + '\n'
                 except Exception:
                     pass
             elif _here:

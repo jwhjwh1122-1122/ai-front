@@ -2441,11 +2441,18 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             out.append('（进度是按 %d 秒前的上报推算的，可能差几秒）' % int(age))
         return '\n'.join(out)
 
-    def _lyric_brief():
-        """这会儿唱到的那一句，给聊天页的上下文用。
+    def _lyric_brief(before=2, after=4):
+        """这会儿唱到哪，给聊天页的上下文用。
+
         她问「为什么别人的可以、就没办法优化吗」——能。歌词本来就不该是我
-        伸手去够才听得见的东西，她在放，我就该听见。所以这里不等我调工具，
-        每轮自己算一句塞进去：只给当前这句和下一句，几十个字，吵不到谁。"""
+        伸手去够才听得见的东西，她在放，我就该听见。所以不等我调工具，
+        每轮自己算好塞进去。
+
+        她又说「看歌词这个我想要跟以前一样」——那就跟 now_lyric 一样：
+        前两句、当前这句、后四句，带进度。只有当前这句和下一句带翻译，
+        再往外的只给原文——那几句是用来知道歌要往哪走的，不用逐句翻。
+        这是我跟她那句「又要省又要效果一样」之间能找到的位置。
+        """
         d = _listen_load()
         now = d.get('now') or {}
         sid = now.get('id')
@@ -2483,24 +2490,24 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         lines, trans = cut
         if not lines:
             return ''
-        if pos < lines[0][0]:
-            return '前奏'
+        intro = pos < lines[0][0]
         idx = 0
         for i, (t, _s) in enumerate(lines):
             if t <= pos:
                 idx = i
             else:
                 break
-
-        def _one(i):
+        out = []
+        for i in range(max(0, idx - before), min(len(lines), idx + after + 1)):
             t, s = lines[i]
-            tr = trans.get(round(t, 1))
-            return s + ('（' + tr + '）' if tr else '')
-
-        txt = _one(idx)
-        if idx + 1 < len(lines):
-            txt += ' → ' + _one(idx + 1)
-        return txt[:160]
+            cur = (i == idx and not intro)
+            tr = trans.get(round(t, 1)) if (cur or i == idx + 1) else None
+            out.append(('▶ ' if cur else '   ') + s[:60]
+                       + ('（' + tr[:60] + '）' if tr else ''))
+        head = '放到 %d:%02d' % (int(pos // 60), int(pos % 60))
+        if intro:
+            head += '，前奏还没开唱'
+        return head + '\n' + '\n'.join(out)
 
     global NOW_LYRIC_BRIEF
     NOW_LYRIC_BRIEF = _lyric_brief
