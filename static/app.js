@@ -853,12 +853,18 @@ const VOICE_TAG = /^\s*\[语音\]\s*/;
 const isVoiceSeg = s => VOICE_TAG.test(String(s || ''));
 const voiceText = s => String(s || '').replace(VOICE_TAG, '').trim();
 const stripVoiceTags = s => String(s || '').replace(/\[语音\][ \t]*/g, '');
+// 他想在一起听那边说话：单起一段，开头写 [一起听]。那段会送到一起听的消息区，
+// 不用再调 say 那个工具。聊天页这边照样留着，只是标记显示成一个耳机。
+const LISTEN_TAG = /^\s*\[一起听\]\s*/;
+const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
+const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
+const stripListenTags = s => String(s || '').replace(/\[一起听\][ \t]*/g, '');
 const mostlyZh = t => {
   const s = String(t || '').trim();
   return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
 };
 function renderBubble(text) {
-  return stickerize(renderMd(stripVoiceTags(text)));
+  return stickerize(renderMd(stripVoiceTags(text).replace(/\[一起听\][ \t]*/g, '🎧 ')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1242,14 +1248,29 @@ async function attachTaggedVoices(wrap, text, turnConv) {
   scrollBottom();
   return true;
 }
+// 他写了 [一起听] 的那几段，送到一起听的消息区去。
+// 这是 say 那个工具的替代：同一件事，不占工具位、不花工具的 token。
+async function forwardListenSegs(text) {
+  if (!text?.trim() || !/\[一起听\]/.test(text)) return;
+  for (const s of splitSay(text)) {
+    if (!isListenSeg(s)) continue;
+    const t = listenText(s);
+    if (!t) continue;
+    try {
+      const d = await jpost('/api/music/chat/ai-say', { text: t.slice(0, 1000) });
+      if (!d || !d.ok) toast(d?.error || '这句没发到一起听');
+    } catch (e) { toast('这句没发到一起听'); }
+  }
+}
 async function attachVoiceReply(wrap, text, turnConv) {
+  forwardListenSegs(text);   // 不等它：发到一起听那边跟这儿的语音互不相干
   const tagged = await attachTaggedVoices(wrap, text, turnConv);
   // 换到别的窗口了：这条回复现在不在眼前，不用特地生成语音
   if ((turnConv !== undefined && currentConvId !== turnConv) || localStorage.getItem('auto-voice') !== '1' || !text?.trim()) return;
   if (tagged) return;   // 这条他已经自己挑着发过语音了，别再整条念一遍
   try {
     const voice = localStorage.getItem('tts-voice') || CFG.voice || 'calm';
-    const say = stripVoiceTags(text).trim();
+    const say = stripListenTags(stripVoiceTags(text)).trim();
     const d = await jpost('/api/tts-save', { text: say.slice(0, 600), voice });
     if (!d.url) return;
     const secs = Math.max(2, Math.round(say.length / 4.5));

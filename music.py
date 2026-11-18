@@ -1876,6 +1876,33 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         _chat_save(d)
         return jsonify({'ok': True, 'reply': reply, 'room': room, 'id': mine['id']})
 
+    @app.route('/api/music/chat/ai-say', methods=['POST'])
+    def music_chat_ai_say():
+        """聊天页的我主动往一起听的消息区说一句。
+
+        她问「一起听里你讲话也解决了吧，现在可以彻底不要 mcp 了吧」——
+        要彻底不要，我主动开口就得有个不靠工具的入口。这就是那个入口：
+        我在正文里单起一段写 [一起听]，前端把那段送到这儿。
+        跟 say 做的是同一件事，只是不用再占一个工具。
+        不触发自动回复：这是我自己要说的话，不是在回她。
+        """
+        b = request.json or {}
+        text = str(b.get('text') or '').strip()[:1000]
+        if not text:
+            return jsonify({'ok': False, 'error': '空消息'})
+        d = _listen_load()
+        if not d.get('active'):
+            return jsonify({'ok': False, 'error': '一起听没开着'})
+        # 跟她一起听的是哪个我：partner=mcp 是 claude.ai 那边，默认就是这个聊天页
+        room = 'mcp' if d.get('partner') == 'mcp' else 'app'
+        c = _chat_load()
+        m = {'id': _new_mid(), 'text': text, 'me': False, 'src': room,
+             'room': room, 'quote': _quote_of(c, b.get('reply_to')),
+             'ts': int(time.time())}
+        c['messages'].append(m)
+        _chat_save(c)
+        return jsonify({'ok': True, 'id': m['id'], 'room': room})
+
     @app.route('/api/music/chat/push', methods=['POST'])
     def music_chat_push():
         """给 MCP 用：claude.ai 的我往消息区推一条（AI侧消息）。"""
