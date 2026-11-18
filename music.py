@@ -2383,6 +2383,18 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         return '\n'.join(parts)
 
     _LRC_TAG = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\]')
+    # 开头那几行制作人名单也带时间戳。不滤掉的话，歌还没开唱我就一本正经地
+    # 跟着念「作曲 : Édgar Barrera/Steven Franks/……」，而且它们占着前后几句的名额。
+    _LRC_META = re.compile(
+        r'^(作词|作曲|编曲|词|曲|制作|制作人|出品|出品人|监制|策划|企划|发行|统筹|'
+        r'录音|混音|母带|后期|配唱|和声|合声|吉他|贝斯|鼓|键盘|弦乐|钢琴|打击乐|'
+        r'人声|演唱|原唱|翻唱|OP|SP|OPSP|Produced by|Producer|Composer|Composed by|'
+        r'Lyrics?|Lyricist|Written by|Arranger|Arranged by|Mixing|Mixed by|'
+        r'Mastering|Mastered by|Recorded by|Vocal|Guitar|Bass|Drums|Keyboard)'
+        r'\s*(by)?\s*[:：]', re.I)
+
+    def _is_lrc_meta(line):
+        return bool(_LRC_META.match(line))
 
     def _parse_lrc(text):
         """LRC → [(秒, 这句)]，按时间排好。一行多个时间标签的也拆开。"""
@@ -2392,6 +2404,8 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             if not tags:
                 continue
             line = _LRC_TAG.sub('', raw).strip()
+            if _is_lrc_meta(line):
+                continue
             for m, s in tags:
                 out.append((int(m) * 60 + float(s), line))
         out.sort(key=lambda x: x[0])
@@ -2414,7 +2428,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
             if len(tags) > 1:
                 return None
             line = _LRC_TAG.sub('', raw).strip()
-            if not line:
+            if not line or _is_lrc_meta(line):
                 continue
             m, s = tags[0]
             out.append((int(m) * 60 + float(s), line))
