@@ -40,7 +40,7 @@ function pondSvg(k) {
 }
 function pondFlower(x, x0, y0, cw, rh, dim) {
   const r = brainSeed(String(x.id || x.title || '') + x.date);
-  const sz = x.kind === 'arch' ? 20 : Math.round(17 + x.imp * 0.9);
+  const sz = x.kind === 'arch' ? 22 : Math.round(17 + x.imp * 0.9);
   const hot = Math.min(1, Math.log10((x.w || 0) + 1) / Math.log10(6));
   let op = 0.62 + 0.38 * hot;
   if (x.kind === 'pin' || x.kind === 'feel' || x.kind === 'letter') op = 1;
