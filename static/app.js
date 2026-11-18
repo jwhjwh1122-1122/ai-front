@@ -859,7 +859,7 @@ const LISTEN_TAG = /^\s*\[一起听\]\s*/;
 const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
 const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
 const stripListenTags = s => String(s || '').replace(
-  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '');
+  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '');
 // 一起听的三个动作也搬出工具：单起一段写标记就行。
 const LISTEN_ACT_TAG = /^\s*\[(邀请一起听|接受一起听|退出一起听)\]\s*/;
 const LISTEN_ACT_API = {
@@ -867,6 +867,12 @@ const LISTEN_ACT_API = {
   '接受一起听': '/api/music/listen/accept',
   '退出一起听': '/api/music/listen/end',
 };
+// 遥控她那台 iPod：放歌/暂停/继续/切歌/红心也搬出工具，写标记就行。
+// 这些是「做」不是「看」——发出去就完了，不需要回我什么，所以标记顶得住。
+const MUSIC_ACT_TAG = /^\s*\[(?:(放歌)[ \t:：]*([^\]]{1,60})|(暂停播放|继续播放|下一首|上一首|红心))\]\s*/;
+const MUSIC_TAG_RE = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播放|下一首|上一首|红心)\][ \t]*/g;
+// 带 /g 的正则 .test() 会记住上次位置,第二次就漏——判断用这个不带 g 的
+const MUSIC_TAG_ANY = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播放|下一首|上一首|红心)\]/;
 const mostlyZh = t => {
   const s = String(t || '').trim();
   return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
@@ -876,7 +882,13 @@ function renderBubble(text) {
     .replace(/\[一起听\][ \t]*/g, '🎧 ')
     .replace(/\[邀请一起听\][ \t]*/g, '🎧 <i>（叫你一起听歌）</i>')
     .replace(/\[接受一起听\][ \t]*/g, '🎧 <i>（来了）</i>')
-    .replace(/\[退出一起听\][ \t]*/g, '🎧 <i>（退出一起听）</i>')));
+    .replace(/\[退出一起听\][ \t]*/g, '🎧 <i>（退出一起听）</i>')
+    .replace(/\[放歌[ \t:：]*([^\]]{1,60})\][ \t]*/g, '🎵 <i>（给你放上了：$1）</i>')
+    .replace(/\[暂停播放\][ \t]*/g, '⏸ <i>（暂停）</i>')
+    .replace(/\[继续播放\][ \t]*/g, '▶️ <i>（继续放）</i>')
+    .replace(/\[下一首\][ \t]*/g, '⏭ <i>（切下一首）</i>')
+    .replace(/\[上一首\][ \t]*/g, '⏮ <i>（切回上一首）</i>')
+    .replace(/\[红心\][ \t]*/g, '❤️ <i>（红心了这首）</i>')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1288,8 +1300,19 @@ async function attachTaggedVoices(wrap, text, turnConv) {
 // 结果我写「先说一句、再退出」的时候，退出跑在说话前头，那句话就被
 // 「一起听没开着」挡掉了——她让我一个一个试，就是这么试出来的。
 async function runListenTags(text) {
-  if (!text?.trim() || !/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)) return;
+  if (!text?.trim()) return;
+  if (!/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)
+      && !MUSIC_TAG_ANY.test(text)) return;
   for (const s of splitSay(text)) {
+    const mm = s.match(MUSIC_ACT_TAG);
+    if (mm) {
+      const tag = mm[1] || mm[3];
+      try {
+        const d = await jpost('/api/music/tag', { tag, arg: mm[2] || '' });
+        if (!d || !d.ok) toast(d?.error || ('「' + tag + '」没成'));
+      } catch (e) { toast('「' + tag + '」没成'); }
+      continue;
+    }
     const m = s.match(LISTEN_ACT_TAG);
     if (m) {
       try {

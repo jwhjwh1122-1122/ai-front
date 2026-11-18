@@ -2644,6 +2644,27 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     _LISTEN_ACT_TAG = re.compile(r'^\[(邀请一起听|接受一起听|退出一起听)\]\s*')
     _LISTEN_SAY_TAG = re.compile(r'^\[一起听\]\s*')
+    # 遥控她那台 iPod 的几个动作也搬出工具。这些是「做」，不是「看」：
+    # 发出去就完了，不需要它回我什么，所以标记能完全顶替 play_song /
+    # next_song / prev_song / pause_music / resume_music / like_song。
+    # 而搜歌、看歌单、看排行那些是「看」——标记只出不进，拿不回结果，
+    # 那几样不做成标记，要用的时候我自己打 /api/music/act?do=search。
+    _MUSIC_ACT_TAG = re.compile(
+        r'^\[(?:(放歌)[ \t:：]*([^\]]{1,60})|(暂停播放|继续播放|下一首|上一首|红心))\]\s*')
+
+    def _music_tag_do(tag, arg=''):
+        """执行一个遥控标记。前端和唤醒那条路共用这一份，免得两边长歪。"""
+        if tag == '放歌':
+            return _mcp_play(str(arg or '').strip(), None)
+        if tag in ('下一首', '上一首', '暂停播放', '继续播放'):
+            return _mcp_ctrl({'下一首': 'next', '上一首': 'prev',
+                              '暂停播放': 'pause', '继续播放': 'resume'}[tag])
+        if tag == '红心':
+            now = (_listen_load().get('now') or {})
+            if not now.get('id'):
+                return '不知道这会儿在放哪首，没法红心'
+            return _mcp_like(now['id'], True) + '：' + str(now.get('name', ''))
+        return '不认识的标记：%s' % tag
 
     def _run_listen_tags(text):
         """服务端自己认一遍一起听的标记。
@@ -2678,6 +2699,14 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                 _listen_save(d)
                 done.append(act)
                 continue
+            m3 = _MUSIC_ACT_TAG.match(s)
+            if m3:
+                try:
+                    done.append(str(_music_tag_do(m3.group(1) or m3.group(3),
+                                                  m3.group(2) or ''))[:60])
+                except Exception as e:
+                    done.append('遥控没成：' + str(e)[:60])
+                continue
             m2 = _LISTEN_SAY_TAG.match(s)
             if not m2:
                 continue
@@ -2698,6 +2727,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
 
     global LISTEN_TAGS_RUN
     LISTEN_TAGS_RUN = _run_listen_tags
+
+    @app.route('/api/music/tag', methods=['POST'])
+    def music_tag_run():
+        """聊天页把我写的遥控标记转到这儿执行。
+        逻辑跟唤醒那条路共用 _music_tag_do，两边永远一致。"""
+        b = request.json or {}
+        tag = (b.get('tag') or '').strip()
+        if not _MUSIC_ACT_TAG.match('[%s%s]' % (tag, (' ' + str(b.get('arg') or '')) if tag == '放歌' else '')):
+            return jsonify({'ok': False, 'error': '不认识的标记'}), 400
+        try:
+            return jsonify({'ok': True, 'result': str(_music_tag_do(tag, b.get('arg') or ''))})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:200]})
 
     def _who(m):
         if m.get('me'):
