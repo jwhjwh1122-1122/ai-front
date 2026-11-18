@@ -75,5 +75,8 @@
 #silk-fly:not(.on){transition-delay:0s;}
 .silk-layer canvas{position:absolute;inset:0;width:100%;height:100%;}
 #silk-web .sg1{filter:blur(2.5px);opacity:.9;}
-#silk-web .sg2{filter:blur(7px);opacity:.5;}
+#silk-web .sg2{filter:blur(7px);opacity:.5;animation:silk-breathe 7s ease-in-out infinite;}
+/* 外面那圈光晕慢慢一明一暗，像丝在呼吸 */
+@keyframes silk-breathe{0%,100%{opacity:.4;}50%{opacity:.68;}}
+@media (prefers-reduced-motion:reduce){#silk-web .sg2{animation:none;}}
 .p-f.hold,.p-f.hold .p-rot{animation-play-state:paused !important;}
