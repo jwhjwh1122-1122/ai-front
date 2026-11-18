@@ -1504,7 +1504,22 @@ window.addEventListener('message',e=>{
   else if(d.cmd==='next')playNext();
   else if(d.cmd==='prev')playPrev();
   else if(d.cmd==='ask')postNP();
+  else if(d.cmd==='duck')duck(true);
+  else if(d.cmd==='unduck')duck(false);
 });
+// 她听凛语音的时候音乐让一让，听完自己回来。渐变 ~0.3 秒，不是咔一下
+let duckBase=1,duckOn=false,duckTimer=null;
+function duck(on){
+  if(on&&!duckOn)duckBase=audio.volume==null?1:audio.volume;
+  duckOn=on;
+  const to=on?Math.max(0.08,duckBase*0.22):duckBase;
+  clearInterval(duckTimer);
+  duckTimer=setInterval(()=>{
+    const gap=to-audio.volume;
+    if(Math.abs(gap)<0.04){audio.volume=to;clearInterval(duckTimer);duckTimer=null;return;}
+    audio.volume=Math.max(0,Math.min(1,audio.volume+(gap>0?0.08:-0.08)));
+  },30);
+}
 setInterval(postNP,2000);
 // 上报给网易云：听歌排行、累计听歌首数、累计听歌时长都靠它。
 // 每首歌只报一次，报的是你真实听了多少秒（听完就是整首时长）。

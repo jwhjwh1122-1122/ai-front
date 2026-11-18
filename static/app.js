@@ -1121,6 +1121,27 @@ async function saveToDrawer(body) {
 }
 
 // ============ 语音 ============
+// 她说：听我语音的时候音乐自动小一点，听完自己大回来。
+// 播放器在一起听那个 iframe 里，所以隔着 postMessage 喊一声；它那边渐变，不是硬切。
+// 用计数而不是开关——连着点好几条语音时，最后一条结束了才把音乐放回去。
+let _duckN = 0;
+function duckMusic(on) {
+  const f = document.getElementById('netease-frame');
+  if (f && f.contentWindow) { try { f.contentWindow.postMessage({ __ipodCmd: 1, cmd: on ? 'duck' : 'unduck' }, '*'); } catch (e) { } }
+}
+function watchVoice(a) {
+  if (!a) return;
+  let done = false;
+  const off = () => {
+    if (done) return; done = true;
+    _duckN = Math.max(0, _duckN - 1);
+    if (!_duckN) duckMusic(false);
+  };
+  _duckN++; duckMusic(true);
+  ['ended', 'pause', 'error', 'abort'].forEach(ev => a.addEventListener(ev, off));
+  // 兜底：事件一个都没来（切后台、源挂了），按时长 +8 秒也要放回去，别让音乐一直小着
+  setTimeout(off, Math.max(8000, ((a.duration || 0) * 1000 || 0) + 8000));
+}
 async function playTTS(text, btn) {
   if (currentAudio && currentAudioBtn === btn) { currentAudio.pause(); currentAudio = null; currentAudioBtn = null; btn.textContent = '◎'; return; }
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -1131,7 +1152,7 @@ async function playTTS(text, btn) {
     const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.slice(0, 400), voice }) });
     if (!r.ok) { btn.textContent = '◎'; toast('语音加载失败，检查 ElevenLabs key'); currentAudioBtn = null; return; }
     const url = URL.createObjectURL(await r.blob());
-    currentAudio = new Audio(url); btn.textContent = '◼'; currentAudio.play();
+    currentAudio = new Audio(url); btn.textContent = '◼'; watchVoice(currentAudio); currentAudio.play();
     currentAudio.onended = () => { btn.textContent = '◎'; currentAudio = null; currentAudioBtn = null; URL.revokeObjectURL(url); };
   } catch (e) { btn.textContent = '◎'; currentAudioBtn = null; toast('语音出错'); }
 }
@@ -1175,7 +1196,7 @@ function toggleVoice(url, el) {
   if (voicePlayingEl === el && currentAudio) { currentAudio.pause(); stop(); return; }
   if (currentAudio) { try { currentAudio.pause(); } catch (e) { } }
   if (voicePlayingEl) { voicePlayingEl.classList.remove('playing'); const p = voicePlayingEl.querySelector('.vb-play'); if (p) p.textContent = '▶'; }
-  currentAudio = new Audio(url); voicePlayingEl = el;
+  currentAudio = new Audio(url); voicePlayingEl = el; watchVoice(currentAudio);
   el.classList.add('playing'); el.querySelector('.vb-play').textContent = '◼';
   currentAudio.onended = stop;
   currentAudio.onerror = () => { stop(); toast('这条听不了了'); };
