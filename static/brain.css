@@ -17,7 +17,9 @@
   background:#08090b radial-gradient(120% 85% at 50% 42%,#191b20 0%,#101115 55%,#050608 100%) center/cover no-repeat;color:var(--ink);}
 #mailbox.has-bg{background-image:var(--sky-img);}
 #mailbox .b-chip.on,#mailbox .b-hit{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
-#mailbox .brain-card{background:rgba(18,20,29,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+/* 宝宝想看看透明的弹窗：不垫底色、不磨砂，字加一圈暗影子，压在花和背景上也认得出。想换回来：用回 rgba(18,20,29,.94) + blur(14px) */
+#mailbox .brain-card{background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;}
+#mailbox .brain-card .bc-title,#mailbox .brain-card .bc-meta,#mailbox .brain-card .bc-body,#mailbox .brain-card .bc-tags span{text-shadow:0 0 3px rgba(0,0,0,.95),0 0 8px rgba(0,0,0,.8);}
 #pond-cv{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}
 #mailbox>.room-head,#mailbox>.brain-top,#mailbox>.mail-list{position:relative;z-index:1;}
 #mailbox .mail-list{overflow-x:hidden;}
