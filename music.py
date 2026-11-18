@@ -1962,6 +1962,23 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         _listen_save(d)
         return jsonify({'ok': True})
 
+    @app.route('/api/music/listen/ai-invite', methods=['POST'])
+    def music_listen_ai_invite():
+        """聊天页的我主动邀请她一起听。
+
+        /invite 的 from='ai' 是留给 claude.ai 那边的（要带 token，而且会把
+        partner 记成 mcp）。这个是给聊天页的我用的：弹窗上是我邀请她，
+        陪她听的也是我。她说「那你一起修了呀」——这是最后那个小口子。
+        """
+        b = request.json or {}
+        d = _listen_load()
+        d['active'] = False       # 还挂着"进行中"的话弹窗不会出来
+        d['invite'] = {'from': 'ai', 'name': str(b.get('name') or '凛')[:20],
+                       'ts': int(time.time())}
+        d['partner'] = 'app'
+        _listen_save(d)
+        return jsonify({'ok': True})
+
     @app.route('/api/music/listen/accept', methods=['POST'])
     def music_listen_accept():
         """接受邀请，进入一起听。"""

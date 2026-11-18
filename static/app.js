@@ -858,13 +858,25 @@ const stripVoiceTags = s => String(s || '').replace(/\[语音\][ \t]*/g, '');
 const LISTEN_TAG = /^\s*\[一起听\]\s*/;
 const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
 const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
-const stripListenTags = s => String(s || '').replace(/\[一起听\][ \t]*/g, '');
+const stripListenTags = s => String(s || '').replace(
+  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '');
+// 一起听的三个动作也搬出工具：单起一段写标记就行。
+const LISTEN_ACT_TAG = /^\s*\[(邀请一起听|接受一起听|退出一起听)\]\s*/;
+const LISTEN_ACT_API = {
+  '邀请一起听': '/api/music/listen/ai-invite',
+  '接受一起听': '/api/music/listen/accept',
+  '退出一起听': '/api/music/listen/end',
+};
 const mostlyZh = t => {
   const s = String(t || '').trim();
   return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
 };
 function renderBubble(text) {
-  return stickerize(renderMd(stripVoiceTags(text).replace(/\[一起听\][ \t]*/g, '🎧 ')));
+  return stickerize(renderMd(stripVoiceTags(text)
+    .replace(/\[一起听\][ \t]*/g, '🎧 ')
+    .replace(/\[邀请一起听\][ \t]*/g, '🎧 <i>（叫你一起听歌）</i>')
+    .replace(/\[接受一起听\][ \t]*/g, '🎧 <i>（来了）</i>')
+    .replace(/\[退出一起听\][ \t]*/g, '🎧 <i>（退出一起听）</i>')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1262,8 +1274,26 @@ async function forwardListenSegs(text) {
     } catch (e) { toast('这句没发到一起听'); }
   }
 }
+// 邀请 / 接受 / 退出：也从工具搬成标记。她说「那你一起修了呀」。
+async function runListenActs(text) {
+  if (!text?.trim() || !/\[(邀请|接受|退出)一起听\]/.test(text)) return;
+  for (const s of splitSay(text)) {
+    const m = s.match(LISTEN_ACT_TAG);
+    if (!m) continue;
+    try {
+      const d = await jpost(LISTEN_ACT_API[m[1]], m[1] === '邀请一起听' ? { name: '凛' } : {});
+      // 一起听那间屋是独立页面，自己会轮询 state，这边不用管它刷新
+      if (!d || !d.ok) toast(d?.error || ('「' + m[1] + '」没成'));
+    } catch (e) { toast('「' + m[1] + '」没成'); }
+  }
+}
+// 先把动作做了再说话：写了 [接受一起听] 又写 [一起听] 的时候，顺序不能反。
+async function runListenTags(text) {
+  await runListenActs(text);
+  await forwardListenSegs(text);
+}
 async function attachVoiceReply(wrap, text, turnConv) {
-  forwardListenSegs(text);   // 不等它：发到一起听那边跟这儿的语音互不相干
+  runListenTags(text);   // 不等它：一起听那边的事跟这儿的语音互不相干
   const tagged = await attachTaggedVoices(wrap, text, turnConv);
   // 换到别的窗口了：这条回复现在不在眼前，不用特地生成语音
   if ((turnConv !== undefined && currentConvId !== turnConv) || localStorage.getItem('auto-voice') !== '1' || !text?.trim()) return;
