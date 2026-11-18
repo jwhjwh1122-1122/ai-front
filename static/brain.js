@@ -48,6 +48,7 @@ function pondFlower(x, x0, y0, cw, rh, dim) {
   if (x.kind === 'arch') op = 0.28;
   const f = document.createElement('div');
   f.className = 'p-f k-' + x.kind + (dim ? ' dim' : '');
+  f.dataset.id = x.id || '';
   const h = n => ((r() - 0.5) * n).toFixed(1);
   f.style.cssText = `width:${sz}px;height:${Math.round(sz * 0.54)}px;left:${(x0 + 4 + r() * Math.max(0, cw - sz - 8)).toFixed(1)}px;top:${(y0 + r() * (rh - sz)).toFixed(1)}px;` +
     `--op:${op.toFixed(2)};--r:${Math.round(r() * 72)}deg;--d:${(15 + r() * 10).toFixed(1)}s;--d2:${(13 + r() * 9).toFixed(1)}s;--dl:-${(r() * 30).toFixed(1)}s;` +
@@ -197,6 +198,7 @@ function brainDraw() {
   const hit = all.filter(x => brainHasWord(x, q));
   const size = (brainData.stats || {})['总占用'] || '';
   $('mail-sub').textContent = q ? `找到 ${hit.length} 条` : `${all.length} 条${size ? ' · ' + size : ''}`;
+  silkHide(true);
   el.innerHTML = '';
   if (!all.length) { el.innerHTML = '<div class="room-empty">这一格是空的</div>'; return; }
 
@@ -235,6 +237,9 @@ function brainDraw() {
         const b = f.getBoundingClientRect(), c = P.cv ? P.cv.getBoundingClientRect() : { left: 0, top: 0 };
         pondRip(b.left - c.left + b.width / 2, b.top - c.top + b.height / 2 + el.scrollTop, 64);
         brainOpen(x, f);
+        // 它连着谁，丝就从它那儿浮出来
+        const n = silkShow(x, f);
+        if (n) $('bc-meta').textContent += ` · 连着 ${n} 条`;
       };
       box.appendChild(f);
       P.io.observe(f);
@@ -248,7 +253,7 @@ function brainDraw() {
       const row = document.createElement('div');
       row.className = 'b-hit';
       row.innerHTML = `<div class="b-hit-t">${esc(brainName(x))}</div><div class="b-hit-s">${esc(x.date)} · ${BRAIN_KNAME[x.kind] || ''}</div>`;
-      row.onclick = () => brainOpen(x);
+      row.onclick = () => { silkHide(); brainOpen(x); };
       el.appendChild(row);
     });
   }
@@ -298,5 +303,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (x) x.onclick = () => {
     $('brain-card').classList.remove('open');
     document.querySelectorAll('.p-f.sel').forEach(d => d.classList.remove('sel'));
+    silkHide();
   };
 });

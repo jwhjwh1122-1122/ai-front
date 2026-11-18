@@ -3061,7 +3061,14 @@ def brain_api():
     if not fresh and _BRAIN_CACHE['data'] and now - _BRAIN_CACHE['t'] < 90:
         return jsonify(_BRAIN_CACHE['data'])
     try:
-        text = _brain_text('pulse', {'include_archive': True})
+        text = ''
+        try:
+            text = _brain_text('pulse', {'include_archive': True, 'relations': True})
+        except Exception:
+            pass
+        if not _brain_parse(text)[1]:
+            # 记忆库还是旧版、不认 relations 的时候，照旧拿目录，只是没有丝
+            text = _brain_text('pulse', {'include_archive': True})
     except Exception as e:
         if _BRAIN_CACHE['data']:
             return jsonify(dict(_BRAIN_CACHE['data'], stale=True))
@@ -3069,7 +3076,19 @@ def brain_api():
     stats, items = _brain_parse(text)
     if not items:
         return jsonify({'error': '记忆库回了话，但一条都没认出来'}), 502
-    data = {'stats': stats, 'items': items, 'at': int(now)}
+    # 丝线：REL 桶 -> 目标:类型,目标:类型 …… 两头都记上，点哪头都看得见
+    rel = {}
+    for line in text.splitlines():
+        m = re.match(r'^REL\s+(\w{6,})\s*->\s*(.+)$', line.strip())
+        if not m:
+            continue
+        a = m.group(1)
+        for part in m.group(2).split(','):
+            b = part.strip().split(':')[0]
+            if b and b != a:
+                rel.setdefault(a, set()).add(b)
+                rel.setdefault(b, set()).add(a)
+    data = {'stats': stats, 'items': items, 'at': int(now), 'rel': {k: sorted(v) for k, v in rel.items()}}
     _BRAIN_CACHE.update(t=now, data=data)
     return jsonify(data)
 

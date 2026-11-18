@@ -16,7 +16,7 @@
 #pond-cv{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;}
 #mailbox>.room-head,#mailbox>.brain-top,#mailbox>.mail-list{position:relative;z-index:1;}
 #mailbox .mail-list{overflow-x:hidden;}
-.p-mon{position:relative;flex-shrink:0;}
+.p-mon{position:relative;flex-shrink:0;z-index:1;}
 .p-mon h4{position:absolute;left:2px;top:14px;margin:0;font-weight:400;font-size:12px;letter-spacing:4px;color:rgba(220,224,232,.38);}
 .p-mon h4 span{margin-left:10px;font-size:10px;letter-spacing:1px;opacity:.7;}
 /* 一朵花：最外层管漂，中间那层把它压扁躺在水面上，最里层慢慢转。先转再压，才是躺着转。 */
@@ -56,3 +56,13 @@
 .bc-tags span{font-size:11px;color:var(--ink-soft);border:1px solid var(--room-deep);border-radius:10px;padding:2px 8px;}
 .bc-body{font-size:15px;line-height:2;color:var(--ink);white-space:pre-wrap;overflow-y:auto;margin-top:12px;text-align:justify;flex:1;min-height:60px;}
 .bc-body.soft{color:var(--ink-soft);font-size:13px;}
+/* 丝线：点一朵花才浮出来。丝在花底下，蝴蝶在花上面 */
+.silk-layer{position:absolute;left:0;pointer-events:none;opacity:0;transition:opacity .9s ease;}
+.silk-layer.on{opacity:1;}
+#silk-web{z-index:0;}
+#silk-fly{z-index:2;transition-delay:.35s;}
+#silk-fly:not(.on){transition-delay:0s;}
+.silk-layer canvas{position:absolute;inset:0;width:100%;height:100%;}
+#silk-web .sg1{filter:blur(2.5px);opacity:.9;}
+#silk-web .sg2{filter:blur(7px);opacity:.5;}
+.p-f.hold,.p-f.hold .p-rot{animation-play-state:paused !important;}
