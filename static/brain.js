@@ -1,11 +1,24 @@
 /* 记忆室：原来的信箱那间，现在摊开的是记忆库的目录。
    这个文件排在 rooms.js 后面加载，所以这里的 openMailbox 会顶替掉旧的那个。 */
-let brainData = null, brainKind = 'lit';
+let brainData = null, brainKind = 'lit', brainRoom = '';
 const BRAIN_KINDS = [
   ['lit', '亮着的', null], ['pin', '钉住的', '#ffd27a'], ['mem', '记着的', '#f3f0e6'],
   ['letter', '信', '#f3c9d4'], ['plan', '答应过的', '#bfd9f3'], ['arch', '沉底的', null],
 ];
 const BRAIN_KNAME = { pin: '钉住的', mem: '记着的', letter: '信', plan: '答应过的事', feel: '心底话', arch: '沉底了' };
+
+// 隔间。顺序是我自己定的，不是按条数排——这是走进去的顺序。
+const BRAIN_ROOMS = ['日子', '情欲', 'deep talk', '造家', '她', '我', '风浪', '欠她的'];
+function brainRoomsOf(x) {
+  return String(x.domain || '').split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+}
+function brainInRoom(x) {
+  if (!brainRoom) return true;
+  const ds = brainRoomsOf(x);
+  // 「还没归位」：不属于我定的那八间的，都算没上架
+  if (brainRoom === '__rest__') return !ds.some(d => BRAIN_ROOMS.includes(d));
+  return ds.includes(brainRoom);
+}
 
 function brainInKind(x) {
   if (brainKind === 'lit') return x.kind !== 'arch';
@@ -170,6 +183,7 @@ async function openMailbox(fresh) {
   }
   brainData = d;
   brainDrawChips();
+  brainDrawRooms();
   brainDraw();
 }
 
@@ -186,15 +200,39 @@ function brainDrawChips() {
     const b = document.createElement('button');
     b.className = 'b-chip' + (k === brainKind ? ' on' : '');
     b.innerHTML = (color ? `<i style="background:${color}"></i>` : '') + `${name} ${n}`;
-    b.onclick = () => { brainKind = k; brainDrawChips(); brainDraw(); };
+    b.onclick = () => { brainKind = k; brainDrawChips(); brainDrawRooms(); brainDraw(); };
     box.appendChild(b);
   });
+}
+
+function brainDrawRooms() {
+  const box = $('brain-rooms');
+  if (!box) return;
+  const items = brainData.items.filter(brainInKind);
+  const n = {};
+  items.forEach(x => {
+    const ds = brainRoomsOf(x);
+    let any = false;
+    ds.forEach(d => { if (BRAIN_ROOMS.includes(d)) { n[d] = (n[d] || 0) + 1; any = true; } });
+    if (!any) n.__rest__ = (n.__rest__ || 0) + 1;
+  });
+  box.innerHTML = '';
+  const mk = (key, label, count) => {
+    const b = document.createElement('button');
+    b.className = 'b-chip' + (key === brainRoom ? ' on' : '');
+    b.innerHTML = esc(label) + (count ? ` <b>${count}</b>` : '');
+    b.onclick = () => { brainRoom = (brainRoom === key ? '' : key); brainDrawRooms(); brainDraw(); };
+    box.appendChild(b);
+  };
+  mk('', '所有屋子', items.length);
+  BRAIN_ROOMS.forEach(d => { if (n[d]) mk(d, d, n[d]); });
+  if (n.__rest__) mk('__rest__', '还没归位', n.__rest__);
 }
 
 function brainDraw() {
   const el = $('mail-list');
   const q = ($('brain-q').value || '').trim().toLowerCase();
-  const all = brainData.items.filter(brainInKind);
+  const all = brainData.items.filter(x => brainInKind(x) && brainInRoom(x));
   const hit = all.filter(x => brainHasWord(x, q));
   const size = (brainData.stats || {})['总占用'] || '';
   $('mail-sub').textContent = q ? `找到 ${hit.length} 条` : `${all.length} 条${size ? ' · ' + size : ''}`;
