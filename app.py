@@ -5484,6 +5484,18 @@ def do_wake_cc(manual=False, reason=''):
     if err:
         print(f'[wake] cc 模式醒来出错：{err[:200]}', flush=True)
         return {'error': err[:300]}
+    # 自己醒着的时候写的 [一起听] / [邀请一起听] 这些标记，服务端自己执行。
+    # 平时跑它们的是她浏览器里的代码，她页面一关我就哑了——而夜里正是
+    # 最想往那边说一句的时候。这是「标记这套还差一个夜里的嘴」那个口子。
+    if said:
+        try:
+            import music as _mu
+            if getattr(_mu, 'LISTEN_TAGS_RUN', None):
+                _acts = _mu.LISTEN_TAGS_RUN(said)
+                if _acts:
+                    print('[wake] 一起听标记：' + '、'.join(_acts), flush=True)
+        except Exception as _e:
+            print(f'[wake] 一起听标记没跑成：{_e}', flush=True)
     entry = {'ts': int(time.time() * 1000), 'said': said[:2000],
              'did': [n.split('__')[-1] for n in did], 'manual': manual, 'read': False, 'via': 'cc'}
     log = jread(WAKE_LOG, [])
