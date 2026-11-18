@@ -44,7 +44,7 @@
 .p-f.sel .p-sq{transform:scale(1.5,.81);}
 .p-f.dim{opacity:.06 !important;pointer-events:none;animation:none;}
 @keyframes p-drift{0%,100%{transform:translate(0,0);}33%{transform:translate(var(--bx),var(--by));}66%{transform:translate(var(--cx),var(--cy));}}
-@keyframes p-sway{0%,100%{transform:rotate(calc(var(--r) - 11deg));}50%{transform:rotate(calc(var(--r) + 11deg));}}
+@keyframes p-sway{0%,100%{transform:rotate(calc(var(--r) - 18deg));}50%{transform:rotate(calc(var(--r) + 18deg));}}
 @keyframes p-hit{0%,100%{transform:scaleY(.54);}25%{transform:translateY(1.8px) scale(.88,.475);}}
 .p-sp{position:absolute;width:3px;height:2px;border-radius:50%;background:#f4e08e;box-shadow:0 0 3px rgba(244,224,142,.7);pointer-events:none;}
 .p-sp.tw{animation:p-tw var(--d) ease-in-out var(--dl) infinite;}

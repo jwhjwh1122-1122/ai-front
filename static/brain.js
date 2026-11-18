@@ -64,8 +64,8 @@ function pondFlower(x, x0, y0, cw, rh, dim) {
   f.dataset.id = x.id || '';
   const h = n => ((r() - 0.5) * n).toFixed(1);
   f.style.cssText = `width:${sz}px;height:${Math.round(sz * 0.54)}px;left:${(x0 + 4 + r() * Math.max(0, cw - sz - 8)).toFixed(1)}px;top:${(y0 + r() * (rh - sz)).toFixed(1)}px;` +
-    `--op:${op.toFixed(2)};--r:${Math.round(r() * 72)}deg;--d:${(15 + r() * 10).toFixed(1)}s;--d2:${(13 + r() * 9).toFixed(1)}s;--dl:-${(r() * 30).toFixed(1)}s;` +
-    `--bx:${h(52)}px;--by:${h(18)}px;--cx:${h(52)}px;--cy:${h(18)}px`;
+    `--op:${op.toFixed(2)};--r:${Math.round(r() * 72)}deg;--d:${(12 + r() * 8).toFixed(1)}s;--d2:${(9 + r() * 7).toFixed(1)}s;--dl:-${(r() * 30).toFixed(1)}s;` +
+    `--bx:${h(110)}px;--by:${h(40)}px;--cx:${h(110)}px;--cy:${h(40)}px`;
   f.innerHTML = `<div class="p-sq" style="width:${sz}px;height:${sz}px"><div class="p-rot">${pondSvg(POND_KIND[x.kind] || POND_KIND.mem)}</div></div>`;
   return f;
 }
@@ -90,7 +90,7 @@ function pondStart() {
 }
 function pondDrop(sc) {
   const P = POND; let tx, ty, fl = null;
-  if (P.live.size && Math.random() < 0.13) {
+  if (P.live.size && Math.random() < 0.2) {
     const arr = [...P.live], e = arr[(Math.random() * arr.length) | 0], b = e.getBoundingClientRect(), c = P.cv.getBoundingClientRect();
     if (b.bottom > c.top && b.top < c.bottom) { tx = b.left - c.left + b.width * (0.2 + Math.random() * 0.6); ty = b.top - c.top + b.height * 0.5; fl = e; }
   }
@@ -117,7 +117,7 @@ function pondTick(now) {
   const dt = Math.min(0.05, (now - P.last) / 1000); P.last = now;
   const sc = $('mail-list').scrollTop;
   g.clearRect(0, 0, P.W, P.H);
-  P.acc += dt * 9; while (P.acc > 1) { P.acc--; P.rain.push(pondDrop(sc)); }
+  P.acc += dt * 16; while (P.acc > 1) { P.acc--; P.rain.push(pondDrop(sc)); }
   for (const r of P.rip) {
     r.t += dt; const p = r.t / r.life, y = r.y - sc;
     for (let k = 0; k < r.n; k++) {
