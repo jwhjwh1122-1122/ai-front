@@ -3095,17 +3095,32 @@ def brain_one():
                 if sg.startswith(f'[{bid}]'):
                     return jsonify({'text': sg.split('\n', 1)[1].strip() if '\n' in sg else sg})
             return jsonify({'text': '', 'miss': True})
-        if it['kind'] == 'arch':
-            return jsonify({'text': '', 'miss': True, 'why': '这条已经沉到底了，正文平时翻不出来'})
         day = it['date'][:10]
 
         def pick(text):
+            # 原来只认「段首恰好是 [bucket_id:xxx]」。可记忆库会在编号前面
+            # 加标记（📌 钉住的、🛡️ 受保护、[exact_bucket_id:true]、
+            # 「已删除到档案」），一有标记就对不上，正文就翻不出来——
+            # 她点开钉住的那几条全是空的，就是这个。改成在整段文本里直接
+            # 定位编号，前面有什么标记都不影响。
             text = text.split('=== ombre:result-ids ===')[0]
-            for sg in re.split(r'\n?---\n(?=\[bucket_id:)', text):
-                if sg.lstrip().startswith(f'[bucket_id:{bid}]'):
-                    body = sg.split(']', 1)[1]
-                    return re.sub(r'\n?👣 Footprint[^\n]*', '', body).strip()
-            return None
+            m = re.search(r'\[bucket_id:' + re.escape(bid) + r'\][^\n]*\n(.*?)(?=\n---\n|\Z)',
+                          text, re.S)
+            if not m:
+                return None
+            body = m.group(1)
+            for junk in (r'\n?👣 Footprint[^\n]*', r'\n?\[反思：[^\n]*',
+                         r'\n?\[若决定恢复：[^\n]*'):
+                body = re.sub(junk, '', body)
+            return body.strip() or None
+
+        # 先按编号直取。记忆库其实认编号（breath_search 传编号会走精确命中），
+        # 以前绕标题+标签去搜，搜不中就空着——名字越普通越搜不中。
+        got = pick(_brain_text('breath_search', {'query': bid, 'max_results': 1}))
+        if got is not None:
+            return jsonify({'text': got})
+        if it['kind'] == 'arch':
+            return jsonify({'text': '', 'miss': True, 'why': '这条已经沉到底了，正文平时翻不出来'})
 
         def day_text(d):
             c = _BRAIN_DAY.get(d)
