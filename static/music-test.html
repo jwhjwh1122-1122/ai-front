@@ -1090,9 +1090,12 @@ async function loadPlaylistRest(my,pid,all,total){
   }
   setListTotal(all.length,all.length,true);
 }
+let plFilterN=-1;   // ≥0 表示列表里正在搜，计数归搜索结果管，别被后台加载盖掉
 function setListTotal(now,total,done){
   const el=$('list-count');
-  if(el)el.textContent=(done||now>=total)?(now+'首'):(now+' / '+total+'首，加载中…');
+  if(!el)return;
+  if(plFilterN>=0){el.textContent='找到 '+plFilterN+' 首';return;}
+  el.textContent=(done||now>=total)?(now+'首'):(now+' / '+total+'首，加载中…');
 }
 async function openList(url,name,editable){
   curSourceId='';
@@ -1114,17 +1117,24 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
     '<span id="pl-back" style="font-size:20px;color:#5a6068;">‹</span>'+
     '<span style="font-size:17px;font-weight:700;">'+esc(title)+'</span>'+
     '<span id="list-count" style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>'+
+    '<div class="lp-search" style="margin:0 0 10px;">'+
+      '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'+
+      '<input id="pl-q" placeholder="在这个列表里找" enterkeyhint="search">'+
+    '</div>'+
     (playAllText?playAllRow(playAllText,songs.length+' 首'):'')+
     '<div id="song-rows"></div><div class="more-tip" id="more-tip"></div>';
   $('pl-back').onclick=()=>{if(onBack)onBack();else renderMine();};
-  if(playAllText)$('play-all').onclick=()=>{setQueue(songs,0);expand();};
+  plFilterN=-1;
+  // view=当前显示的那一列。没搜的时候就是整张歌单；搜了就是筛出来的那几首
+  let view=songs,hitQueue=queue;
+  if(playAllText)$('play-all').onclick=()=>{setQueue(view,0);expand();};
   const rows=$('song-rows'),tip=$('more-tip');
   let shown=0;
   function chunk(){
-    const end=Math.min(shown+CHUNK,songs.length);
+    const end=Math.min(shown+CHUNK,view.length);
     let h='';
     for(let i=shown;i<end;i++){
-      const s=songs[i];
+      const s=view[i];
       const cv=editable&&s.cover?'<img src="'+esc(s.cover)+'" style="width:40px;height:40px;border-radius:7px;object-fit:cover;flex-shrink:0;">':'';
       h+='<div class="res" data-i="'+i+'"><div style="width:26px;text-align:center;color:#b0b6be;font-size:13px;flex-shrink:0;">'+(i+1)+'</div>'+cv+
          '<div class="i"><div class="nm">'+esc(s.name)+'</div><div class="ar">'+esc(s.artist)+'</div></div>'+
@@ -1133,21 +1143,36 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
     }
     rows.insertAdjacentHTML('beforeend',h);
     shown=end;
-    tip.textContent=shown<songs.length?('已显示 '+shown+' / '+songs.length+'，继续下滑'):(songs.length>CHUNK?'到底啦':'');
+    tip.textContent=shown<view.length?('已显示 '+shown+' / '+view.length+'，继续下滑'):(view.length>CHUNK?'到底啦':'');
   }
   chunk();
+  // 列表内搜索：本地过滤，不打网易云，边打字边筛
+  const q=$('pl-q');
+  if(q)q.addEventListener('input',()=>{
+    const k=q.value.trim().toLowerCase();
+    if(!k){view=songs;hitQueue=queue;plFilterN=-1;}
+    else{
+      view=songs.filter(s=>(((s.name||'')+' '+(s.artist||'')+' '+(s.album||'')).toLowerCase()).indexOf(k)>=0);
+      hitQueue=view;plFilterN=view.length;
+    }
+    rows.innerHTML='';shown=0;
+    if(!view.length){tip.textContent='没找到「'+q.value.trim()+'」';setListTotal(0,0,true);return;}
+    chunk();
+    if(plFilterN>=0)setListTotal(view.length,view.length,true);
+    else setListTotal(songs.length,songs.length,true);
+  });
   // 事件委托:一个监听器管全部,不再给每行挂两个
   rows.onclick=e=>{
     const ed=e.target.closest('[data-edit]');
-    if(ed){e.stopPropagation();openEditor(songs[+ed.dataset.edit],()=>openList('/api/music/my/cloud','音乐网盘',true));return;}
+    if(ed){e.stopPropagation();openEditor(view[+ed.dataset.edit],()=>openList('/api/music/my/cloud','音乐网盘',true));return;}
     const add=e.target.closest('[data-add]');
-    if(add){e.stopPropagation();addNext(queue[+add.dataset.add]);return;}
+    if(add){e.stopPropagation();addNext(hitQueue[+add.dataset.add]);return;}
     const row=e.target.closest('.res[data-i]');
-    if(row){setQueue(queue,+row.dataset.i);expand();}
+    if(row){setQueue(hitQueue,+row.dataset.i);expand();}
   };
   const body=$('lp-body');
   body.onscroll=()=>{
-    if(shown>=songs.length)return;
+    if(shown>=view.length)return;
     if(body.scrollTop+body.clientHeight>=body.scrollHeight-400)chunk();
   };
 }
