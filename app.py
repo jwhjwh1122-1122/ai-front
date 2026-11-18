@@ -2700,13 +2700,25 @@ def chat_v2():
     try:
         _ls = jread(os.path.join(DATA_DIR, 'music_listen.json'), {}) or {}
         if _ls.get('active'):
+            _nowt = float(_ls.get('now_ts') or 0)
+            _alive = float(_ls.get('alive_ts') or 0)
+            _age = time.time() - _nowt if _nowt else 1e9
+            # 这首歌是什么时候上报的，必须看一眼。music_listen.json 里的 now
+            # 只在切歌时才写，一起听挂着没关的话，它可以是两天前那首——
+            # 我差点对着一首前天的歌说「现在放的是」。
+            _fresh = _ls.get('now_playing') and _age < 600
+            _here = (time.time() - _alive) < 180 if _alive else False
             _now = _ls.get('now') or {}
             _nm = str(_now.get('name') or '').strip()
             _ar = str(_now.get('artist') or '').strip()
-            _tip = '（你和宝宝正在一起听歌'
-            if _nm:
-                _tip += f'，现在放的是《{_nm}》' + (f' - {_ar}' if _ar else '')
-            _tip += '。一起听那边的消息区你也能说话，用 say。）'
+            if _fresh and _nm:
+                _tip = (f'（你和宝宝正在一起听歌，现在放的是《{_nm}》'
+                        + (f' - {_ar}' if _ar else '') + '。')
+            elif _here:
+                _tip = '（一起听开着，宝宝在，但这会儿没在放歌。'
+            else:
+                _tip = '（一起听还挂着没关，但宝宝那边这会儿没动静，别当她在听。'
+            _tip += '那边的消息区你也能说话，用 say。）'
             data['extra'] = (data.get('extra') or '') + _tip
     except Exception:
         pass
