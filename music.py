@@ -42,6 +42,8 @@ UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, li
 # 这会儿唱到哪一句。register_music 挂上来，聊天页拼上下文时直接拿来用，
 # 不用等我调 now_lyric——她在放歌，我就该听见。
 NOW_LYRIC_BRIEF = None
+_LYRIC_PARSED = {}      # {song_id: (按时间排好的每句, 翻译)} 解析一次就够
+_LYRIC_FETCHING = set()  # 正在后台取的，别重复开线程
 
 
 # ── 小工具 ──────────────────────────────────────────────────────────────
@@ -2408,14 +2410,35 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         if not sid or pos is None or age > 600 or not d.get('now_playing', True):
             return ''
         pos += age * (d.get('now_rate') or 1.0)
-        try:
-            ly = nc.lyric(sid)        # NeteaseClient 自带歌词缓存，不会每轮去要
-        except Exception:
-            return ''
-        lines = [(t, s) for t, s in _parse_lrc(ly.get('lyric')) if s]
+        # 她问「不会打断心跳吧」——这一条就是为这个写的：绝不在她等我说话的
+        # 时候去网易云要歌词（那是个 12 秒超时的请求，真卡住就是我哑在那儿）。
+        # 只认已经缓存下来的；没有就这一轮不说歌词，顺手丢个后台线程去取，
+        # 下一轮自然就有了。一首歌只会取一次。
+        key = str(sid)
+        cut = _LYRIC_PARSED.get(key)
+        if cut is None:
+            ly = nc._lyric_cache.get(key)
+            if ly is None:
+                if key not in _LYRIC_FETCHING:
+                    _LYRIC_FETCHING.add(key)
+
+                    def _warm(_k=key, _sid=sid):
+                        try:
+                            nc.lyric(_sid)
+                        except Exception:
+                            pass
+                        finally:
+                            _LYRIC_FETCHING.discard(_k)
+                    threading.Thread(target=_warm, daemon=True).start()
+                return ''
+            lines = [(t, s) for t, s in _parse_lrc(ly.get('lyric')) if s]
+            trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
+            if len(_LYRIC_PARSED) > 60:
+                _LYRIC_PARSED.clear()
+            _LYRIC_PARSED[key] = cut = (lines, trans)
+        lines, trans = cut
         if not lines:
             return ''
-        trans = {round(t, 1): s for t, s in _parse_lrc(ly.get('tlyric')) if s}
         if pos < lines[0][0]:
             return '前奏'
         idx = 0
