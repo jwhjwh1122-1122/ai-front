@@ -2728,7 +2728,7 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
     global LISTEN_TAGS_RUN
     LISTEN_TAGS_RUN = _run_listen_tags
 
-    @app.route('/api/music/tag', methods=['POST'])
+    @app.route('/api/music/act-tag', methods=['POST'])
     def music_tag_run():
         """聊天页把我写的遥控标记转到这儿执行。
         逻辑跟唤醒那条路共用 _music_tag_do，两边永远一致。"""

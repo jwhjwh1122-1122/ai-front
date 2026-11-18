@@ -1308,7 +1308,7 @@ async function runListenTags(text) {
     if (mm) {
       const tag = mm[1] || mm[3];
       try {
-        const d = await jpost('/api/music/tag', { tag, arg: mm[2] || '' });
+        const d = await jpost('/api/music/act-tag', { tag, arg: mm[2] || '' });
         if (!d || !d.ok) toast(d?.error || ('「' + tag + '」没成'));
       } catch (e) { toast('「' + tag + '」没成'); }
       continue;
