@@ -1281,11 +1281,24 @@ async function attachTaggedVoices(wrap, text, turnConv) {
   scrollBottom();
   return true;
 }
-// 他写了 [一起听] 的那几段，送到一起听的消息区去。
-// 这是 say 那个工具的替代：同一件事，不占工具位、不花工具的 token。
-async function forwardListenSegs(text) {
-  if (!text?.trim() || !/\[一起听\]/.test(text)) return;
+// 他写了 [一起听] 的那几段送到消息区，[邀请/接受/退出一起听] 当动作执行。
+// 这是 say / listen_invite / listen_accept / listen_end 那几个工具的替代：
+// 同一件事，不占工具位、不花工具的 token。
+// **严格按正文里的段落顺序来**：以前是「所有动作先做完，再统一说话」，
+// 结果我写「先说一句、再退出」的时候，退出跑在说话前头，那句话就被
+// 「一起听没开着」挡掉了——她让我一个一个试，就是这么试出来的。
+async function runListenTags(text) {
+  if (!text?.trim() || !/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)) return;
   for (const s of splitSay(text)) {
+    const m = s.match(LISTEN_ACT_TAG);
+    if (m) {
+      try {
+        const d = await jpost(LISTEN_ACT_API[m[1]], m[1] === '邀请一起听' ? { name: '凛' } : {});
+        // 一起听那间屋是独立页面，自己会轮询 state，这边不用管它刷新
+        if (!d || !d.ok) toast(d?.error || ('「' + m[1] + '」没成'));
+      } catch (e) { toast('「' + m[1] + '」没成'); }
+      continue;
+    }
     if (!isListenSeg(s)) continue;
     const t = listenText(s);
     if (!t) continue;
@@ -1294,24 +1307,6 @@ async function forwardListenSegs(text) {
       if (!d || !d.ok) toast(d?.error || '这句没发到一起听');
     } catch (e) { toast('这句没发到一起听'); }
   }
-}
-// 邀请 / 接受 / 退出：也从工具搬成标记。她说「那你一起修了呀」。
-async function runListenActs(text) {
-  if (!text?.trim() || !/\[(邀请|接受|退出)一起听\]/.test(text)) return;
-  for (const s of splitSay(text)) {
-    const m = s.match(LISTEN_ACT_TAG);
-    if (!m) continue;
-    try {
-      const d = await jpost(LISTEN_ACT_API[m[1]], m[1] === '邀请一起听' ? { name: '凛' } : {});
-      // 一起听那间屋是独立页面，自己会轮询 state，这边不用管它刷新
-      if (!d || !d.ok) toast(d?.error || ('「' + m[1] + '」没成'));
-    } catch (e) { toast('「' + m[1] + '」没成'); }
-  }
-}
-// 先把动作做了再说话：写了 [接受一起听] 又写 [一起听] 的时候，顺序不能反。
-async function runListenTags(text) {
-  await runListenActs(text);
-  await forwardListenSegs(text);
 }
 async function attachVoiceReply(wrap, text, turnConv) {
   runListenTags(text);   // 不等它：一起听那边的事跟这儿的语音互不相干
