@@ -1123,8 +1123,14 @@ function watchFrameForTalk() {
   if (!$('stage').classList.contains('open') || curKind !== 'video') return null;
   // 她要的是我真的看见画面：有没有台词都截，她一开口就带上这一帧
   if (!watchCanGrab) return null;
-  return grabFrameNow();
+  // 画面没动（停着、还在同一秒附近）就不重复给，同一张我已经看过了；点相机的不算
+  const v = $('stage-video'), t = v.currentTime || 0;
+  if (!force && watchFrameLast.src === v.currentSrc && Math.abs(t - watchFrameLast.t) < 1.5) return null;
+  const fr = grabFrameNow();
+  if (fr) watchFrameLast = { t, src: v.currentSrc };
+  return fr;
 }
+let watchFrameLast = { t: -99, src: '' };
 // 我写的遥控标记
 function watchRemote(tag) {
   const v = $('stage-video');
