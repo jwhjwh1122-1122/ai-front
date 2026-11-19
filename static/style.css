@@ -987,3 +987,13 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 #stage.watch .stage-body video{aspect-ratio:auto!important;height:42vh!important;max-height:none!important;}
 #stage.watch.tvempty .wv-empty{aspect-ratio:auto;height:42vh;max-height:none;}
 #stage.watch .wv-info{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}
+
+/* 电视是浮在底图上的一块屏幕：四周透着图，圆角 */
+#stage.watch .split-top{background:transparent!important;}
+#stage.watch .stage-body{background:transparent!important;padding:calc(env(safe-area-inset-top) + 10px) 12px 0!important;}
+#stage.watch .stage-body video,#stage.watch.tvempty .wv-empty{border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.45);}
+#stage.watch .stage-body video{background:#000;}
+#stage.watch .wv-ui{top:calc(env(safe-area-inset-top) + 10px)!important;left:12px!important;right:12px!important;border-radius:16px;overflow:hidden;}
+#stage.watch .stage-subs{left:12px;right:12px;}
+#stage.watch.tvempty .wv-empty{background:radial-gradient(ellipse at 50% 40%,rgba(30,30,34,.88),rgba(0,0,0,.92) 75%);border:1px solid rgba(255,255,255,.08);}
+.wv-empty>.wv-in{flex:none;}
