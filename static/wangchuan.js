@@ -86,9 +86,10 @@
         '<div id="yw-old" style="position:absolute;right:14px;bottom:calc(env(safe-area-inset-bottom) + 10px);font-size:11px;color:#888;cursor:pointer">旧的仪表盘</div>';
       document.body.appendChild(ov);
       ov.querySelector('#yw-back').onclick = function () { ov.style.opacity = 0; setTimeout(function () { ov.style.display = 'none'; ov.querySelector('iframe').src = 'about:blank'; }, 600); };
+      window.addEventListener('message', function (e) { var d = e.data; if (!d || d.yw !== 'diary') return; var b = ov.querySelector('#yw-back'), o = ov.querySelector('#yw-old'); b.style.display = o.style.display = d.open ? 'none' : ''; });
       ov.querySelector('#yw-old').onclick = function () { if (typeof openDesire === 'function') { ov.querySelector('#yw-back').onclick(); openDesire(); } };
     }
-    ov.style.display = 'block'; ov.querySelector('iframe').src = '/static/yuwang/room.html?v=' + Date.now();
+    ov.style.display = 'block'; ov.querySelector('#yw-back').style.display = ov.querySelector('#yw-old').style.display = ''; ov.querySelector('iframe').src = '/static/yuwang/room.html?v=' + Date.now();
     requestAnimationFrame(function () { ov.style.opacity = 1; });
   }
   function leave() { inner.classList.remove('open'); hideNames(); }

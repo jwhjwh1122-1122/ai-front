@@ -12,12 +12,12 @@ canvas{position:absolute;left:0;top:0}
 #stem{position:absolute;left:140px;top:1122px;width:150px;height:600px;cursor:pointer}
 .bf{position:absolute;border-radius:50%;cursor:pointer;-webkit-tap-highlight-color:transparent}
 #spHit{position:absolute;width:190px;height:230px;cursor:grab}
-#diary{position:fixed;inset:0;background:rgba(236,233,226,.97);opacity:0;pointer-events:none;transition:opacity .7s;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+#diary{position:fixed;inset:0;background:rgba(233,230,224,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .7s;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 #diary.open{opacity:1;pointer-events:auto}
-#diary .hd{position:sticky;top:0;background:linear-gradient(#ece9e2 70%,rgba(236,233,226,0));padding:18px 20px 22px;display:flex;align-items:center;gap:12px}
-#diary .bk{font-size:15px;color:#555;cursor:pointer}
+#diary .hd{position:sticky;top:0;background:linear-gradient(rgba(236,233,226,.82) 60%,rgba(236,233,226,0));padding:18px 20px 22px;display:flex;align-items:center;gap:12px}
+#diary .bk{font-size:14px;color:#222;cursor:pointer;padding:6px 12px;border-radius:14px;background:rgba(240,237,230,.85)}
 #diary .tt{flex:1;text-align:center;font-size:22px;letter-spacing:6px;color:#111;margin-right:40px}
-.pg{margin:0 18px 30px;padding:18px 18px 20px;background:#f6f3ec;box-shadow:0 1px 6px rgba(0,0,0,.12);border-left:3px solid #111;position:relative}
+.pg{margin:0 18px 30px;padding:18px 18px 20px;background:rgba(246,243,236,.86);box-shadow:0 1px 6px rgba(0,0,0,.12);border-left:3px solid #111;position:relative}
 .pg .dt{font-size:13px;color:#777;letter-spacing:1px}
 .pg .nm{font-size:13px;color:#a3121a;margin-top:2px}
 .pg .tx{white-space:pre-wrap;font-size:16px;line-height:1.8;color:#1d1c1a;margin-top:12px}
@@ -27,14 +27,14 @@ canvas{position:absolute;left:0;top:0}
 </style></head><body>
 <div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
 <div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div>
-<div id="diary"><div class="hd"><span class="bk" id="dbk">← 回去</span><span class="tt">噜噜日记</span></div><div id="dlist"></div></div>
+<div id="diary"><div class="hd"><span class="bk" id="dbk">← 回到欲望</span><span class="tt">噜噜日记</span></div><div id="dlist"></div></div>
 <script>
 (function(){
 var IW=961,IH=2081, st=document.getElementById('st'), cv=document.getElementById('cv'), ctx=cv.getContext('2d');
-var SP=new Image(); SP.src='/static/yuwang/spider.png?v=4';
-var WB=new Image(), WRED=null; WB.src='/static/yuwang/web.png?v=4';
+var SP=new Image(); SP.src='/static/yuwang/spider.png?v=5';
+var WB=new Image(), WRED=null; WB.src='/static/yuwang/web.png?v=5';
 // 网的丝抠出来了一份；再染一份红的，按数裁出来盖在丝上
-WB.onload=function(){var c=document.createElement('canvas');c.width=WB.width;c.height=WB.height;var x=c.getContext('2d');x.drawImage(WB,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#b0101c';x.fillRect(0,0,c.width,c.height);WRED=c;};
+WB.onload=function(){var c=document.createElement('canvas');c.width=WB.width;c.height=WB.height;var x=c.getContext('2d');x.drawImage(WB,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#6e0b1a';x.fillRect(0,0,c.width,c.height);WRED=c;};
 var WOX=186,WOY=531;   // 抠出来那张里网心的位置
 var D=window.YW_DATA||null;
 // 蜘蛛：静止时它就在原画那个位置，丝从顶上垂下来
@@ -91,7 +91,7 @@ function weave(){var sz=Math.ceil(BRR*2.3),c=document.createElement('canvas');c.
       if(i==0){x.moveTo(px,py);continue;}var am=(ang[(i-1)%n]+a0+(i==n?Math.PI*2:0))/2,sag=rr*0.93;x.quadraticCurveTo(o+Math.cos(am)*sag,o+Math.sin(am)*sag,px,py);}
     x.stroke();}
   x.globalAlpha=1;x.fillStyle='#161514';x.beginPath();x.arc(o,o,4,0,7);x.fill();
-  var r=document.createElement('canvas');r.width=r.height=sz;var y=r.getContext('2d');y.drawImage(c,0,0);y.globalCompositeOperation='source-in';y.fillStyle='#b0101c';y.fillRect(0,0,sz,sz);
+  var r=document.createElement('canvas');r.width=r.height=sz;var y=r.getContext('2d');y.drawImage(c,0,0);y.globalCompositeOperation='source-in';y.fillStyle='#6e0b1a';y.fillRect(0,0,sz,sz);
   PW=c;PWR=r;PWS=sz;}
 function redClip(c,R,pts,n){ctx.beginPath();
   for(var i=0;i<n;i++){var p=pts[i],q=pts[(i+1)%n],mx=(p.x+q.x)/2,my=(p.y+q.y)/2;if(i==0){var l=pts[n-1];ctx.moveTo((l.x+p.x)/2,(l.y+p.y)/2);}ctx.quadraticCurveTo(p.x,p.y,mx,my);}
@@ -113,7 +113,7 @@ function drawWeb(t,k){
   ctx.restore();
   if(k>0.4){ctx.save();ctx.globalAlpha=(k-0.4)/0.6;ctx.textBaseline='middle';ctx.shadowColor='#f3f0e9';ctx.shadowBlur=6;
     bp.forEach(function(p){var lx=c.x+Math.cos(p.a)*R*1.2,ly=c.y+Math.sin(p.a)*R*1.16,ca=Math.cos(p.a);ctx.textAlign=ca>0.35?'left':ca<-0.35?'right':'center';
-      ctx.font='19px "Kaiti SC","STKaiti",serif';ctx.fillStyle=p.raw>=55?'#a3121a':'#1a1a1a';ctx.fillText(p.name,lx,ly-9);
+      ctx.font='19px "Kaiti SC","STKaiti",serif';ctx.fillStyle=p.raw>=55?'#7a0e1c':'#1a1a1a';ctx.fillText(p.name,lx,ly-9);
       ctx.font='14px Georgia,serif';ctx.fillStyle='#6a6660';ctx.fillText(Math.round(p.raw),lx,ly+10);});
     ctx.restore();}
 }
@@ -142,7 +142,7 @@ function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r
     else{inkAt(lastE,1);bump('poke',0.5);pokeN++;clearTimeout(pokeTm);pokeTm=setTimeout(function(){send('poke',Math.min(3,pokeN*0.5));pokeN=0;},1500);}}
   b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);});
 function drawInks(){for(var i=inks.length-1;i>=0;i--){var k=inks[i];k.t+=1/60;var p=k.t/1.6;if(p>=1){inks.splice(i,1);continue;}
-  var r=(14+90*Math.pow(p,.6))*k.big,a=(1-p)*.5;var g=ctx.createRadialGradient(k.x,k.y,r*.2,k.x,k.y,r);g.addColorStop(0,'rgba(170,14,24,'+a+')');g.addColorStop(.7,'rgba(150,10,20,'+a*.35+')');g.addColorStop(1,'rgba(150,10,20,0)');
+  var r=(14+90*Math.pow(p,.6))*k.big,a=(1-p)*.5;var g=ctx.createRadialGradient(k.x,k.y,r*.2,k.x,k.y,r);g.addColorStop(0,'rgba(110,11,26,'+a+')');g.addColorStop(.7,'rgba(100,8,22,'+a*.35+')');g.addColorStop(1,'rgba(100,8,22,0)');
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(k.x,k.y,r,0,7);ctx.fill();}}
 var t0=performance.now();
 function frame(now){requestAnimationFrame(frame);try{step(now);}catch(e){}}
@@ -164,9 +164,9 @@ function openDiary(){var L=(D&&D.vents)||[],box=document.getElementById('dlist')
     p.innerHTML='<div class="dt"></div><div class="nm"></div><div class="tx"></div>'+(v.said?'<div class="sd"><b>当时想跟你说、没说出口的</b><span></span></div>':'');
     p.querySelector('.dt').textContent=fmt(v.ts);p.querySelector('.nm').textContent=(v.name||'')+'  '+Math.round(v.at)+' → '+Math.round(v.to);
     p.querySelector('.tx').textContent=v.text||'';if(v.said)p.querySelector('.sd span').textContent=v.said;box.appendChild(p);});
-  dia.scrollTop=0;dia.classList.add('open');}
+  dia.scrollTop=0;dia.classList.add('open');try{parent.postMessage({yw:'diary',open:1},'*');}catch(e){}}
 document.getElementById('rose').onclick=openDiary;document.getElementById('stem').onclick=openDiary;
-document.getElementById('dbk').onclick=function(){dia.classList.remove('open');};
+document.getElementById('dbk').onclick=function(){dia.classList.remove('open');try{parent.postMessage({yw:'diary',open:0},'*');}catch(e){}};
 function load(){if(window.YW_DATA){D=window.YW_DATA;fillWords();return;}
   fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;fillWords();}).catch(function(){});}
 function refresh(){if(window.YW_DATA)return;fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;}).catch(function(){});}
