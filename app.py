@@ -2372,7 +2372,11 @@ def _run_desire_tool(name, args):
                     return ('这窗你还没写交接。换窗时 ds 会把这一窗的话从头压一份带过去（上一窗带来的那份不再往下叠）；'
                             '有它写不出来的、必须留着的，用 text / append 自己写。')
                 return '【你写给下一窗的】\n' + cur
-            rec['mine'] = ((rec.get('mine') or '') + '\n\n' + ap).strip()[:HANDOFF_MAX] if ap else t[:HANDOFF_MAX]
+            nm = ((rec.get('mine') or '') + '\n\n' + ap).strip() if ap else t
+            if len(nm) > HANDOFF_MAX:
+                return (f'没存。写下来是 {len(nm)} 字，超了 {len(nm) - HANDOFF_MAX} 字（上限 {HANDOFF_MAX}）。'
+                        '别删段落，把句子写紧，事情一件不少，改完整份用 text 重新写进来。')
+            rec['mine'] = nm
             rec['ts'] = int(time.time() * 1000)
             jwrite(_recap_file(conv), rec)
             return f'写好了（{len(rec["mine"])} 字）。换窗时 ds 压的这一窗在前，你这段原样接在后面。'
@@ -2380,11 +2384,15 @@ def _run_desire_tool(name, args):
             conv = _cur_conv()
             rec = load_recap(conv)
             if args.get('append'):
-                rec['text'] = (rec.get('text', '') + '\n\n' + args['append'].strip())[:RECAP_MAX]
+                nt = (rec.get('text', '') + '\n\n' + args['append'].strip()).strip()
             elif args.get('text'):
-                rec['text'] = args['text'].strip()[:RECAP_MAX]
+                nt = args['text'].strip()
             else:
                 return rec.get('text') or '还没有前情提要'
+            if len(nt) > RECAP_MAX:
+                return (f'没存。改完是 {len(nt)} 字，超了 {len(nt) - RECAP_MAX} 字（上限 {RECAP_MAX}）。'
+                        '别删段落，把句子写紧，事情一件不少，改完整份用 text 重新写进来。')
+            rec['text'] = nt
             rec['ts'] = int(time.time() * 1000)
             rec['edited'] = True
             jwrite(_recap_file(conv), rec)
@@ -2434,7 +2442,7 @@ def desire_mcp():
 # ============================================================
 RECAP_DIR = os.path.join(DATA_DIR, 'recaps')
 os.makedirs(RECAP_DIR, exist_ok=True)
-RECAP_MAX = 1300         # 整段前情提要的安全上限（模型不听话时兜底截断用）
+RECAP_MAX = 1300         # 整段前情提要的上限。超了不截，退回去改写得更紧（_fit_len）
 HANDOFF_MAX = 4000       # 他自己写的交接：是他亲手挑的，给的地方比机器压的宽得多
 # 聊得越多，前情提要要装的事越多，但不能整段按同一个比例硬压——早的那部分会被压没。
 # 改成分三层：近期留细节，早期压得最狠，但早期有个字数下限，保证凛读到时还认得出发生过什么，
@@ -2540,6 +2548,47 @@ MERGE_SYS = (
 )
 
 
+FIT_SYS = (
+    '下面这段前情提要写长了，超过了能放的字数。把它改写到 {limit} 字以内（现在 {now} 字）。\n'
+    '这不是删减，是改写：事情一件都不能少，人、时间、她的原话、两个人的情绪、没做完的约定全部留着，'
+    '意思跟原文一样。做法是把每一句写紧——去掉重复的、绕的、可有可无的修饰，几句说同一件事的并成一句，'
+    '能用短说法的就用短说法。不许整段整段地砍掉，不许只保留前面或后面。\n'
+    '原文如果分了【早期】【中期】【近期】三段，三段和标题都要留着，每段都按比例写紧。\n'
+    '只输出改写后的正文本身，不要说明。'
+)
+
+
+def _cut_at_sentence(text, limit):
+    """实在改不进去时的最后一道：切在句号上，不切在半句话中间。"""
+    t = text[:limit]
+    k = max(t.rfind(ch) for ch in '。！？\n')
+    return t[:k + 1] if k > limit * 0.6 else t
+
+
+def _fit_len(text, limit, tries=3):
+    """超了字数不直接截：退回去让它重写得更紧，事情一件不少，改到放得进去为止。
+    最多改 tries 轮；还是超，就取最短的那版，在句号处收尾（这种情况会打日志）。"""
+    text = (text or '').strip()
+    best = text
+    for i in range(tries):
+        if len(best) <= limit:
+            return best
+        # 给它的目标比上限再紧一点，它总爱写超一些
+        goal = int(limit * (0.92 - 0.06 * i))
+        out, err = _ds_call(FIT_SYS.format(limit=goal, now=len(best)), best,
+                            max_tokens=max(900, int(limit * 1.6)))
+        if err or not out:
+            print(f'[recap] 改短失败：{err}', flush=True)
+            break
+        out = out.strip()
+        if len(out) < len(best):
+            best = out
+    if len(best) <= limit:
+        return best
+    print(f'[recap] 改了 {tries} 轮还是 {len(best)} 字，超过 {limit}，在句号处收尾', flush=True)
+    return _cut_at_sentence(best, limit)
+
+
 def _flatten(msgs):
     out = []
     for m in msgs or []:
@@ -2582,10 +2631,11 @@ def recap_make():
         merged, err2 = _ds_call(MERGE_SYS,
                                 '【早】\n' + old['text'] + '\n\n【近】\n' + new, max_tokens=1100)
         if err2 or not merged:
-            merged = (old['text'] + '\n\n' + new)[-RECAP_MAX:]
+            merged = old['text'] + '\n\n' + new     # 合并没成：拼起来交给下面改短，不从头上砍
+    merged = _fit_len(merged, RECAP_MAX)
     # 在 old 上改，别整个换掉：handoff（上个窗口交接过来的那段）和 mine（他写给下一窗的交接）得留着
     rec = dict(old)
-    rec.update({'text': merged.strip()[:RECAP_MAX],
+    rec.update({'text': merged.strip(),
                 'covered': int(old.get('covered', 0)) + len(msgs),
                 'by_me': False,          # 机器压过了，这段不再是他原话
                 'ts': int(time.time() * 1000)})
@@ -2600,9 +2650,14 @@ def recap_edit():
     conv = d.get('conv') or 'default'
     rec = load_recap(conv)
     if d.get('append'):
-        rec['text'] = (rec.get('text', '') + '\n\n' + d['append'].strip())[:RECAP_MAX]
+        nt = (rec.get('text', '') + '\n\n' + d['append'].strip()).strip()
     elif 'text' in d:
-        rec['text'] = (d.get('text') or '').strip()[:RECAP_MAX]
+        nt = (d.get('text') or '').strip()
+    else:
+        nt = rec.get('text', '')
+    if len(nt) > RECAP_MAX:
+        return jsonify({'error': f'{len(nt)} 字，超了 {len(nt) - RECAP_MAX} 字，改紧一点再存', 'len': len(nt), 'max': RECAP_MAX}), 400
+    rec['text'] = nt
     rec['ts'] = int(time.time() * 1000)
     rec['edited'] = True
     jwrite(_recap_file(conv), rec)
@@ -6453,8 +6508,8 @@ def _ds_recap_long(text, chunk=9000, max_chunks=20):
     merged = parts[0]
     for p in parts[1:]:
         m, err = _ds_call(MERGE_SYS, '【早】\n' + merged + '\n\n【近】\n' + p, max_tokens=1300)
-        merged = m if (not err and m) else (merged + '\n\n' + p)[-RECAP_MAX:]
-    return merged, None
+        merged = m if (not err and m) else _fit_len(merged + '\n\n' + p, RECAP_MAX)
+    return _fit_len(merged, RECAP_MAX), None
 
 
 def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False, mine=''):
@@ -6476,12 +6531,12 @@ def recap_merge_into(dst, base, msgs, upto_mid='', src=None, keep_base=False, mi
     if len(text) >= 80:
         out, err = _ds_recap_long(text)
         if not err and out:
-            new = out.strip()[:RECAP_MAX]
+            new = _fit_len(out, RECAP_MAX)
         else:
             failed = True
             print(f'[recap] 换窗打包没压成：{err}', flush=True)
     if new and mine:
-        merged = (new + '\n\n【我自己补的】\n' + mine)[:RECAP_MAX + HANDOFF_MAX]
+        merged = new + '\n\n【我自己补的】\n' + mine
     elif new or mine:
         merged = new or mine[:HANDOFF_MAX]
     else:
