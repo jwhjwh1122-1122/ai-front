@@ -3948,7 +3948,10 @@ def watch_tip():
            f'到 {_mmss(w.get("pos"))}' + (f' / {_mmss(w.get("dur"))}' if w.get('dur') else '') + '。')
     if w.get('lines'):
         tip += '\n刚才的台词（只到这一刻，后面的不知道）：\n' + '\n'.join(w['lines']) + '\n'
-    tip += '遥控器你有一半：单起一段写 [片子暂停] [片子继续] [倒回十秒] [快进十秒]。）'
+    tip += '遥控器你有一半：单起一段写 [片子暂停] [片子继续] [倒回十秒] [快进十秒]。'
+    if w.get('frame'):
+        tip += '想自己看画面就写 [看一眼]，说完这句网页把这一刻的画面递给你。'
+    tip += '）'
     return tip
 
 

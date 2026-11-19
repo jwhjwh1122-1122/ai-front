@@ -860,7 +860,7 @@ const LISTEN_TAG = /^\s*\[一起听\]\s*/;
 const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
 const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
 const stripListenTags = s => String(s || '').replace(
-  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '').replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g, '');
+  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '').replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒|看一眼)\][ \t]*/g, '');
 // 一起听的三个动作也搬出工具：单起一段写标记就行。
 const LISTEN_ACT_TAG = /^\s*\[(邀请一起听|接受一起听|退出一起听)\]\s*/;
 const LISTEN_ACT_API = {
@@ -877,6 +877,24 @@ const MUSIC_TAG_ANY = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播�
 // 影房的遥控器：一起看的人会抢遥控器
 const WATCH_TAG_RE = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g;
 const WATCH_TAG_ANY = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\]/;
+// 他自己想看画面：写 [看一眼]，这一轮说完，网页截这一帧悄悄递给他。
+// 刹车：20 秒内连着要第二眼就不给了，免得自己一直看一直看。
+let lookLastAt = 0;
+function watchLookSoon() {
+  if (typeof grabFrameNow !== 'function' || !$('stage')?.classList.contains('open')) return;
+  const now = Date.now();
+  if (now - lookLastAt < 20000) return;
+  lookLastAt = now;
+  let tries = 0;
+  const go = () => {
+    if (isTyping) { if (++tries < 40) setTimeout(go, 500); return; }
+    let fr = null; try { fr = grabFrameNow(); } catch (e) { }
+    roomCtx = 'stage';
+    if (!fr || !fr.data) { sendComposed('（你想看一眼，可这部片子的画面截不到。别编，老实跟她说看不见）', [], { internal: true }); return; }
+    sendComposed(`（你要看的那一眼，${fmtTime(fr.t)}）`, [fr.data], { internal: true });
+  };
+  setTimeout(go, 600);
+}
 const mostlyZh = t => {
   const s = String(t || '').trim();
   return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
@@ -896,7 +914,8 @@ function renderBubble(text) {
     .replace(/\[片子暂停\][ \t]*/g, '⏸ <i>（按了暂停）</i>')
     .replace(/\[片子继续\][ \t]*/g, '▶️ <i>（接着放）</i>')
     .replace(/\[倒回十秒\][ \t]*/g, '⏪ <i>（倒回十秒）</i>')
-    .replace(/\[快进十秒\][ \t]*/g, '⏩ <i>（快进十秒）</i>')));
+    .replace(/\[快进十秒\][ \t]*/g, '⏩ <i>（快进十秒）</i>')
+    .replace(/\[看一眼\][ \t]*/g, '👀 <i>（看了一眼画面）</i>')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1312,6 +1331,7 @@ async function runListenTags(text) {
   if (WATCH_TAG_ANY.test(text) && typeof watchRemote === 'function') {
     for (const m of text.matchAll(WATCH_TAG_RE)) watchRemote(m[1]);
   }
+  if (/\[看一眼\]/.test(text)) watchLookSoon();
   if (!/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)
       && !MUSIC_TAG_ANY.test(text)) return;
   for (const s of splitSay(text)) {
