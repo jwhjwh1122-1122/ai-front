@@ -965,3 +965,18 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .wv-meta{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;}
 #stage.watch .wv-cam{display:flex;width:42px;height:42px;border-radius:50%;border:1px solid var(--border);background:transparent;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 .wv-cam svg{width:20px;height:20px;fill:none;stroke:var(--text-muted);stroke-width:1.6;stroke-linejoin:round;}
+
+/* 一进放映室就是电视：没片子时屏幕里就是粘网址的框 */
+.wv-empty{display:none;}
+#stage.watch.tvempty .wv-empty{display:flex;flex-direction:column;justify-content:center;gap:9px;width:100%;aspect-ratio:16/9;max-height:46vh;padding:52px 22px 14px;box-sizing:border-box;background:radial-gradient(ellipse at 50% 40%,#1c1c1f,#000 75%);}
+#stage.watch.tvempty video,#stage.watch.tvempty .wv-big,#stage.watch.tvempty .wv-bot,#stage.watch.tvempty #wv-fs,#stage.watch.tvempty .stage-subs{display:none!important;}
+#stage.watch.tvempty .wv-ui{background:none;pointer-events:none;}
+#stage.watch.tvempty .wv-top{pointer-events:auto;}
+.wv-empty-t{color:rgba(255,255,255,.55);font-size:12px;letter-spacing:3px;text-align:center;margin-bottom:2px;}
+.wv-empty-row{display:flex;gap:8px;}
+.wv-in{flex:1;min-width:0;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 11px;font-size:13px;color:#fff;font-family:inherit;outline:none;}
+.wv-in::placeholder{color:rgba(255,255,255,.35);}
+.wv-go{flex-shrink:0;width:58px;background:rgba(255,255,255,.88);color:#111;border:none;border-radius:9px;font-size:13px;letter-spacing:2px;font-family:inherit;cursor:pointer;}
+.wv-empty-sub{text-align:center;color:rgba(255,255,255,.4);font-size:11.5px;letter-spacing:1px;}
+.wv-empty-sub span{cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+#cinema.over{z-index:220;}

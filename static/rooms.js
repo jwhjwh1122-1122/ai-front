@@ -926,6 +926,45 @@ async function openRoomMedia(kind) {
     el.appendChild(d);
   });
 }
+// ============ 一进放映室就是电视 ============
+// 上回看到哪部就接着那部（停着，不自己放）；没有就是一台开着的空电视，屏幕里粘网址。
+async function openTv() {
+  let last = null;
+  try { last = JSON.parse(localStorage.getItem('tv-last') || 'null'); } catch (e) { }
+  if (last && last.filename) {
+    let list = [];
+    try { list = await jget('/api/videos'); } catch (e) { }
+    const hit = (list || []).find(x => x.filename === last.filename);
+    if (hit) { playMedia(hit, 'video'); return; }
+  }
+  openTvEmpty();
+}
+function openTvEmpty() {
+  curMedia = null; curKind = 'video'; roomCtx = 'stage';
+  const st = $('stage'), v = $('stage-video');
+  st.classList.add('open', 'tvempty'); st.classList.remove('audio');
+  $('audio-wrap').style.display = 'none'; $('stage-audio').pause();
+  if (watchHls) { try { watchHls.destroy(); } catch (e) { } watchHls = null; }
+  v.pause(); v.removeAttribute('src'); try { v.load(); } catch (e) { }
+  curSubs = null; $('stage-subs').style.display = 'none';
+  $('stage-name').textContent = '放映室';
+  clearNudge(); watchStopReport();
+  watchUiOn({ note: '放映室' });
+  $('wv-meta').textContent = '';
+  renderSplit('stage');
+}
+function openTvLib() {
+  $('cinema').classList.add('over');
+  openRoomMedia('video');
+}
+async function addLinkVideo(url, note) {
+  if (!url) { toast('先粘网址'); return false; }
+  const r = await jpost('/api/videos/link', { url, note });
+  if (r.error) { toast(r.error); return false; }
+  refreshHome();
+  if (r.item) playMedia({ filename: 'link-' + r.item.id, url: r.item.url, note: r.item.note, link: true }, 'video');
+  return true;
+}
 function stageTime() {
   const v = $('stage-video'), a = $('stage-audio');
   if (curKind === 'music') return Math.floor(a.currentTime || 0);
@@ -939,13 +978,16 @@ function playMedia(m, kind) {
   $('stage-name').textContent = m.note || m.filename;
   const v = $('stage-video'), a = $('stage-audio'), aw = $('audio-wrap');
   if (kind === 'music') {
-    $('stage').classList.remove('watch'); v.setAttribute('controls', '');
+    $('stage').classList.remove('watch', 'tvempty'); v.setAttribute('controls', '');
     v.style.display = 'none'; v.pause(); v.removeAttribute('src');
     aw.style.display = 'block'; a.src = m.url;
     a.onplay = () => $('disc-big').classList.add('spin');
     a.onpause = () => $('disc-big').classList.remove('spin');
     setupShape(a, m.filename);
   } else {
+    stage.classList.remove('tvempty');
+    try { localStorage.setItem('tv-last', JSON.stringify(m)); } catch (e) { }
+    $('cinema').classList.remove('open', 'over');
     aw.style.display = 'none'; a.pause(); a.removeAttribute('src');
     v.style.display = 'block';
     watchLoad(v, m);
@@ -4137,8 +4179,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-close-sheet]').forEach(b => b.onclick = () => $(b.dataset.closeSheet).classList.remove('open'));
   document.querySelectorAll('[data-close-full]').forEach(b => b.onclick = () => $(b.dataset.closeFull).classList.remove('open'));
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => {
-    $(b.dataset.close).classList.remove('open');
-    if (['cinema', 'musicroom', 'study'].includes(b.dataset.close)) roomCtx = null;
+    $(b.dataset.close).classList.remove('open', 'over');
+    if (['cinema', 'musicroom', 'study'].includes(b.dataset.close)) roomCtx = $('stage').classList.contains('open') ? 'stage' : null;
   });
   document.querySelectorAll('.sheet').forEach(s => s.onclick = e => { if (e.target === s) s.classList.remove('open'); });
   $('lightbox').onclick = () => $('lightbox').classList.remove('open');
@@ -4150,7 +4192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 底下的书架/碟片列表不再打开，✕ 直接退回主界面。
     // （地址没填时退回旧界面，免得点了没反应）
     if (r === 'study') { if (coreadUrl()) openCoread(); else openStudy(); }
-    else if (r === 'cinema') openRoomMedia('video');
+    else if (r === 'cinema') openTv();
     else if (r === 'music') { if (neteaseUrl()) openNetease(); else openRoomMedia('music'); }
     else if (r === 'mailbox') openMailbox();
     else if (r === 'moments') openMoments();
@@ -4284,19 +4326,24 @@ document.addEventListener('DOMContentLoaded', () => {
   $('link-go').onclick = async () => {
     const url = $('link-url').value.trim(), note = $('link-note').value.trim();
     if (!url) { $('link-url').focus(); toast('先粘网址'); return; }
-    const r = await jpost('/api/videos/link', { url, note });
-    if (r.error) { toast(r.error); return; }
-    $('link-url').value = ''; $('link-note').value = '';
-    await openRoomMedia('video'); refreshHome();
-    if (r.item) playMedia({ filename: 'link-' + r.item.id, url: r.item.url, note: r.item.note, link: true }, 'video');
+    if (await addLinkVideo(url, note)) { $('link-url').value = ''; $('link-note').value = ''; }
   };
+  // 电视屏幕里的粘网址
+  $('tv-go').onclick = async () => {
+    const url = $('tv-url').value.trim(), note = $('tv-note').value.trim();
+    if (!url) { $('tv-url').focus(); toast('先粘网址'); return; }
+    if (await addLinkVideo(url, note)) { $('tv-url').value = ''; $('tv-note').value = ''; }
+  };
+  $('tv-lib').onclick = openTvLib;
+  $('wv-lib').onclick = e => { e.stopPropagation(); openTvLib(); };
+  $('tv-up').onclick = () => $('video-file').click();
   watchUiBind();
   $('btn-upload-music').onclick = () => $('music-file').click();
   const mediaUpload = (kind) => async e => {
     const f = e.target.files[0]; if (!f) return;
     const note = prompt('给它起个名字', f.name.replace(/\.[^.]+$/, '')) || '';
     const d = await chunkUpload(f, kind, note);
-    if (d) openRoomMedia(kind === 'music' ? 'music' : 'video');
+    if (d) { if (kind !== 'music' && $('stage').classList.contains('open')) openTvLib(); else openRoomMedia(kind === 'music' ? 'music' : 'video'); }
     refreshHome(); e.target.value = '';
   };
   $('video-file').onchange = mediaUpload('video');
