@@ -4015,6 +4015,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (r === 'mailbox') openMailbox();
     else if (r === 'moments') openMoments();
     else if (r === 'desire') openDesire();
+    else if (r === 'wangchuan') openWangchuan();
   });
   document.querySelectorAll('.drawer').forEach(d => d.onclick = () => openDrawer(d.dataset.drawer));
 
