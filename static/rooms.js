@@ -3424,43 +3424,43 @@ function relTime(ts) {
 function emojiHtml(t) {
   return stickerize(esc(t));
 }
+const IGI = {
+  h: '<path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 7.8 3.6 4.5 7 4.5c2.1 0 3.6 1.2 5 3 1.4-1.8 2.9-3 5-3 3.4 0 5.6 3.3 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/>',
+  c: '<path d="M20.5 11.6a8.4 8.4 0 0 1-12.3 7.4L3.5 20.5l1.6-4.5A8.4 8.4 0 1 1 20.5 11.6z"/>',
+  s: '<path d="M21.5 3.5 10.6 13.4M21.5 3.5 14.8 20.6l-4.2-7.2-7.1-4.2z"/>',
+  b: '<path d="M18.5 20.5 12 14.8l-6.5 5.7V4.5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1z"/>',
+};
 async function openMoments() {
   $('momentsroom').classList.add('open');
   const el = $('post-list');
-  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">正在看…</div>';
+  el.innerHTML = '<div class="room-empty" style="color:#8e8e8e">正在看…</div>';
   const items = await jget('/api/posts');
   $('moments-sub').textContent = items.length ? `${items.length} 条` : '还没有人发';
-  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有人发过<br>右上角发一条</div>'; return; }
   const avU = localStorage.getItem('chat-avatar-user'), avL = localStorage.getItem('chat-avatar-ai');
+  const nU = CFG.call_user || '宝宝', nL = displayName();
+  const avHtml = (who, big) => { const u = who === 'user' ? avU : avL, n = who === 'user' ? nU : nL;
+    return `<div class="ig-av${big ? ' big' : ''}">${u ? `<img src="${u}">` : esc(n[0])}</div>`; };
+  $('ig-stories').innerHTML = ['user', 'ai'].map(w =>
+    `<div class="ig-st"><div class="ig-ring"><div>${avHtml(w, 1)}</div></div>${esc(w === 'user' ? nU : nL)}</div>`).join('');
+  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:#8e8e8e">还没有人发过<br>右上角发一条</div>'; return; }
   el.innerHTML = '';
+  const nm = a => a === 'user' ? nU : nL;
   items.forEach(p => {
-    const mine = p.author === 'user';
-    const av = mine ? avU : avL;
-    const nm = mine ? (CFG.call_user || '宝宝') : displayName();
-    const d = document.createElement('div');
-    d.className = 'post';
+    const imgs = p.images || [];
     const liked = (p.likes || []).includes('user');
     const cms = (p.comments || []).map(c =>
-      `<div class="post-cm" data-cid="${c.id}"><b>${c.author === 'user' ? esc(CFG.call_user || '宝宝') : esc(displayName())}</b>：${emojiHtml(c.text)}<span class="x" data-delcm="${c.id}">✕</span></div>`).join('');
-    const likeTxt = (p.likes || []).map(x => x === 'user' ? (CFG.call_user || '宝宝') : displayName()).join('、');
+      `<div class="igp-c"><b>${esc(nm(c.author))}</b> ${emojiHtml(c.text)}<span class="x" data-delcm="${c.id}">✕</span></div>`).join('');
+    const likeTxt = (p.likes || []).map(nm).join('、');
+    const d = document.createElement('div');
+    d.className = 'igp';
     d.innerHTML = `
-      <div class="post-av${av ? ' has-img' : ''}">${av ? `<img src="${av}">` : esc(nm[0])}</div>
-      <div class="post-main">
-        <div class="post-who">${esc(nm)}</div>
-        ${p.text ? `<div class="post-text">${emojiHtml(p.text)}</div>` : ''}
-        ${(p.images || []).length ? `<div class="post-imgs n${p.images.length}">${p.images.map(u => `<img src="${u}" loading="lazy">`).join('')}</div>` : ''}
-        <div class="post-foot">
-          <span class="post-time">${relTime(p.ts)}</span>
-          <div class="post-acts">
-            <span class="post-btn" data-like="${p.id}">${liked ? '取消赞' : '赞'}</span>
-            <span class="post-btn" data-cm="${p.id}">评论</span>
-            <span class="post-del" data-del="${p.id}">删</span>
-          </div>
-        </div>
-        ${(likeTxt || cms) ? `<div class="post-react">
-          ${likeTxt ? `<div class="post-likes${cms ? ' has-cm' : ''}">♡ ${esc(likeTxt)}</div>` : ''}
-          ${cms}</div>` : ''}
-      </div>`;
+      <div class="igp-h">${avHtml(p.author)}<div class="igp-n">${esc(nm(p.author))}</div><div class="igp-more" data-del="1">···</div></div>
+      ${imgs.length ? `<div class="igp-media">${imgs.map(u => `<img src="${u}" loading="lazy">`).join('')}</div>${imgs.length > 1 ? `<div class="igp-dots">${imgs.map(() => '<i></i>').join('')}</div>` : ''}` : (p.text ? `<div class="igp-body">${emojiHtml(p.text)}</div>` : '')}
+      <div class="igp-acts"><svg viewBox="0 0 24 24" class="${liked ? 'on' : ''}" data-like="1">${IGI.h}</svg><svg viewBox="0 0 24 24" data-cm="1">${IGI.c}</svg><svg viewBox="0 0 24 24">${IGI.s}</svg><span style="flex:1"></span><svg viewBox="0 0 24 24">${IGI.b}</svg></div>
+      ${likeTxt ? `<div class="igp-likes"><b>${esc(likeTxt)}</b> 赞了</div>` : ''}
+      ${imgs.length && p.text ? `<div class="igp-cap clamp"><b>${esc(nm(p.author))}</b> ${emojiHtml(p.text)}</div><div class="igp-mo">更多</div>` : ''}
+      ${cms}
+      <div class="igp-t">${relTime(p.ts)}</div>`;
     d.querySelector('[data-like]').onclick = async () => {
       await jpost(`/api/posts/${p.id}/like`, { author: 'user' }); openMoments();
     };
@@ -3473,11 +3473,21 @@ async function openMoments() {
       if (!confirm('删掉这条？')) return;
       await fetch('/api/posts/' + p.id, { method: 'DELETE' }); openMoments(); refreshHome();
     };
+    const cap = d.querySelector('.igp-cap'), mo = d.querySelector('.igp-mo');
+    if (cap && mo) {
+      requestAnimationFrame(() => { if (cap.scrollHeight <= cap.clientHeight + 2) mo.remove(); });
+      mo.onclick = () => { cap.classList.remove('clamp'); mo.remove(); };
+    }
+    const media = d.querySelector('.igp-media'), dots = d.querySelectorAll('.igp-dots i');
+    if (media && dots.length) {
+      const mark = () => { const i = Math.round(media.scrollLeft / media.clientWidth); dots.forEach((x, k) => x.style.background = k === i ? '#fff' : 'rgba(255,255,255,.45)'); };
+      media.addEventListener('scroll', mark, { passive: true }); requestAnimationFrame(mark);
+    }
     d.querySelectorAll('[data-delcm]').forEach(x => x.onclick = async () => {
       if (!confirm('删掉这条评论？')) return;
       await fetch(`/api/posts/${p.id}/comment/${x.dataset.delcm}`, { method: 'DELETE' }); openMoments();
     });
-    d.querySelectorAll('.post-imgs img').forEach(im => im.onclick = () => openLightbox(im.src, '', ''));
+    d.querySelectorAll('.igp-media img').forEach(im => im.onclick = () => openLightbox(im.src, '', ''));
     el.appendChild(d);
   });
 }
@@ -4218,7 +4228,9 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (r === 'moments') openMoments();
     else if (r === 'desire') openDesire();
     else if (r === 'wangchuan') openWangchuan();
+    else if (r === 'game') toast('游戏房还没开张，等我们一起布置');
   });
+  if ($('home-gate')) $('home-gate').onclick = () => openWangchuan();
   document.querySelectorAll('.drawer').forEach(d => d.onclick = () => openDrawer(d.dataset.drawer));
 
   // 书房
