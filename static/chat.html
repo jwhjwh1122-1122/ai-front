@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=52">
+<link rel="stylesheet" href="/static/style.css?v=53">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -874,7 +874,7 @@ window.addEventListener('error', function (e) {
           <div class="wv-empty-t">电视开着，还没放片子</div>
           <input id="tv-url" class="wv-in" placeholder="粘视频地址（mp4 / m3u8）" autocapitalize="off" autocomplete="off">
           <div class="wv-empty-row"><input id="tv-note" class="wv-in" placeholder="叫什么"><button id="tv-go" class="wv-go">放</button></div>
-          <div class="wv-empty-sub"><span id="tv-lib">从片库挑一部</span> · <span id="tv-up">上传本地的</span></div>
+          <div class="wv-empty-sub"><span id="tv-local">直接放手机里的（不用上传）</span><br><span id="tv-lib">从片库挑一部</span> · <span id="tv-up">上传到片库</span></div>
         </div>
         <div class="wv-ui" id="wv-ui">
           <div class="wv-top"><button class="wv-ic" id="wv-back" aria-label="返回"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><div class="wv-title" id="wv-title"></div><button class="wv-pill" id="wv-lib">片库</button><button class="wv-pill" id="wv-fs">全屏</button></div>
@@ -1408,12 +1408,13 @@ window.addEventListener('error', function (e) {
 <input type="file" id="emoji-input" accept="image/*" style="display:none">
 <input type="file" id="book-file" accept=".txt,.epub,text/plain,application/epub+zip" style="display:none">
 <input type="file" id="video-file" accept="video/*" style="display:none">
+<input type="file" id="tv-local-file" accept="video/*" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 <input type="file" id="lib-file-input" style="display:none">
 
 <script src="/static/app.js?v=92"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=113"></script>
+<script src="/static/rooms.js?v=114"></script>
 <script src="/static/wangchuan.js?v=1"></script>
 <script src="/static/silk-sprites.js?v=1"></script>
 <script src="/static/brain-silk.js?v=2"></script>

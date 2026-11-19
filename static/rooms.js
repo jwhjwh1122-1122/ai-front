@@ -993,7 +993,7 @@ function playMedia(m, kind) {
     setupShape(a, m.filename);
   } else {
     stage.classList.remove('tvempty');
-    try { localStorage.setItem('tv-last', JSON.stringify(m)); } catch (e) { }
+    if (!m.local) { try { localStorage.setItem('tv-last', JSON.stringify(m)); } catch (e) { } }
     $('cinema').classList.remove('open', 'over');
     aw.style.display = 'none'; a.pause(); a.removeAttribute('src');
     v.style.display = 'block';
@@ -1004,7 +1004,7 @@ function playMedia(m, kind) {
       if (v.readyState < 2) { try { v.currentTime = 0.1; } catch (e) { } }
     };
     setTimeout(loadMoments, 900);
-    if (m.link) { curSubs = null; $('stage-subs').style.display = 'none'; } else setupSubs(m.filename);
+    if (m.link || m.local) { curSubs = null; $('stage-subs').style.display = 'none'; } else setupSubs(m.filename);
     setupNudge();
     watchStartReport();
     watchUiOn(m);
@@ -4349,6 +4349,17 @@ document.addEventListener('DOMContentLoaded', () => {
   $('tv-lib').onclick = openTvLib;
   $('wv-lib').onclick = e => { e.stopPropagation(); openTvLib(); };
   $('tv-up').onclick = () => $('video-file').click();
+  // 不上传：网页直接打开她手机里那个文件，在她手机上放。片子不出手机，进度、截画面、遥控照样有
+  let tvLocalUrl = null;
+  $('tv-local').onclick = () => $('tv-local-file').click();
+  $('tv-local-file').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    if (tvLocalUrl) { try { URL.revokeObjectURL(tvLocalUrl); } catch (er) { } }
+    tvLocalUrl = URL.createObjectURL(f);
+    const name = f.name.replace(/\.[^.]+$/, '');
+    playMedia({ filename: 'local-' + f.size, url: tvLocalUrl, note: name, local: true }, 'video');
+    e.target.value = '';
+  };
   watchUiBind();
   $('btn-upload-music').onclick = () => $('music-file').click();
   const mediaUpload = (kind) => async e => {

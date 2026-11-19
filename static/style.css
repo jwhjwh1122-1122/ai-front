@@ -997,3 +997,6 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 #stage.watch .stage-subs{left:12px;right:12px;}
 #stage.watch.tvempty .wv-empty{background:radial-gradient(ellipse at 50% 40%,rgba(30,30,34,.88),rgba(0,0,0,.92) 75%);border:1px solid rgba(255,255,255,.08);}
 .wv-empty>.wv-in{flex:none;}
+
+.wv-empty-sub{line-height:2;}
+#tv-local{color:rgba(255,255,255,.72);}
