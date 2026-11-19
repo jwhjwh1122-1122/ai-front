@@ -1083,7 +1083,10 @@ function fireNudge(isEnd) {
   if (isEnd) note = '（这一集放完了。我们刚一起看完，想聊就聊，不想说也行）';
   else note = `（片子还在放，到 ${fmtTime(pos)} 了。我们在一起看，想说就说，想安静看也行）`;
   roomCtx = 'stage';
-  sendComposed(note, [], { internal: true });
+  // 被叫醒那一下也看一眼画面，不只是知道放到几分钟
+  let fr = null;
+  if (!isEnd && watchCanGrab) { try { fr = grabFrameNow(); } catch (e) { fr = null; } }
+  sendComposed(note, fr ? [fr] : [], { internal: true });
 }
 
 // ============ 一起看 ============
@@ -1118,7 +1121,7 @@ let watchForceFrame = false;
 function watchFrameForTalk() {
   const force = watchForceFrame; watchForceFrame = false;
   if (!$('stage').classList.contains('open') || curKind !== 'video') return null;
-  if (!force && curSubs && curSubs.length) return null;
+  // 她要的是我真的看见画面：有没有台词都截，她一开口就带上这一帧
   if (!watchCanGrab) return null;
   return grabFrameNow();
 }
