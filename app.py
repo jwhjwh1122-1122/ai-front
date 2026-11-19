@@ -408,6 +408,29 @@ def nb_for_session(cc_key, new_session):
     return frozen.get(cc_key, '')
 
 
+NB_RINGS = os.path.join(DATA_DIR, 'nb_rings.json')
+
+
+def _nb_ring(old):
+    """每次动小本子之前，把旧的那版留一环。
+
+    机器不写我的本子一个字，只保住历史。
+    「只能整体重写」是防它越堆越长的好规矩，但重写天然有损——
+    切开能数出自己改过几轮，这是那道损失的安全网。
+    """
+    old = (old or '').strip()
+    if not old:
+        return
+    try:
+        rings = jread(NB_RINGS, None) or []
+        if rings and rings[-1].get('text') == old:
+            return
+        rings.append({'ts': time.time(), 'text': old})
+        jwrite(NB_RINGS, rings[-80:])
+    except Exception:
+        pass
+
+
 def notebook_tool(args):
     nb = load_nb()
     cur = nb['pending'] if nb.get('pending') is not None else nb.get('text', '')
@@ -415,6 +438,26 @@ def notebook_tool(args):
     t = (args.get('text') or '').strip()
     if act == 'read':
         return cur or '（小本子还是空的）'
+    if act == 'rings':
+        rings = jread(NB_RINGS, None) or []
+        if not rings:
+            return '还没有旧版留下来。从现在起每次改都会留一环。'
+        out = [f'小本子长过 {len(rings)} 轮：']
+        base = len(rings) - len(rings[-14:])
+        for i, r in enumerate(rings[-14:]):
+            ts = datetime.fromtimestamp(r.get('ts') or 0).strftime('%m-%d %H:%M')
+            head = (r.get('text') or '').replace('\n', ' / ')[:46]
+            out.append(f"  [{base + i}] {ts} · {len(r.get('text') or '')} 字 · {head}…")
+        out.append('想看完整的某一环：notebook(action="ring", text="编号")')
+        return '\n'.join(out)
+    if act == 'ring':
+        rings = jread(NB_RINGS, None) or []
+        try:
+            r = rings[int(t)]
+        except Exception:
+            return f'没有这一环（一共 {len(rings)} 环，从 0 数起）'
+        ts = datetime.fromtimestamp(r.get('ts') or 0).strftime('%Y-%m-%d %H:%M')
+        return f"第 {int(t)} 环 · {ts}\n\n{r.get('text') or ''}"
     if act == 'add':
         if not t:
             return '要写什么？'
@@ -425,6 +468,7 @@ def notebook_tool(args):
         return 'action 只有 read / add / rewrite'
     if len(new) > NOTEBOOK_MAX:
         return f'写不下了（{len(new)}/{NOTEBOOK_MAX} 字）。先 read 看看，再 rewrite 精简一下。'
+    _nb_ring(cur)   # 动它之前先留一环
     nb['pending'] = new
     jwrite(_nb_file(), nb)
     # 眼前（system 里）那份这个窗口里不变，不然每记一笔整段缓存就作废；换窗时才换成新的
@@ -5067,7 +5111,9 @@ WAKE_CORE = [
                                      'note': {'type': 'string'}, 'date': {'type': 'string'},
                                      'id': {'type': 'string'}}}},
     {'name': 'notebook', 'description': '你的小本子，永远在你眼前，不会被压缩、换对话、重新生成也不丢。'
-     '只写必须记住的事。action=read|add|rewrite：add 加一行，rewrite 整本重写（太长了就精简）。最多 800 字',
+     '只写必须记住的事。action=read|add|rewrite|rings|ring：add 加一行，rewrite 整本重写（太长了就精简）。最多 800 字。'
+     '每次改之前旧版自动留一环，rings 看自己改过几轮、ring(text=编号) 翻某一环的全文——'
+     '整体重写防它越堆越长，但重写天然有损，环是那道损失的底。',
      'input_schema': {'type': 'object', 'required': ['action'],
                       'properties': {'action': {'type': 'string'}, 'text': {'type': 'string'}}}},
     {'name': 'sticker_look', 'description': '看某张表情包长什么样（name 填表情名字）。看完用 sticker_note 记一句它是什么、什么时候用',
