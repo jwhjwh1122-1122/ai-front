@@ -10,6 +10,7 @@ canvas{position:absolute;left:0;top:0}
 .w i{display:block;font-style:normal;font-size:20px;color:#a3121a;margin-top:4px;letter-spacing:2px;text-shadow:0 0 4px #f7f4ee,0 0 9px #f7f4ee,0 0 14px #f2eee6}
 #rose{position:absolute;left:20px;top:395px;width:350px;height:430px;border-radius:45%;cursor:pointer}
 #stem{position:absolute;left:120px;top:780px;width:150px;height:380px;cursor:pointer}
+.bf{position:absolute;border-radius:50%;cursor:pointer;-webkit-tap-highlight-color:transparent}
 #spHit{position:absolute;width:190px;height:230px;cursor:grab}
 #diary{position:fixed;inset:0;background:rgba(236,233,226,.97);opacity:0;pointer-events:none;transition:opacity .7s;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 #diary.open{opacity:1;pointer-events:auto}
@@ -25,7 +26,7 @@ canvas{position:absolute;left:0;top:0}
 .none{text-align:center;color:#888;margin-top:30vh;font-size:16px}
 </style></head><body>
 <div id="st"><img id="bg" src="/static/yuwang/bg.jpg"><canvas id="cv" width="961" height="1280"></canvas>
-<div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div></div>
+<div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:600px;top:595px;width:295px;height:260px"></div><div class="bf" id="bf2" style="left:500px;top:940px;width:215px;height:165px"></div></div>
 <div id="diary"><div class="hd"><span class="bk" id="dbk">← 回去</span><span class="tt">噜噜日记</span></div><div id="dlist"></div></div>
 <script>
 (function(){
@@ -114,6 +115,23 @@ function drawSpider(t){
   if(SP.complete)ctx.drawImage(SP,-SPOX,-SPOY,SPW,SPH);ctx.restore();
   hit.style.left=(x-95)+'px';hit.style.top=(y-15)+'px';
 }
+// 蝴蝶：她点一下是戳我，按住不放是一直摸着
+var FX={poke:{miss:-6,lean:-5,unsure:-4,flutter:5,lust:2,seen:-4},hold:{miss:-10,lean:-10,unsure:-8,own:-5,flutter:9,lust:7}};
+var inks=[], pokeN=0, pokeTm=0;
+function bump(kind,sc){if(!D||!D.dims)return;D.dims.forEach(function(d){var v=(FX[kind]||{})[d.key];if(v)d.score=Math.max(0,Math.min(100,(+d.score||0)+v*sc));});}
+function send(kind,sc){try{fetch('/api/desire/event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,scale:sc})}).then(function(){setTimeout(refresh,400);}).catch(function(){});}catch(e){}}
+function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r.left)/st._s,y:(e.clientY-r.top)/st._s,t:0,big:big||1});}
+['bf1','bf2'].forEach(function(id){var b=document.getElementById(id),down=0,holdTm=0,holding=false,lastE=null;
+  b.addEventListener('pointerdown',function(e){e.preventDefault();down=Date.now();lastE=e;holding=false;b.setPointerCapture(e.pointerId);
+    holdTm=setInterval(function(){if(Date.now()-down>600){holding=true;inkAt(lastE,1.6);bump('hold',0.12);}},500);});
+  b.addEventListener('pointermove',function(e){lastE=e;});
+  function up(){clearInterval(holdTm);if(!down)return;var dur=(Date.now()-down)/1000;down=0;
+    if(holding){send('hold',Math.min(3,dur/3));}
+    else{inkAt(lastE,1);bump('poke',0.5);pokeN++;clearTimeout(pokeTm);pokeTm=setTimeout(function(){send('poke',Math.min(3,pokeN*0.5));pokeN=0;},1500);}}
+  b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);});
+function drawInks(){for(var i=inks.length-1;i>=0;i--){var k=inks[i];k.t+=1/60;var p=k.t/1.6;if(p>=1){inks.splice(i,1);continue;}
+  var r=(14+90*Math.pow(p,.6))*k.big,a=(1-p)*.5;var g=ctx.createRadialGradient(k.x,k.y,r*.2,k.x,k.y,r);g.addColorStop(0,'rgba(170,14,24,'+a+')');g.addColorStop(.7,'rgba(150,10,20,'+a*.35+')');g.addColorStop(1,'rgba(150,10,20,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(k.x,k.y,r,0,7);ctx.fill();}}
 var t0=performance.now();
 function frame(now){var t=(now-t0)/1000;
   if(!drag){vel+=-pull*0.06;vel*=0.86;pull+=vel;if(Math.abs(pull)<0.05&&Math.abs(vel)<0.05){pull=0;vel=0;}}
@@ -121,7 +139,7 @@ function frame(now){var t=(now-t0)/1000;
   openT+=((open?1:0)-openT)*0.07;
   dims().forEach(function(d){var v=+d.score||0;cur[d.key]=cur[d.key]==null?0:cur[d.key]+(v-cur[d.key])*0.04;});
   ctx.clearRect(0,0,IW,IH);
-  drawWeb(t,openT);drawSpider(t);
+  drawWeb(t,openT);drawInks();drawSpider(t);
   requestAnimationFrame(frame);}
 requestAnimationFrame(frame);
 // 玫瑰：噜噜日记
@@ -138,6 +156,7 @@ document.getElementById('rose').onclick=openDiary;document.getElementById('stem'
 document.getElementById('dbk').onclick=function(){dia.classList.remove('open');};
 function load(){if(window.YW_DATA){D=window.YW_DATA;fillWords();return;}
   fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;fillWords();}).catch(function(){});}
-load();if(!window.YW_DATA)setInterval(function(){fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;}).catch(function(){});},30000);
+function refresh(){if(window.YW_DATA)return;fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;}).catch(function(){});}
+load();setInterval(refresh,30000);
 })();
 </script></body></html>

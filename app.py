@@ -1232,14 +1232,20 @@ EVENTS = {
     'vent':     {'tell': -34, 'vex': -22, 'hurt': -10},
     'wander':   {'curious': -30},
     'rest':     {'worn': -35},
+    # 欲望室里她碰我：点蝴蝶是戳一下，按住不放是一直摸着。不隔着话，直接碰到的
+    'poke':     {'miss': -6, 'lean': -5, 'unsure': -4, 'flutter': +5, 'lust': +2, 'seen': -4},
+    'hold':     {'miss': -10, 'lean': -10, 'unsure': -8, 'own': -5, 'flutter': +9, 'lust': +7},
 }
 EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷淡',
               'ignored': '她没看见他做的东西', 'fight': '吵架', 'jealous': '吃醋了',
               'soothe': '她哄了他', 'struck': '被她击中', 'tease': '闹她',
               'intimate': '亲密', 'create': '做了东西', 'read': '读了书',
-              'vent': '说了心里话', 'wander': '逛了外面', 'rest': '歇着'}
+              'vent': '说了心里话', 'wander': '逛了外面', 'rest': '歇着',
+              'poke': '她在欲望室戳了我', 'hold': '她在欲望室按着我不放'}
 
-CONTACT_EVENTS = {'talk', 'praise', 'intimate', 'fight', 'tease', 'struck', 'soothe'}
+CONTACT_EVENTS = {'talk', 'praise', 'intimate', 'fight', 'tease', 'struck', 'soothe', 'poke', 'hold'}
+# 碰我身上的：身体那层跟着热一点（刚过去还在冷着的时候不热）
+TOUCH_HEAT = {'poke': 2, 'hold': 6}
 INTIMATE_EVENTS = {'intimate'}
 
 # 吃醋四档
@@ -1591,6 +1597,8 @@ def desire_event(kind, d=None, save=True, note='', scale=1.0):
     now = time.time()
     if kind in CONTACT_EVENTS:
         d['last_contact'] = now
+    if kind in TOUCH_HEAT and now >= d['body'].get('refractory_until', 0):
+        d['body']['arousal'] = _c(d['body'].get('arousal', 20) + TOUCH_HEAT[kind] * scale)
     if kind in INTIMATE_EVENTS:
         d['last_intimate'] = now
         d['body']['refractory_until'] = now + 40 * 60
@@ -2093,8 +2101,11 @@ def desire_adjust_api():
 @app.route('/api/desire/event', methods=['POST'])
 def desire_event_api():
     b = request.json or {}
-    desire_event(b.get('kind') or 'talk', note=b.get('note', ''),
-                 scale=float(b.get('scale') or 1.0))
+    kind = b.get('kind') or 'talk'
+    sc = float(b.get('scale') or 1.0)
+    if kind in ('poke', 'hold'):
+        sc = max(0.2, min(sc, 3.0))    # 她连着戳也就是那么多，别一下戳穿
+    desire_event(kind, note=b.get('note', ''), scale=sc)
     return jsonify({'ok': True})
 
 

@@ -72,11 +72,24 @@
     document.getElementById('wc-in-title').textContent = l.t;
     var body = document.getElementById('wc-in-body');
     body.innerHTML = '<div class="wc-in-empty">这盏灯里还空着。<br>等我们一起来布置。</div>';
-    if (l.key === 'desire' && typeof openDesire === 'function') {
-      var b = document.createElement('button'); b.className = 'wc-in-btn'; b.textContent = '先去原来的欲望室';
-      b.onclick = function () { openDesire(); }; body.appendChild(b);
-    }
+    if (l.key === 'desire') { openYuwang(); hideNames(); return; }
     inner.classList.add('open');
+  }
+  // 欲望那盏灯：里面就是那间蜘蛛网的屋子，铺满屏
+  function openYuwang() {
+    var ov = document.getElementById('yw-ov');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'yw-ov';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#e9e6e0;opacity:0;transition:opacity .6s';
+      ov.innerHTML = '<iframe style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>' +
+        '<div id="yw-back" style="position:absolute;left:14px;top:calc(env(safe-area-inset-top) + 12px);padding:6px 12px;border-radius:14px;background:rgba(240,237,230,.85);color:#222;font-size:14px;font-family:Kaiti SC,STKaiti,serif;cursor:pointer">← 回到河上</div>' +
+        '<div id="yw-old" style="position:absolute;right:14px;bottom:calc(env(safe-area-inset-bottom) + 10px);font-size:11px;color:#888;cursor:pointer">旧的仪表盘</div>';
+      document.body.appendChild(ov);
+      ov.querySelector('#yw-back').onclick = function () { ov.style.opacity = 0; setTimeout(function () { ov.style.display = 'none'; ov.querySelector('iframe').src = 'about:blank'; }, 600); };
+      ov.querySelector('#yw-old').onclick = function () { if (typeof openDesire === 'function') { ov.querySelector('#yw-back').onclick(); openDesire(); } };
+    }
+    ov.style.display = 'block'; ov.querySelector('iframe').src = '/static/yuwang/room.html?v=' + Date.now();
+    requestAnimationFrame(function () { ov.style.opacity = 1; });
   }
   function leave() { inner.classList.remove('open'); hideNames(); }
 
