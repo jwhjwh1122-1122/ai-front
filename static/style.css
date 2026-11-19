@@ -980,3 +980,10 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .wv-empty-sub{text-align:center;color:rgba(255,255,255,.4);font-size:11.5px;letter-spacing:1px;}
 .wv-empty-sub span{cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
 #cinema.over{z-index:220;}
+
+/* 电视高一点；底下聊天透出聊天页那张底图 */
+#stage.watch{background-color:var(--bg);background-size:cover;background-position:center;}
+#stage.watch .split-chat,#stage.watch .split-chat.hidden{background:transparent!important;}
+#stage.watch .stage-body video{aspect-ratio:auto!important;height:42vh!important;max-height:none!important;}
+#stage.watch.tvempty .wv-empty{aspect-ratio:auto;height:42vh;max-height:none;}
+#stage.watch .wv-info{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}

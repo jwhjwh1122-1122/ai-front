@@ -816,6 +816,13 @@ function renderSplit(which) {
   const box = $('split-msgs-' + which);
   box.innerHTML = '';
   const keep = roomCtx; roomCtx = which;
+  // 影房底下那块就是聊天页：同一套画法（心里话、语音、表情都在），多带一些
+  if (which === 'stage' && typeof renderOneMsg === 'function' && typeof firstOfLastVisible === 'function') {
+    currentBubble = null; currentAiRow = null;
+    for (let i = firstOfLastVisible(30); i < messages.length; i++) renderOneMsg(messages[i], i);
+    currentBubble = null; currentAiRow = null;
+    roomCtx = keep; box.scrollTop = box.scrollHeight; return;
+  }
   const recent = messages.slice(-6);
   recent.forEach((m, i) => {
     if (m._internal || m.role === 'tool') return;
@@ -1168,6 +1175,8 @@ function wvSync() {
 }
 function watchUiOn(m) {
   const st = $('stage'), v = $('stage-video');
+  // 聊天页的底图也铺过来
+  st.style.backgroundImage = document.body.style.backgroundImage || '';
   st.classList.add('watch'); v.removeAttribute('controls');
   $('wv-title').textContent = m.note || m.filename;
   const nm = typeof displayName === 'function' ? displayName() : '凛';
