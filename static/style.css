@@ -1040,4 +1040,4 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .igp-c{font-size:13.5px;padding:3px 12px 0;line-height:1.5;word-break:break-word}
 .igp-c .x{color:#555;font-size:11px;margin-left:6px;cursor:pointer}
 .igp-t{font-size:11px;color:#8e8e8e;padding:6px 12px 0}
-.ig-room .post-text img,.ig-room .igp-body img,.ig-room .igp-cap img,.ig-room .igp-c img{max-height:60px;vertical-align:middle}
+.ig-room .igp-body .sticker-img,.ig-room .igp-cap .sticker-img,.ig-room .igp-c .sticker-img{width:110px;height:auto;max-height:none;object-fit:contain;display:block;margin:6px 0 2px}
