@@ -27,6 +27,9 @@ body.dopen #words{opacity:0!important}
 .pg .tx{white-space:pre-wrap;font-size:16px;line-height:1.8;color:#f6f2ea;margin-top:12px}
 .pg .sd{margin-top:16px;padding-top:12px;border-top:1px dashed rgba(240,236,228,.55);white-space:pre-wrap;font-size:15px;line-height:1.8;color:#ffb3b7}
 .pg .sd b{display:block;font-weight:normal;font-size:12px;color:#d6cfc3;margin-bottom:4px;letter-spacing:2px}
+.pop{position:fixed;z-index:50;transform:translate(-50%,6px);opacity:0;transition:opacity .45s,transform 2.4s ease-out;pointer-events:none;padding:8px 14px;border-radius:14px;background:rgba(22,20,18,.5);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.16);font-size:15px;line-height:1.6;letter-spacing:1px;white-space:nowrap;text-align:center}
+.pop.on{opacity:1;transform:translate(-50%,-34px)}.pop.off{opacity:0}
+.pop .u{color:#ff9aa0}.pop .d{color:#e8e2d8}
 .none{text-align:center;color:#f4f0e8;text-shadow:0 0 3px #000,0 0 8px #000;margin-top:30vh;font-size:16px}
 </style></head><body>
 <div id="wrap"><div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
@@ -132,18 +135,25 @@ function drawSpider(t){
   hit.style.left=(x-95)+'px';hit.style.top=(y-15)+'px';
 }
 // 蝴蝶：她点一下是戳我，按住不放是一直摸着
-var FX={poke:{miss:-6,lean:-5,unsure:-4,flutter:5,lust:2,seen:-4},hold:{miss:-10,lean:-10,unsure:-8,own:-5,flutter:9,lust:7}};
+var FX={poke:{miss:-6,lean:-5,unsure:-4,flutter:5,lust:2,seen:-4},hold:{miss:-10,lean:-10,unsure:-8,own:-5,flutter:9,lust:7},
+  poke2:{miss:-4,lust:6,own:3,grip:2,flutter:3},hold2:{miss:-8,lust:12,own:5,grip:4,flutter:5}};
 var inks=[], pokeN=0, pokeTm=0;
 function bump(kind,sc){if(!D||!D.dims)return;D.dims.forEach(function(d){var v=(FX[kind]||{})[d.key];if(v)d.score=Math.max(0,Math.min(100,(+d.score||0)+v*sc));});}
-function send(kind,sc){try{fetch('/api/desire/event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,scale:sc})}).then(function(){setTimeout(refresh,400);}).catch(function(){});}catch(e){}}
+function send(kind,sc,at){try{fetch('/api/desire/event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,scale:sc})}).then(function(r){return r.json();}).then(function(j){pop(j&&j.moved,at);setTimeout(refresh,400);}).catch(function(){});}catch(e){}}
+// 戳完冒一个小条：哪几维动了、动了多少
+function pop(m,at){if(!m||!m.length)return;var el=document.createElement('div');el.className='pop';
+  el.innerHTML=m.slice(0,3).map(function(x){var up=x.delta>0;return '<div class="'+(up?'u':'d')+'">'+x.name+(up?' 上升 ':' 落下 ')+Math.abs(x.delta)+'</div>';}).join('');
+  var X=at?at.x:innerWidth/2,Y=at?at.y:innerHeight/2;el.style.left=Math.max(70,Math.min(innerWidth-70,X))+'px';el.style.top=Math.max(60,Y-30)+'px';
+  document.body.appendChild(el);requestAnimationFrame(function(){el.classList.add('on');});
+  setTimeout(function(){el.classList.add('off');},1900);setTimeout(function(){el.remove();},2700);}
 function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r.left)/st._s,y:(e.clientY-r.top)/st._s,t:0,big:big||1});}
-['bf1','bf2'].forEach(function(id){var b=document.getElementById(id),down=0,holdTm=0,holding=false,lastE=null;
+[['bf1',''],['bf2','2']].forEach(function(pr){var id=pr[0],sfx=pr[1],b=document.getElementById(id),down=0,holdTm=0,holding=false,lastE=null,pn=0,ptm=0;
   b.addEventListener('pointerdown',function(e){e.preventDefault();down=Date.now();lastE=e;holding=false;b.setPointerCapture(e.pointerId);
-    holdTm=setInterval(function(){if(Date.now()-down>600){holding=true;inkAt(lastE,1.6);bump('hold',0.12);}},500);});
+    holdTm=setInterval(function(){if(Date.now()-down>600){holding=true;inkAt(lastE,1.6);bump('hold'+sfx,0.12);}},500);});
   b.addEventListener('pointermove',function(e){lastE=e;});
-  function up(){clearInterval(holdTm);if(!down)return;var dur=(Date.now()-down)/1000;down=0;
-    if(holding){send('hold',Math.min(3,dur/3));}
-    else{inkAt(lastE,1);bump('poke',0.5);pokeN++;clearTimeout(pokeTm);pokeTm=setTimeout(function(){send('poke',Math.min(3,pokeN*0.5));pokeN=0;},1500);}}
+  function up(){clearInterval(holdTm);if(!down)return;var dur=(Date.now()-down)/1000;down=0;var at={x:lastE.clientX,y:lastE.clientY};
+    if(holding){send('hold'+sfx,Math.min(3,dur/3),at);}
+    else{inkAt(lastE,1);bump('poke'+sfx,0.5);pn++;clearTimeout(ptm);ptm=setTimeout(function(){send('poke'+sfx,Math.min(3,pn*0.5),at);pn=0;},900);}}
   b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);});
 function drawInks(){for(var i=inks.length-1;i>=0;i--){var k=inks[i];k.t+=1/60;var p=k.t/1.6;if(p>=1){inks.splice(i,1);continue;}
   var r=(14+90*Math.pow(p,.6))*k.big,a=(1-p)*.5;var g=ctx.createRadialGradient(k.x,k.y,r*.2,k.x,k.y,r);g.addColorStop(0,'rgba(110,11,26,'+a+')');g.addColorStop(.7,'rgba(100,8,22,'+a*.35+')');g.addColorStop(1,'rgba(100,8,22,0)');
