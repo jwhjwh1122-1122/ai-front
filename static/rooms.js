@@ -1308,6 +1308,8 @@ function grabFrameNow(seconds) {
     const w = Math.min(720, v.videoWidth || 640);
     c.width = w; c.height = Math.round(w * (v.videoHeight || 360) / (v.videoWidth || 640));
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    // 不管是谁要的这一眼（她开口、我自己看、叫醒那下），看过就记下，画面没动她再开口就不重复截
+    if (seconds === undefined || seconds === null) watchFrameLast = { t: v.currentTime || 0, src: v.currentSrc };
     return { data: c.toDataURL('image/jpeg', 0.72), t: Math.floor(v.currentTime || 0) };
   } catch (e) { return null; }
 }
