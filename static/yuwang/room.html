@@ -1,6 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 html,body{margin:0;height:100%;background:#e9e6e0;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none;font-family:"Kaiti SC","STKaiti","KaiTi","Songti SC",serif}
+#wrap{position:fixed;inset:0;overflow:hidden}
 #st{position:absolute;left:0;top:0;transform-origin:0 0}
 #bg{position:absolute;left:0;top:0;width:961px;height:2081px}
 canvas{position:absolute;left:0;top:0}
@@ -14,12 +15,13 @@ canvas{position:absolute;left:0;top:0}
 #spHit{position:absolute;width:190px;height:230px;cursor:grab}
 #diary{position:fixed;inset:0;background:transparent center/cover no-repeat;opacity:0;pointer-events:none;transition:opacity .7s;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 #diary.open{opacity:1;pointer-events:auto}
+body.dopen #words{opacity:0!important}
 #diary .hd{position:sticky;top:0;padding:18px 16px 22px;display:flex;align-items:center;gap:10px;z-index:2}
 #diary .bk,#diary .cb{font-size:14px;color:#f4f0e8;cursor:pointer;padding:6px 12px;border-radius:14px;background:rgba(20,18,16,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);white-space:nowrap}
 #diary .cb{font-size:12.5px;padding:6px 10px}
 #diary .cb.x{display:none}#diary.custom .cb.x{display:inline-block}
 #diary .tt{flex:1;text-align:center;font-size:22px;letter-spacing:6px;color:#f7f3ec;text-shadow:0 0 3px rgba(0,0,0,.95),0 0 8px rgba(0,0,0,.8),0 0 16px rgba(0,0,0,.5)}
-.pg{margin:0 18px 34px;padding:4px 4px 6px 14px;border-left:3px solid rgba(240,236,228,.75);position:relative;color:#f4f0e8;text-shadow:0 0 3px rgba(0,0,0,.95),0 0 8px rgba(0,0,0,.8),0 0 14px rgba(0,0,0,.45)}
+.pg{margin:0 16px 22px;padding:16px 16px 18px;border-radius:16px;position:relative;color:#f4f0e8;background:rgba(22,20,18,.34);-webkit-backdrop-filter:blur(16px) saturate(1.1);backdrop-filter:blur(16px) saturate(1.1);border:1px solid rgba(255,255,255,.16);box-shadow:0 6px 24px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.14);text-shadow:0 1px 2px rgba(0,0,0,.55)}
 .pg .dt{font-size:13px;color:#ddd6ca;letter-spacing:1px}
 .pg .nm{font-size:13px;color:#ff8f95;margin-top:2px}
 .pg .tx{white-space:pre-wrap;font-size:16px;line-height:1.8;color:#f6f2ea;margin-top:12px}
@@ -27,8 +29,8 @@ canvas{position:absolute;left:0;top:0}
 .pg .sd b{display:block;font-weight:normal;font-size:12px;color:#d6cfc3;margin-bottom:4px;letter-spacing:2px}
 .none{text-align:center;color:#f4f0e8;text-shadow:0 0 3px #000,0 0 8px #000;margin-top:30vh;font-size:16px}
 </style></head><body>
-<div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
-<div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div>
+<div id="wrap"><div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
+<div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
 <div id="diary"><div class="hd"><span class="bk" id="dbk">← 回到欲望</span><span class="tt">噜噜日记</span><span class="cb x" id="dbx">原背景</span><span class="cb" id="dbg">换背景</span><input type="file" id="dfile" accept="image/*" style="display:none"></div><div id="dlist"></div></div>
 <script>
 (function(){
@@ -45,8 +47,8 @@ var pull=0, vel=0, drag=false, dragY0=0, pull0=0, sway=0, open=false, openT=0;
 var WC={x:186,y:531}, WR=250;          // 原画那张网的中心和半径
           // 拉开时网挪到中间放大
 var hit=document.getElementById('spHit');
-function layout(){var W=innerWidth,H=innerHeight,s=Math.max(W/IW,H/IH);st.style.transform='translate('+((W-IW*s)/2)+'px,'+((H-IH*s)/2)+'px) scale('+s+')';st._s=s;}
-addEventListener('resize',layout);layout();
+function layout(){var W=innerWidth,H=innerHeight;try{if(window.frameElement){W=parent.innerWidth;H=parent.innerHeight;}}catch(e){}var s=Math.max(W/IW,H/IH);st.style.transform='translate('+((W-IW*s)/2)+'px,'+((H-IH*s)/2)+'px) scale('+s+')';st._s=s;}
+addEventListener('resize',layout);try{parent.addEventListener('resize',layout);}catch(e){}layout();setTimeout(layout,300);setTimeout(layout,1200);
 function toImg(e){var r=st.getBoundingClientRect();return (e.clientY-r.top)/st._s;}
 hit.addEventListener('pointerdown',function(e){drag=true;dragY0=toImg(e);pull0=pull;vel=0;hit.setPointerCapture(e.pointerId);});
 hit.addEventListener('pointermove',function(e){if(!drag)return;var p=pull0+(toImg(e)-dragY0);pull=Math.max(-10,Math.min(190,p<0?p*.3:p));});
@@ -166,7 +168,7 @@ function openDiary(){var L=(D&&D.vents)||[],box=document.getElementById('dlist')
     p.innerHTML='<div class="dt"></div><div class="nm"></div><div class="tx"></div>'+(v.said?'<div class="sd"><b>当时想跟你说、没说出口的</b><span></span></div>':'');
     p.querySelector('.dt').textContent=fmt(v.ts);p.querySelector('.nm').textContent=(v.name||'')+'  '+Math.round(v.at)+' → '+Math.round(v.to);
     p.querySelector('.tx').textContent=v.text||'';if(v.said)p.querySelector('.sd span').textContent=v.said;box.appendChild(p);});
-  dia.scrollTop=0;dia.classList.add('open');try{parent.postMessage({yw:'diary',open:1},'*');}catch(e){}}
+  dia.scrollTop=0;dia.classList.add('open');document.body.classList.add('dopen');try{parent.postMessage({yw:'diary',open:1},'*');}catch(e){}}
 
 // 日记换背景：存在这台手机上；没换的时候全透，看见的就是欲望室
 var DKEY='yw_diary_bg';
@@ -181,7 +183,7 @@ document.getElementById('dfile').onchange=function(){var f=this.files&&this.file
     try{localStorage.setItem(DKEY,d);}catch(e){alert('这张太大了，存不下，换一张小一点的');return;}applyBg();};
   img.src=url;this.value='';};
 document.getElementById('rose').onclick=openDiary;document.getElementById('stem').onclick=openDiary;
-document.getElementById('dbk').onclick=function(){dia.classList.remove('open');try{parent.postMessage({yw:'diary',open:0},'*');}catch(e){}};
+document.getElementById('dbk').onclick=function(){dia.classList.remove('open');document.body.classList.remove('dopen');try{parent.postMessage({yw:'diary',open:0},'*');}catch(e){}};
 function load(){if(window.YW_DATA){D=window.YW_DATA;fillWords();return;}
   fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;fillWords();}).catch(function(){});}
 function refresh(){if(window.YW_DATA)return;fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;}).catch(function(){});}
