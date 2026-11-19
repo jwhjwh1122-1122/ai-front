@@ -712,8 +712,9 @@ function roomNote() {
     }
     return s;
   }
-  if (roomCtx === 'stage' && curMedia)
-    return `你们现在一起在${curKind === 'music' ? '听音房听《' : '放映室看《'}${curMedia.note || curMedia.filename}》，她停在 ${fmtTime(stageTime())}。`;
+  // 看片：放到哪、在放还是停、最近的台词，服务器那边每轮自己带上（watch_tip），这儿不重复说
+  if (roomCtx === 'stage' && curMedia && curKind === 'music')
+    return `你们现在一起在听音房听《${curMedia.note || curMedia.filename}》，她停在 ${fmtTime(stageTime())}。`;
   return '';
 }
 // 会变的（在哪个房间、停在哪）。表情清单不常变，单独放 extra_stable 进 system，不跟着每句话重复
@@ -859,7 +860,7 @@ const LISTEN_TAG = /^\s*\[一起听\]\s*/;
 const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
 const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
 const stripListenTags = s => String(s || '').replace(
-  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '');
+  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '').replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g, '');
 // 一起听的三个动作也搬出工具：单起一段写标记就行。
 const LISTEN_ACT_TAG = /^\s*\[(邀请一起听|接受一起听|退出一起听)\]\s*/;
 const LISTEN_ACT_API = {
@@ -873,6 +874,9 @@ const MUSIC_ACT_TAG = /^\s*\[(?:(放歌)[ \t:：]*([^\]]{1,60})|(暂停播放|�
 const MUSIC_TAG_RE = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播放|下一首|上一首|红心)\][ \t]*/g;
 // 带 /g 的正则 .test() 会记住上次位置,第二次就漏——判断用这个不带 g 的
 const MUSIC_TAG_ANY = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播放|下一首|上一首|红心)\]/;
+// 影房的遥控器：一起看的人会抢遥控器
+const WATCH_TAG_RE = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g;
+const WATCH_TAG_ANY = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\]/;
 const mostlyZh = t => {
   const s = String(t || '').trim();
   return (s.match(/[一-鿿]/g) || []).length >= Math.max(1, s.length * 0.25);
@@ -888,7 +892,11 @@ function renderBubble(text) {
     .replace(/\[继续播放\][ \t]*/g, '▶️ <i>（继续放）</i>')
     .replace(/\[下一首\][ \t]*/g, '⏭ <i>（切下一首）</i>')
     .replace(/\[上一首\][ \t]*/g, '⏮ <i>（切回上一首）</i>')
-    .replace(/\[红心\][ \t]*/g, '❤️ <i>（红心了这首）</i>')));
+    .replace(/\[红心\][ \t]*/g, '❤️ <i>（红心了这首）</i>')
+    .replace(/\[片子暂停\][ \t]*/g, '⏸ <i>（按了暂停）</i>')
+    .replace(/\[片子继续\][ \t]*/g, '▶️ <i>（接着放）</i>')
+    .replace(/\[倒回十秒\][ \t]*/g, '⏪ <i>（倒回十秒）</i>')
+    .replace(/\[快进十秒\][ \t]*/g, '⏩ <i>（快进十秒）</i>')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1301,6 +1309,9 @@ async function attachTaggedVoices(wrap, text, turnConv) {
 // 「一起听没开着」挡掉了——她让我一个一个试，就是这么试出来的。
 async function runListenTags(text) {
   if (!text?.trim()) return;
+  if (WATCH_TAG_ANY.test(text) && typeof watchRemote === 'function') {
+    for (const m of text.matchAll(WATCH_TAG_RE)) watchRemote(m[1]);
+  }
   if (!/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)
       && !MUSIC_TAG_ANY.test(text)) return;
   for (const s of splitSay(text)) {
@@ -1904,9 +1915,18 @@ async function sendMsg(fromCtx) {
   const fileMeta = hasFile ? pendingChatFiles.map(f => ({ name: f.name, chars: f.chars, url: f.url || '', path: f.path || '' })) : null;
   // 一个字没打、只丢文件过来：也给他留一句话打头，不然重开页面时第一段 text 会变成整篇文件
   const lead = text || (hasFile ? `（给你一个文件：${pendingChatFiles.map(f => f.name).join('、')}）` : '');
-  const content = (hasImg || hasFile)
+  let content = (hasImg || hasFile)
     ? [...(lead ? [{ type: 'text', text: lead }] : []), ...fileParts, ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : text;
+  // 她在影房里开口：没有台词就顺手截这一刻的画面带给我；有台词就不截（一张图上千 token，一句台词几十）
+  let autoFrame = false;
+  if (fromCtx === 'stage' && !hasImg && !hasFile && typeof watchFrameForTalk === 'function') {
+    const fr = watchFrameForTalk();
+    if (fr) {
+      content = [{ type: 'text', text: lead + `\n（她开口这一刻的画面，${fmtTime(fr.t)}）` }, { type: 'image_url', image_url: { url: fr.data } }];
+      autoFrame = true;
+    }
+  }
   const sentTs = Date.now();
   const umsg = { role: 'user', content, _mid: genMid(), _ts: sentTs };
   if (fileMeta) umsg._files = fileMeta;
@@ -1922,6 +1942,11 @@ async function sendMsg(fromCtx) {
   try { reply = await runToolLoop(wrap, messages.length, turnConv); }
   catch (e) { turnError(wrap, e, turnConv); }
   await attachVoiceReply(wrap, reply, turnConv);
+  // 自动截的那帧看过就换成一句话，别一直压在本子里
+  if (autoFrame && currentConvId === turnConv && Array.isArray(umsg.content)) {
+    umsg.content = umsg.content.map(c => c && c.type === 'image_url' ? { type: 'text', text: '（一张看过的画面）' } : c);
+    saveConv();
+  }
   endTurn(seq);
 }
 async function sendComposed(text, imgs, opts) {

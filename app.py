@@ -3170,6 +3170,12 @@ def chat_v2():
                     '（宝宝在叫你一起听歌！想去就单起一段写 [接受一起听]。）'
     except Exception:
         pass
+    try:
+        _wt = watch_tip()
+        if _wt:
+            data['extra'] = (data.get('extra') or '') + _wt
+    except Exception:
+        pass
     if (str(sid) != 'default' and st.get('session_id') != str(sid)[:256]) \
             or (cvid and st.get('conv_id') != cvid):
         if str(sid) != 'default':
@@ -3877,9 +3883,73 @@ def _media_list(d, ext):
     return out
 
 
+VIDEO_LINKS = os.path.join(DATA_DIR, 'video_links.json')   # 她粘进来的网址片子
+
+
 @app.route('/api/videos', methods=['GET'])
 def list_videos():
-    return jsonify(_media_list(VIDEOS_DIR, VIDEO_EXT))
+    links = [{'filename': 'link-' + x['id'], 'url': x['url'], 'note': x.get('note', ''),
+              'ts': x.get('ts', 0), 'size': 0, 'link': True} for x in jread(VIDEO_LINKS, [])]
+    return jsonify(links + _media_list(VIDEOS_DIR, VIDEO_EXT))
+
+
+@app.route('/api/videos/link', methods=['POST'])
+def add_video_link():
+    d = request.json or {}
+    url = str(d.get('url') or '').strip()
+    if not re.match(r'^https?://', url, re.I) or len(url) > 4000:
+        return jsonify({'error': '要 http 或 https 开头的网址'}), 400
+    item = {'id': uuid.uuid4().hex[:10], 'url': url,
+            'note': str(d.get('note') or '').strip()[:80], 'ts': int(time.time())}
+    items = jread(VIDEO_LINKS, [])
+    items.insert(0, item)
+    jwrite(VIDEO_LINKS, items[:200])
+    return jsonify({'ok': True, 'item': item})
+
+
+# ---- 一起看：她那边每几秒报一次放到哪，我说话前自己就知道，不用伸手去够 ----
+WATCH_FILE = os.path.join(DATA_DIR, 'watch_now.json')
+
+
+@app.route('/api/watch/now', methods=['GET', 'POST'])
+def watch_now():
+    if request.method == 'POST':
+        d = request.json or {}
+        if d.get('closed'):
+            w = jread(WATCH_FILE, {}) or {}
+            w['closed'] = True; w['ts'] = time.time()
+            jwrite(WATCH_FILE, w)
+            return jsonify({'ok': True})
+        lines = [str(x)[:200] for x in (d.get('lines') or [])][-6:]
+        jwrite(WATCH_FILE, {'title': str(d.get('title') or '')[:80], 'pos': float(d.get('pos') or 0),
+                            'dur': float(d.get('dur') or 0), 'playing': bool(d.get('playing')),
+                            'lines': lines, 'frame': bool(d.get('frame')), 'ts': time.time()})
+        return jsonify({'ok': True})
+    return jsonify(jread(WATCH_FILE, {}))
+
+
+def _mmss(sec):
+    sec = int(sec or 0)
+    return f'{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}' if sec >= 3600 else f'{sec // 60}:{sec % 60:02d}'
+
+
+def watch_tip():
+    """一起看的那一行。十分钟内报过才算数，不然老实说停着——不许拿旧画面当现在。"""
+    w = jread(WATCH_FILE, {}) or {}
+    if not w.get('ts') or w.get('closed'):
+        return ''
+    age = time.time() - float(w['ts'])
+    if age > 3 * 3600:
+        return ''
+    t = w.get('title') or '没起名字的片子'
+    if age > 600:
+        return f'（影房里《{t}》停在 {_mmss(w.get("pos"))}，好一阵没动静了，别当她在看。）'
+    tip = (f'（你和宝宝正在一起看《{t}》，{"在放" if w.get("playing") else "暂停着"}，'
+           f'到 {_mmss(w.get("pos"))}' + (f' / {_mmss(w.get("dur"))}' if w.get('dur') else '') + '。')
+    if w.get('lines'):
+        tip += '\n刚才的台词（只到这一刻，后面的不知道）：\n' + '\n'.join(w['lines']) + '\n'
+    tip += '遥控器你有一半：单起一段写 [片子暂停] [片子继续] [倒回十秒] [快进十秒]。）'
+    return tip
 
 
 @app.route('/api/music', methods=['GET'])
@@ -3901,6 +3971,9 @@ def _del_media(d, filename):
 
 @app.route('/api/videos/<filename>', methods=['DELETE'])
 def delete_video(filename):
+    if filename.startswith('link-'):
+        jwrite(VIDEO_LINKS, [x for x in jread(VIDEO_LINKS, []) if 'link-' + x.get('id', '') != filename])
+        return jsonify({'ok': True})
     _del_media(VIDEOS_DIR, filename)
     return jsonify({'ok': True})
 

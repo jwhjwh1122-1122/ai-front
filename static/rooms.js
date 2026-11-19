@@ -913,7 +913,7 @@ async function openRoomMedia(kind) {
       d.className = 'reel';
       d.innerHTML = `<div class="reel-play">▶</div><div class="reel-info">
         <div class="reel-name">${esc(m.note || '没起名字')}</div>
-        <div class="reel-meta">${fmtSize(m.size)}</div></div>
+        <div class="reel-meta">${m.link ? '网址' : fmtSize(m.size)}</div></div>
         ${marked.has(m.filename) ? '<div class="reel-dot"></div>' : ''}<div class="reel-del">✕</div>`;
     }
     d.querySelector(kind === 'music' ? '.track-del' : '.reel-del').onclick = async e => {
@@ -946,15 +946,17 @@ function playMedia(m, kind) {
     setupShape(a, m.filename);
   } else {
     aw.style.display = 'none'; a.pause(); a.removeAttribute('src');
-    v.style.display = 'block'; v.src = m.url;
+    v.style.display = 'block';
+    watchLoad(v, m);
     v.onloadedmetadata = () => {
       loadMoments();
       // iOS 不先解一帧就截不出画面，静音快进一下再退回来
       if (v.readyState < 2) { try { v.currentTime = 0.1; } catch (e) { } }
     };
     setTimeout(loadMoments, 900);
-    setupSubs(m.filename);
+    if (m.link) { curSubs = null; $('stage-subs').style.display = 'none'; } else setupSubs(m.filename);
     setupNudge();
+    watchStartReport();
   }
   renderSplit('stage');
 }
@@ -1027,12 +1029,78 @@ function fireNudge(isEnd) {
   const gapMin = lastNudgeAt ? (now - lastNudgeAt) / 60000 : 0;
   lastNudgeAt = now;
   let note;
-  if (isEnd) note = '（片子放完这一集了，你自己想说点什么就说，不想说也行）';
-  else if (!gapMin || gapMin > NUDGE_EVERY_MIN * 1.5)
-    note = `（你有一阵没看了，画面现在到 ${fmtTime(pos)}，想追一下就自己 scan_frames/read_dialogue 补上，再说说看）`;
-  else note = '（片子还在放，你自己看看、想说就说，不用等她先开口）';
+  if (isEnd) note = '（这一集放完了。我们刚一起看完，想聊就聊，不想说也行）';
+  else note = `（片子还在放，到 ${fmtTime(pos)} 了。我们在一起看，想说就说，想安静看也行）`;
   roomCtx = 'stage';
   sendComposed(note, [], { internal: true });
+}
+
+// ============ 一起看 ============
+// 网址片子：先带 crossOrigin 试，能放就能截画面；对方不让跨域就退回普通放法（能放、截不到）
+let watchHls = null, watchTimer = null, watchCanGrab = false;
+function watchLoad(v, m) {
+  if (watchHls) { try { watchHls.destroy(); } catch (e) { } watchHls = null; }
+  watchCanGrab = !m.link;
+  if (!m.link) { v.removeAttribute('crossorigin'); v.src = m.url; return; }
+  const isHls = /\.m3u8(\?|#|$)/i.test(m.url);
+  const nativeHls = !!v.canPlayType('application/vnd.apple.mpegurl');
+  const go = (cors) => {
+    if (cors) v.crossOrigin = 'anonymous'; else v.removeAttribute('crossorigin');
+    watchCanGrab = cors;
+    if (isHls && !nativeHls) {
+      const start = () => {
+        if (!window.Hls || !Hls.isSupported()) { toast('这个格式这台设备放不了'); return; }
+        watchHls = new Hls({ xhrSetup: x => { x.withCredentials = false; } });
+        watchHls.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) { toast('片子加载不出来'); } });
+        watchHls.loadSource(m.url); watchHls.attachMedia(v);
+      };
+      if (window.Hls) start();
+      else { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js'; sc.onload = start; document.head.appendChild(sc); }
+    } else v.src = m.url;
+  };
+  let retried = false;
+  v.onerror = () => { if (!retried && v.crossOrigin) { retried = true; go(false); } else toast('片子加载不出来，网址可能失效了'); };
+  go(true);
+}
+// 她开口那一刻：有台词就不截；截不到（对方不让）就算了，不编
+function watchFrameForTalk() {
+  if (!$('stage').classList.contains('open') || curKind !== 'video') return null;
+  if (curSubs && curSubs.length) return null;
+  if (!watchCanGrab) return null;
+  return grabFrameNow();
+}
+// 我写的遥控标记
+function watchRemote(tag) {
+  const v = $('stage-video');
+  if (!$('stage').classList.contains('open') || curKind !== 'video' || !v.src) { toast('影房没开着，遥控器按不到'); return; }
+  if (tag === '片子暂停') v.pause();
+  else if (tag === '片子继续') v.play().catch(() => toast('他按了继续，点一下屏幕才能放'));
+  else if (tag === '倒回十秒') v.currentTime = Math.max(0, v.currentTime - 10);
+  else if (tag === '快进十秒') v.currentTime = Math.min(v.duration || 1e9, v.currentTime + 10);
+  watchReport();
+}
+// 每几秒报一次放到哪、最近几句台词（只到播放点，后面一个字都不给）
+function watchReport() {
+  const v = $('stage-video');
+  if (!curMedia || curKind !== 'video' || !$('stage').classList.contains('open')) return;
+  const t = v.currentTime || 0;
+  const lines = (curSubs || []).filter(x => x.t0 <= t).slice(-4)
+    .map(x => `[${fmtTime(Math.floor(x.t0))}] ${x.text}${x.trans ? ' / ' + x.trans : ''}`);
+  jpost('/api/watch/now', {
+    title: curMedia.note || curMedia.filename, pos: Math.floor(t), dur: Math.floor(v.duration || 0),
+    playing: !v.paused && !v.ended, lines, frame: watchCanGrab
+  }).catch(() => { });
+}
+function watchStartReport() {
+  if (watchTimer) clearInterval(watchTimer);
+  const v = $('stage-video');
+  if (!v._watchBound) { v._watchBound = true; ['play', 'pause', 'seeked', 'ended'].forEach(ev => v.addEventListener(ev, watchReport)); }
+  watchTimer = setInterval(() => { if (!v.paused) watchReport(); }, 8000);
+  setTimeout(watchReport, 1500);
+}
+function watchStopReport() {
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+  jpost('/api/watch/now', { closed: true }).catch(() => { });
 }
 
 // ============ 读台词 ============
@@ -4140,6 +4208,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 放映室 / 听音房
   $('btn-upload-video').onclick = () => $('video-file').click();
+  $('btn-link-video').onclick = async () => {
+    const url = (prompt('把视频网址粘进来（mp4 / m3u8 这种）') || '').trim();
+    if (!url) return;
+    const note = (prompt('给它起个名字（片名、第几集）') || '').trim();
+    const r = await jpost('/api/videos/link', { url, note });
+    if (r.error) { toast(r.error); return; }
+    openRoomMedia('video'); refreshHome();
+  };
   $('btn-upload-music').onclick = () => $('music-file').click();
   const mediaUpload = (kind) => async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -4153,7 +4229,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('stage-close').onclick = () => {
     $('stage').classList.remove('open'); roomCtx = null;
     $('stage-video').pause(); $('stage-audio').pause();
-    clearNudge();
+    clearNudge(); watchStopReport();
     refreshHome();
   };
 
