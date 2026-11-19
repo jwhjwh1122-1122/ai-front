@@ -1918,7 +1918,7 @@ async function sendMsg(fromCtx) {
   let content = (hasImg || hasFile)
     ? [...(lead ? [{ type: 'text', text: lead }] : []), ...fileParts, ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
     : text;
-  // 她在影房里开口：没有台词就顺手截这一刻的画面带给我；有台词就不截（一张图上千 token，一句台词几十）
+  // 她在影房里开口：顺手截这一刻的画面带给我（截不到就算了）
   let autoFrame = false;
   if (fromCtx === 'stage' && !hasImg && !hasFile && typeof watchFrameForTalk === 'function') {
     const fr = watchFrameForTalk();

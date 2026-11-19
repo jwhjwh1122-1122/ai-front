@@ -1086,7 +1086,7 @@ function fireNudge(isEnd) {
   // 被叫醒那一下也看一眼画面，不只是知道放到几分钟
   let fr = null;
   if (!isEnd && watchCanGrab) { try { fr = grabFrameNow(); } catch (e) { fr = null; } }
-  sendComposed(note, fr ? [fr] : [], { internal: true });
+  sendComposed(fr && fr.data ? note + `\n（这一刻的画面，${fmtTime(fr.t)}）` : note, fr && fr.data ? [fr.data] : [], { internal: true });
 }
 
 // ============ 一起看 ============
