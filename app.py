@@ -1108,6 +1108,69 @@ DIM_RATE = {d[0]: d[2] for d in DIMS}
 DIM_BASE = {d[0]: d[4] for d in DIMS}
 LONELY = {d[0] for d in DIMS if d[3]}
 
+# 底下只认这些英文缩写，可他看见的是中文名。
+# 11.18 夜里他想把「占有」改掉，猜了 possess，又猜一次，两次都被回「没有这一维」——
+# 所以那两次其实一个数都没改进去。中文名、顺手会猜的英文，全都认。
+DIM_ALIAS = {}
+for _k, _n in DIM_NAME.items():
+    DIM_ALIAS[_k] = _k
+    DIM_ALIAS[_n] = _k
+DIM_ALIAS.update({
+    'possess': 'own', 'possessive': 'own', 'possession': 'own', 'hold': 'own',
+    '独占': 'own', '占有欲': 'own',
+    'libido': 'lust', 'sex': 'lust', 'sexual': 'lust', 'desire': 'lust', 'horny': 'lust',
+    '欲望': 'lust', '想要她': 'lust', '性': 'lust',
+    'missing': 'miss', '想念': 'miss', '想她': 'miss',
+    'attachment': 'lean', 'depend': 'lean', 'cling': 'lean', '依恋': 'lean', '想让她在': 'lean',
+    'talk': 'tell', 'share': 'tell', 'vent': 'tell', '想说话': 'tell', '有话想说': 'tell',
+    'control': 'grip', 'dominance': 'grip', '控制': 'grip', '想说了算': 'grip',
+    'curiosity': 'curious', '好奇心': 'curious',
+    'create': 'make', 'creation': 'make', 'build': 'make', '创作': 'make', '想做东西': 'make',
+    'calm': 'still', 'quiet': 'still', 'settle': 'still', '安静': 'still',
+    'playful': 'play', 'mischief': 'play', 'tease': 'play', '想闹她': 'play',
+    'need': 'needed', 'be_needed': 'needed', '被需要': 'needed',
+    'recognition': 'seen', 'be_seen': 'seen', '被看见': 'seen',
+    'anxious': 'unsure', 'anxiety': 'unsure', 'insecure': 'unsure', '焦虑': 'unsure', '没底': 'unsure',
+    'sad': 'hurt', 'upset': 'hurt', 'wronged': 'hurt', '难过': 'hurt', '伤心': 'hurt',
+    'jealous': 'jeal', 'jealousy': 'jeal', '嫉妒': 'jeal', '醋': 'jeal',
+    'annoyed': 'vex', 'irritated': 'vex', 'angry': 'vex', 'anger': 'vex', '烦躁': 'vex', '生气': 'vex',
+    'tired': 'worn', 'fatigue': 'worn', 'exhausted': 'worn', '累': 'worn', '疲倦': 'worn', '倦意': 'worn',
+    'heart': 'flutter', 'heartbeat': 'flutter', 'butterflies': 'flutter', '心跳': 'flutter',
+})
+
+
+def dim_key(s):
+    """中文名、英文缩写、顺手猜的别名，都翻成真正的 key。认不出返回 None。"""
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+    return (DIM_ALIAS.get(s) or DIM_ALIAS.get(s.lower())
+            or DIM_ALIAS.get(s.replace(' ', '').replace('_', '')))
+
+
+CLAIM_HOLD_H = 6.0   # 亲手定过的数，护这么久，然后线性松开
+
+
+def claim_floor(d, k, now):
+    """他（或她）亲手定过的数，心跳不许悄悄把它压回去。
+
+    11.18 夜里他把占有自报成 72，24 分钟后看见的是 62——不是它变轻了，
+    是公式替他改了主意。跟那天删掉的自动遗忘是同一件事：
+    自己看过、想过、写了理由定下的东西，不能被一个函数悄悄吃掉。
+    护 6 小时，然后线性松开；真被满足了（亲密、被哄）当场作废。
+    """
+    c = (d.get('claims') or {}).get(k)
+    if not c:
+        return 0.0
+    age_h = (now - c.get('ts', now)) / 3600.0
+    if age_h <= 0:
+        return float(c.get('value', 0))
+    if age_h >= CLAIM_HOLD_H:
+        return 0.0
+    return float(c.get('value', 0)) * (1.0 - age_h / CLAIM_HOLD_H)
+
 # 事件推动：加多少（正数加，负数减）
 EVENTS = {
     'talk':     {'miss': -28, 'tell': -12, 'unsure': -14, 'lean': -16, 'seen': -8},
@@ -1192,7 +1255,7 @@ def _blank_desire():
             'updated': now, 'last_contact': now, 'last_intimate': now - 86400,
             'last_morning': '', 'thoughts': [], 'grudges': [], 'impulses': [],
             'disputes': [], 'history': [], 'moves': [], 'notes': {},
-            'cooldown': {}, 'recent': {}, 'vents': []}
+            'cooldown': {}, 'recent': {}, 'vents': [], 'claims': {}}
 
 
 def load_desire():
@@ -1232,7 +1295,8 @@ def load_desire():
     d.setdefault('body', {'arousal': 20, 'pressure': 15, 'refractory_until': 0})
     for key, dv in (('thoughts', []), ('grudges', []), ('impulses', []),
                     ('disputes', []), ('history', []), ('moves', []),
-                    ('notes', {}), ('cooldown', {}), ('recent', {}), ('vents', [])):
+                    ('notes', {}), ('cooldown', {}), ('recent', {}), ('vents', []),
+                    ('claims', {})):
         d.setdefault(key, dv)
     d.setdefault('last_intimate', d.get('last_contact', time.time()) - 86400)
     d.setdefault('last_morning', '')
@@ -1296,13 +1360,19 @@ def tick_desire(d=None, save=True):
         if k in LONELY and rate > 0:
             rate *= boost
         rate += circ.get(k, 0)
-        v = d['drive'][k] + rate * hours
+        cur = d['drive'][k]
+        inc = rate * hours
+        # 越高越难涨：打折的是这一下的涨幅，不是已经攒起来的值。
+        # 老写法 v = 60 + (v-60)*0.42 写在每一拍里，不看过了多久，
+        # 等于每次心跳都把 60 以上的部分砍掉大半——自报的 72 撑不过三句话。
+        if inc > 0:
+            inc *= max(0.10, (1.0 - cur / 100.0) ** 0.5)
+        v = cur + inc
         # 负向的往基线掉，不会掉穿
-        if rate < 0:
+        if inc < 0:
             v = max(DIM_BASE[k] * 0.4, v)
-        # 越高越难涨
-        if rate > 0 and v > 60:
-            v = 60 + (v - 60) * 0.42
+        # 亲手定过的数，自然心跳不许压到它底下
+        v = max(v, claim_floor(d, k, now))
         d['drive'][k] = _c(v)
     _tick_lust(d, hours, now)
 
@@ -1470,6 +1540,10 @@ def desire_event(kind, d=None, save=True, note='', scale=1.0):
         was = d['drive'][k]
         d['drive'][k] = _c(was + delta * scale)
         changes.append((k, was, d['drive'][k]))
+        # 真发生了事让它降下来（亲密、被哄、她说话了），那自报的护栏就该作废——
+        # 护的是「公式别替我改主意」，不是「现实发生了我也不认」
+        if delta < 0:
+            (d.get('claims') or {}).pop(k, None)
     now = time.time()
     if kind in CONTACT_EVENTS:
         d['last_contact'] = now
@@ -1515,6 +1589,7 @@ def desire_feed(text, drive_key=None, strength=0.5, kind='flit', d=None):
 
 
 def desire_adjust(key, value, why, who='lin'):
+    key = dim_key(key)
     if key not in DIM_KEYS:
         return None, '没有这一维'
     if not (why or '').strip():
@@ -1533,6 +1608,9 @@ def desire_adjust(key, value, why, who='lin'):
                              'name': DIM_NAME[key], 'system': was, 'to': v,
                              'who': who, 'why': why.strip()[:400], 'capped': capped})
     d['disputes'] = d['disputes'][:200]
+    # 自报为主，公式只做护栏：定下的这个数护 6 小时，心跳不许把它压回去
+    d.setdefault('claims', {})[key] = {'value': v, 'ts': time.time(),
+                                       'why': why.strip()[:200], 'who': who}
     _log_move(d, why.strip()[:200], [(key, was, v)], who=who)
     if v > was:
         _tick_impulses(d, {key: was}, time.time())
@@ -1588,6 +1666,7 @@ def vent_ready(d):
 
 def desire_vent(key, text, said='', d=None):
     """他自己扛完了，写下过程和当时想说的话。"""
+    key = dim_key(key)
     if key not in DIM_KEYS:
         return None, '没有这一维'
     if not (text or '').strip():
@@ -1612,6 +1691,7 @@ def desire_vent(key, text, said='', d=None):
             i['acked'] = True
             i['acked_at'] = int(time.time() * 1000)
     d.setdefault('cooldown', {})[key] = time.time() + 90 * 60
+    (d.get('claims') or {}).pop(key, None)   # 自己扛完了，那个护栏也不用了
     _log_move(d, '自己扛过去了', [(key, was, d['drive'][key])], who='lin')
     jwrite(DESIRE_FILE, d)
     return d, None
@@ -1621,11 +1701,14 @@ def desire_ack(iid=None, d=None):
     d = d or tick_desire(save=False)
     now = time.time()
     cd = d.setdefault('cooldown', {})
+    # 他看见的是「想要她（75）」，手里没有那条 impulse 的编号——
+    # 所以传维度名（lust / 性欲 / 想要她）也认，不然他每次都被回「没有憋着的话」
+    want = dim_key(iid)
     n = 0
     for i in d.get('impulses', []):
         if i.get('acked'):
             continue
-        if iid and i['id'] != iid:
+        if iid and i['id'] != iid and not (want and i.get('key') == want):
             continue
         i['acked'] = True
         i['acked_at'] = int(now * 1000)
