@@ -878,13 +878,20 @@ const MUSIC_TAG_ANY = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播�
 const WATCH_TAG_RE = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g;
 const WATCH_TAG_ANY = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\]/;
 // 他自己想看画面：写 [看一眼]，这一轮说完，网页截这一帧悄悄递给他。
-// 刹车：20 秒内连着要第二眼就不给了，免得自己一直看一直看。
-let lookLastAt = 0;
+// 她说：可以一直看一直说，只要你想。所以不限次数、不限间隔。
+// 只留一道防空转的闸（她自己定的规矩：后台敲字必须有刹车）：
+// 她一句没说、我自己连着看了 8 眼，就先停，等她开口再接着看。
 function watchLookSoon() {
   if (typeof grabFrameNow !== 'function' || !$('stage')?.classList.contains('open')) return;
-  const now = Date.now();
-  if (now - lookLastAt < 20000) return;
-  lookLastAt = now;
+  let looks = 0;
+  for (let k = messages.length - 1; k >= 0; k--) {
+    const m = messages[k];
+    if (m.role !== 'user') continue;
+    if (!m._internal) break;
+    const t = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? (m.content.find(c => c && c.type === 'text')?.text || '') : '');
+    if (t.startsWith('（你要看的那一眼')) looks++;
+  }
+  if (looks >= 8) return;
   let tries = 0;
   const go = () => {
     if (isTyping) { if (++tries < 40) setTimeout(go, 500); return; }
