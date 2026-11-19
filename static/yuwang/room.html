@@ -120,7 +120,7 @@ function drawWeb(t,k){
     ctx.restore();}
 }
 function drawSpider(t){
-  var x=S0.x+sway, y=S0.y+pull-openT*260;  // 网拉开时蜘蛛顺着丝往上收，别挡字
+  var x=S0.x+sway, y=S0.y+pull-openT*158;  // 网拉开时蜘蛛顺着丝往上收，别挡字
   // 丝：从顶上垂下来，被拽长了就细一点
   ctx.beginPath();ctx.moveTo(S0.x,0);ctx.quadraticCurveTo(S0.x+sway*.4,(y)/2,x,y);ctx.strokeStyle='rgba(20,20,20,'+(0.85-pull/600)+')';ctx.lineWidth=1.4-pull/400;ctx.stroke();
   ctx.save();ctx.translate(x,y);ctx.rotate(sway/260);
