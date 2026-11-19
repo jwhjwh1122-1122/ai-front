@@ -927,3 +927,41 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 他挑的那一段正在变成语音：气泡先淡一下，别干等着没反应 */
 .bubble.ai.voice-making{opacity:.55;animation:vmk 1.1s ease-in-out infinite;}
 @keyframes vmk{0%,100%{opacity:.55}50%{opacity:.85}}
+
+/* ============ 一起看（影房看片的样子） ============ */
+.link-card{margin:2px 16px 14px;padding:14px 14px 12px;background:var(--paper);border:1px solid var(--room-deep);border-radius:12px;display:flex;flex-direction:column;gap:9px;}
+.link-card-t{font-size:12px;letter-spacing:2px;color:var(--ink-soft);}
+.link-row{display:flex;gap:8px;}
+.link-in{flex:1;min-width:0;background:var(--room);border:1px solid var(--room-deep);border-radius:8px;padding:10px 11px;font-size:14px;color:var(--ink);font-family:inherit;outline:none;}
+.link-go{flex-shrink:0;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:0 14px;font-size:13px;letter-spacing:1px;font-family:inherit;cursor:pointer;}
+.wv-ui,.wv-info,.wv-cam{display:none;}
+#stage.watch{background:var(--bg);}
+#stage.watch .stage-top,#stage.watch .split-bar,#stage.watch .moment-bar{display:none!important;}
+#stage.watch .split{display:flex!important;flex-direction:column!important;}
+#stage.watch .split-top{position:relative!important;inset:auto!important;flex:none!important;height:auto!important;background:#000;}
+#stage.watch .stage-body{flex:none;display:block;background:#000;padding-top:env(safe-area-inset-top);overflow:hidden;}
+#stage.watch .stage-body video{display:block;width:100%;aspect-ratio:16/9;max-height:46vh;object-fit:contain;background:#000;}
+#stage.watch .stage-subs{bottom:74px;font-size:12px;}
+#stage.watch .split-chat,#stage.watch .split-chat.hidden{position:relative!important;inset:auto!important;flex:1!important;height:auto!important;min-height:0;border-top:none;background:var(--bg);}
+#stage.watch .wv-ui{display:block;position:absolute;left:0;right:0;bottom:0;top:env(safe-area-inset-top);transition:opacity .35s;background:linear-gradient(180deg,rgba(0,0,0,.45),transparent 26%,transparent 62%,rgba(0,0,0,.55));}
+#stage.watch .wv-ui.hide{opacity:0;}
+#stage.watch .wv-ui.hide *{pointer-events:none;}
+.wv-top{position:absolute;left:12px;right:12px;top:10px;display:flex;align-items:center;gap:10px;}
+.wv-title{flex:1;min-width:0;color:#fff;font-size:14px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.6);}
+.wv-ic{width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.wv-ic svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.wv-pill{height:32px;padding:0 13px;border-radius:16px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.25);color:#fff;font-size:12px;font-family:inherit;cursor:pointer;flex-shrink:0;}
+.wv-pill.on{background:rgba(255,255,255,.88);color:#111;}
+.wv-big{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:62px;height:62px;border-radius:50%;border:1.5px solid rgba(255,255,255,.7);background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.wv-big svg{width:26px;height:26px;fill:#fff;}
+.wv-bot{position:absolute;left:12px;right:12px;bottom:10px;display:flex;flex-direction:column;gap:8px;}
+.wv-prog{display:flex;align-items:center;gap:9px;color:#fff;font-size:11px;font-variant-numeric:tabular-nums;}
+.wv-prog input{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,.3);border-radius:2px;outline:none;}
+.wv-prog input::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.2);}
+.wv-row{display:flex;align-items:center;gap:8px;}
+#stage.watch .wv-info{display:flex;align-items:center;gap:9px;margin:10px 12px 2px;padding:9px 13px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;font-size:13px;color:var(--text);flex-shrink:0;}
+.wv-av{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.wv-with{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wv-meta{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;}
+#stage.watch .wv-cam{display:flex;width:42px;height:42px;border-radius:50%;border:1px solid var(--border);background:transparent;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.wv-cam svg{width:20px;height:20px;fill:none;stroke:var(--text-muted);stroke-width:1.6;stroke-linejoin:round;}

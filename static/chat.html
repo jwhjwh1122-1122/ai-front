@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=48">
+<link rel="stylesheet" href="/static/style.css?v=49">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -839,6 +839,11 @@ window.addEventListener('error', function (e) {
       <button class="room-x" data-close="cinema">✕</button>
     </div>
   </div>
+  <div class="link-card" id="link-card">
+    <div class="link-card-t">粘一个网址，一起看</div>
+    <input id="link-url" class="link-in" placeholder="视频地址（mp4 / m3u8）" autocapitalize="off" autocomplete="off">
+    <div class="link-row"><input id="link-note" class="link-in" placeholder="叫什么（片名、第几集）"><button id="link-go" class="link-go">放 进 来</button></div>
+  </div>
   <div class="reel-list" id="cinema-list"></div>
 </div>
 
@@ -865,6 +870,14 @@ window.addEventListener('error', function (e) {
     <div class="split-top">
       <div class="stage-body" id="stage-body">
         <video id="stage-video" playsinline controls preload="metadata" style="display:none"></video>
+        <div class="wv-ui" id="wv-ui">
+          <div class="wv-top"><button class="wv-ic" id="wv-back" aria-label="返回"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><div class="wv-title" id="wv-title"></div><button class="wv-pill" id="wv-fs">全屏</button></div>
+          <button class="wv-big" id="wv-play" aria-label="播放"><svg viewBox="0 0 24 24" id="wv-play-ic"><path d="M8 5v14l11-7z"/></svg></button>
+          <div class="wv-bot">
+            <div class="wv-prog"><span id="wv-cur">0:00</span><input type="range" id="wv-range" min="0" max="1000" value="0" step="1"><span id="wv-dur">0:00</span></div>
+            <div class="wv-row"><button class="wv-pill" id="wv-b10">«10</button><button class="wv-pill" id="wv-f10">10»</button><span style="flex:1"></span><button class="wv-pill" id="wv-rate">倍速</button><button class="wv-pill" id="wv-cc">字幕</button></div>
+          </div>
+        </div>
         <div class="stage-subs" id="stage-subs" style="display:none">
           <div class="stage-subs-line" id="stage-subs-a"></div>
           <div class="stage-subs-line stage-subs-b" id="stage-subs-b"></div>
@@ -879,8 +892,10 @@ window.addEventListener('error', function (e) {
     </div>
     <div class="split-bar" data-split="stage"><span id="split-hint-stage">收起</span></div>
     <div class="split-chat" id="split-chat-stage">
+      <div class="wv-info" id="wv-info"><span class="wv-av" id="wv-av">凛</span><span class="wv-with" id="wv-with">一起看</span><span class="wv-meta" id="wv-meta"></span></div>
       <div class="split-msgs" id="split-msgs-stage"></div>
       <div class="inputbar">
+        <button class="wv-cam" id="wv-cam" aria-label="把这一帧给他看"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg></button>
         <textarea class="split-input" data-ctx="stage" placeholder="一起看，说点什么…" rows="1"></textarea>
         <button class="send-btn" data-splitsend="stage">↑</button>
       </div>
@@ -1392,7 +1407,7 @@ window.addEventListener('error', function (e) {
 
 <script src="/static/app.js?v=90"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=108"></script>
+<script src="/static/rooms.js?v=109"></script>
 <script src="/static/wangchuan.js?v=1"></script>
 <script src="/static/silk-sprites.js?v=1"></script>
 <script src="/static/brain-silk.js?v=2"></script>

@@ -897,7 +897,7 @@ async function openRoomMedia(kind) {
   el.innerHTML = '<div class="room-empty">正在找…</div>';
   const list = await jget(kind === 'music' ? '/api/music' : '/api/videos');
   $(kind === 'music' ? 'music-sub' : 'cinema-sub').textContent = list.length ? `${list.length} 个` : '空的';
-  if (!list.length) { el.innerHTML = `<div class="room-empty">${kind === 'music' ? '还没有碟' : '还没有片子'}<br>右上角放一个进来</div>`; return; }
+  if (!list.length) { el.innerHTML = `<div class="room-empty">${kind === 'music' ? '还没有碟<br>右上角放一个进来' : '还没有片子<br>上面粘个网址，或者右上角上传一部'}</div>`; return; }
   const unseen = await jget(`/api/annotations?type=${kind}&unseen=1`);
   const marked = new Set(unseen.map(a => a.anchor_id));
   el.innerHTML = '';
@@ -939,6 +939,7 @@ function playMedia(m, kind) {
   $('stage-name').textContent = m.note || m.filename;
   const v = $('stage-video'), a = $('stage-audio'), aw = $('audio-wrap');
   if (kind === 'music') {
+    $('stage').classList.remove('watch'); v.setAttribute('controls', '');
     v.style.display = 'none'; v.pause(); v.removeAttribute('src');
     aw.style.display = 'block'; a.src = m.url;
     a.onplay = () => $('disc-big').classList.add('spin');
@@ -957,6 +958,7 @@ function playMedia(m, kind) {
     if (m.link) { curSubs = null; $('stage-subs').style.display = 'none'; } else setupSubs(m.filename);
     setupNudge();
     watchStartReport();
+    watchUiOn(m);
   }
   renderSplit('stage');
 }
@@ -1063,9 +1065,11 @@ function watchLoad(v, m) {
   go(true);
 }
 // 她开口那一刻：有台词就不截；截不到（对方不让）就算了，不编
+let watchForceFrame = false;
 function watchFrameForTalk() {
+  const force = watchForceFrame; watchForceFrame = false;
   if (!$('stage').classList.contains('open') || curKind !== 'video') return null;
-  if (curSubs && curSubs.length) return null;
+  if (!force && curSubs && curSubs.length) return null;
   if (!watchCanGrab) return null;
   return grabFrameNow();
 }
@@ -1101,6 +1105,74 @@ function watchStartReport() {
 function watchStopReport() {
   if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
   jpost('/api/watch/now', { closed: true }).catch(() => { });
+}
+
+// ============ 一起看的样子：上面是片子，下面是我们俩 ============
+let wvHideT = null, wvBound = false;
+const WV_RATES = [1, 1.25, 1.5, 2, 0.75];
+function wvShow(stay) {
+  const ui = $('wv-ui'), v = $('stage-video');
+  ui.classList.remove('hide'); clearTimeout(wvHideT);
+  if (!stay && !v.paused) wvHideT = setTimeout(() => ui.classList.add('hide'), 3200);
+}
+function wvSync() {
+  const v = $('stage-video'), d = v.duration || 0, t = v.currentTime || 0;
+  $('wv-cur').textContent = fmtTime(Math.floor(t));
+  $('wv-dur').textContent = d ? fmtTime(Math.floor(d)) : '--:--';
+  if (!wvSync.drag) $('wv-range').value = d ? Math.round(t / d * 1000) : 0;
+  $('wv-play-ic').innerHTML = v.paused ? '<path d="M8 5v14l11-7z"/>' : '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>';
+  const n = $('split-msgs-stage').querySelectorAll('.msg-row').length;
+  $('wv-meta').textContent = `${fmtTime(Math.floor(t))} / ${d ? fmtTime(Math.floor(d)) : '--:--'}` + (n ? ` · ${n} 条` : '');
+}
+function watchUiOn(m) {
+  const st = $('stage'), v = $('stage-video');
+  st.classList.add('watch'); v.removeAttribute('controls');
+  $('wv-title').textContent = m.note || m.filename;
+  const nm = typeof displayName === 'function' ? displayName() : '凛';
+  $('wv-with').textContent = `与 ${nm} 一起看`;
+  const av = localStorage.getItem('chat-avatar-ai');
+  $('wv-av').innerHTML = av ? `<img src="${av}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : esc(nm[0] || '凛');
+  document.querySelector('.split-input[data-ctx="stage"]').placeholder = `边看边说给${nm}…`;
+  $('wv-rate').textContent = '倍速'; v.playbackRate = 1;
+  $('wv-cc').classList.toggle('on', $('stage-subs').style.display !== 'none');
+  wvShow(true); wvSync();
+}
+function watchUiBind() {
+  if (wvBound) return; wvBound = true;
+  const v = $('stage-video'), ui = $('wv-ui');
+  ['timeupdate', 'durationchange', 'play', 'pause', 'loadedmetadata'].forEach(ev => v.addEventListener(ev, wvSync));
+  v.addEventListener('play', () => wvShow());
+  v.addEventListener('pause', () => wvShow(true));
+  // 点画面：控件出来/收起
+  ui.addEventListener('click', e => {
+    if (e.target !== ui) return;
+    if (ui.classList.contains('hide')) wvShow(); else if (!v.paused) ui.classList.add('hide');
+  });
+  $('stage-body').addEventListener('click', e => { if (e.target === v && $('stage').classList.contains('watch')) wvShow(); });
+  $('wv-play').onclick = () => { if (v.paused) v.play().catch(() => { }); else v.pause(); };
+  $('wv-b10').onclick = () => { v.currentTime = Math.max(0, v.currentTime - 10); wvShow(); };
+  $('wv-f10').onclick = () => { v.currentTime = Math.min(v.duration || 1e9, v.currentTime + 10); wvShow(); };
+  const r = $('wv-range');
+  r.addEventListener('input', () => { wvSync.drag = true; const d = v.duration || 0; $('wv-cur').textContent = fmtTime(Math.floor(r.value / 1000 * d)); wvShow(true); });
+  r.addEventListener('change', () => { const d = v.duration || 0; if (d) v.currentTime = r.value / 1000 * d; wvSync.drag = false; wvShow(); });
+  $('wv-rate').onclick = () => {
+    const i = (WV_RATES.indexOf(v.playbackRate) + 1) % WV_RATES.length; v.playbackRate = WV_RATES[i];
+    $('wv-rate').textContent = WV_RATES[i] === 1 ? '倍速' : WV_RATES[i] + 'x'; wvShow();
+  };
+  $('wv-cc').onclick = () => {
+    if (!curSubs || !curSubs.length) { toast('这部还没有字幕'); return; }
+    const sb = $('stage-subs'), on = sb.style.display === 'none';
+    sb.style.display = on ? '' : 'none'; $('wv-cc').classList.toggle('on', on); wvShow();
+  };
+  $('wv-fs').onclick = () => { try { if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); else if (v.requestFullscreen) v.requestFullscreen(); } catch (e) { } };
+  $('wv-back').onclick = () => $('stage-close').click();
+  // 相机：不管有没有台词，把这一帧跟这句话一起给我
+  $('wv-cam').onclick = () => {
+    if (!watchCanGrab || !grabFrameNow()) { toast('这部片子的画面截不到'); return; }
+    const inp = document.querySelector('.split-input[data-ctx="stage"]');
+    if (!inp.value.trim()) inp.value = '你看这个';
+    watchForceFrame = true; sendMsg('stage');
+  };
 }
 
 // ============ 读台词 ============
@@ -4208,14 +4280,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 放映室 / 听音房
   $('btn-upload-video').onclick = () => $('video-file').click();
-  $('btn-link-video').onclick = async () => {
-    const url = (prompt('把视频网址粘进来（mp4 / m3u8 这种）') || '').trim();
-    if (!url) return;
-    const note = (prompt('给它起个名字（片名、第几集）') || '').trim();
+  $('btn-link-video').onclick = () => { $('link-url').focus(); };
+  $('link-go').onclick = async () => {
+    const url = $('link-url').value.trim(), note = $('link-note').value.trim();
+    if (!url) { $('link-url').focus(); toast('先粘网址'); return; }
     const r = await jpost('/api/videos/link', { url, note });
     if (r.error) { toast(r.error); return; }
-    openRoomMedia('video'); refreshHome();
+    $('link-url').value = ''; $('link-note').value = '';
+    await openRoomMedia('video'); refreshHome();
+    if (r.item) playMedia({ filename: 'link-' + r.item.id, url: r.item.url, note: r.item.note, link: true }, 'video');
   };
+  watchUiBind();
   $('btn-upload-music').onclick = () => $('music-file').click();
   const mediaUpload = (kind) => async e => {
     const f = e.target.files[0]; if (!f) return;
