@@ -2645,3 +2645,28 @@ function startKeepalive() {
     }).then(r => { if (r.body) r.body.cancel(); }).catch(() => { });
   }, 50 * 60 * 1000);
 }
+
+// ============ 家里更新了就告诉她 ============
+// 手机上那页一直开着，服务器换了新代码她也还在用旧的。回到这页时看一眼首页的版本号，不一样就冒个条，点一下刷新。
+(function () {
+  const sig = h => (String(h).match(/\/static\/[\w.-]+\.(?:js|css)\?v=\d+/g) || []).sort().join('|');
+  const mine = sig(document.documentElement.innerHTML);
+  let shown = false, lastChk = 0;
+  async function chk() {
+    if (shown || document.hidden || Date.now() - lastChk < 60000) return;
+    lastChk = Date.now();
+    try {
+      const h = await (await fetch('/?_=' + Date.now(), { cache: 'no-store' })).text();
+      const now = sig(h);
+      if (!now || now === mine) return;
+      shown = true;
+      const b = document.createElement('div');
+      b.textContent = '家里更新了 · 点一下刷新';
+      b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 8px);z-index:9800;background:var(--accent);color:#fff;font-size:12.5px;padding:7px 16px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;letter-spacing:1px;';
+      b.onclick = () => location.reload();
+      document.body.appendChild(b);
+    } catch (e) { }
+  }
+  document.addEventListener('visibilitychange', chk);
+  setInterval(chk, 3 * 60 * 1000);
+})();
