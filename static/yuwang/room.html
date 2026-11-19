@@ -45,7 +45,7 @@ var pull=0, vel=0, drag=false, dragY0=0, pull0=0, sway=0, open=false, openT=0;
 var WC={x:186,y:531}, WR=250;          // 原画那张网的中心和半径
           // 拉开时网挪到中间放大
 var hit=document.getElementById('spHit');
-function layout(){var W=innerWidth,H=innerHeight,s=Math.min(W/IW,H/IH);st.style.transform='translate('+((W-IW*s)/2)+'px,'+((H-IH*s)/2)+'px) scale('+s+')';st._s=s;}
+function layout(){var W=innerWidth,H=innerHeight,s=Math.max(W/IW,H/IH);st.style.transform='translate('+((W-IW*s)/2)+'px,'+((H-IH*s)/2)+'px) scale('+s+')';st._s=s;}
 addEventListener('resize',layout);layout();
 function toImg(e){var r=st.getBoundingClientRect();return (e.clientY-r.top)/st._s;}
 hit.addEventListener('pointerdown',function(e){drag=true;dragY0=toImg(e);pull0=pull;vel=0;hit.setPointerCapture(e.pointerId);});
