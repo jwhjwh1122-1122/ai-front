@@ -3560,8 +3560,25 @@ def translate_stream(resp):
 @app.route('/')
 def index():
     # 首页不让手机缓存，不然更新了代码，桌面 app 还在用旧的 js 版本号
-    r = send_from_directory('static', 'chat.html', max_age=0)
-    r.headers['Cache-Control'] = 'no-cache'
+    # 再加一道:把 /static/xxx.js?v=数字 里的数字换成那个文件自己的修改时间。
+    # 以前靠我手动把版本号加一,忘了一次,她手机上就永远是旧的,我改什么都"没区别"。
+    # 现在文件一变版本号自己就变,忘不了。
+    import re as _re
+    try:
+        html = open(os.path.join(app.static_folder, 'chat.html'), encoding='utf-8').read()
+
+        def _stamp(m):
+            f = os.path.join(app.static_folder, m.group(1))
+            try:
+                return '/static/%s?v=%d' % (m.group(1), int(os.path.getmtime(f)))
+            except Exception:
+                return m.group(0)
+        html = _re.sub(r'/static/([\w./-]+\.(?:js|css))\?v=\d+', _stamp, html)
+        r = Response(html, mimetype='text/html')
+    except Exception:
+        r = send_from_directory('static', 'chat.html', max_age=0)
+    r.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    r.headers['Pragma'] = 'no-cache'
     return r
 
 

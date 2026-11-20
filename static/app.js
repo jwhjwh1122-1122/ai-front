@@ -2689,7 +2689,7 @@ function startKeepalive() {
     // 注意:别再拿 visualViewport.offsetTop 去裁这里的坐标。
     // 键盘弹出时 body 已经被 fit() 挪进可视区,getBoundingClientRect 给的就是对的;
     // 再减一次 offsetTop 会把整片消息算成"在渐隐带外",k 全成 0,消息就整屏不见了。
-    var r0 = box.getBoundingClientRect(), TOP = 74, BOT = 48;
+    var r0 = box.getBoundingClientRect(), TOP = 130, BOT = 60; // 带子窄了肉眼看不出在渐隐,只看见「到顶就没」
     var r = { top: r0.top, bottom: r0.bottom };
     // 保险:万一这块算出来高度不正常(键盘动画中途、页面被顶走),这一拍什么都不做,
     // 宁可边上硬切一下,也不许把消息全淡成看不见
@@ -2773,14 +2773,24 @@ function startKeepalive() {
       b.style.height = vv.height + 'px';
       // 键盘上来了:底下那截安全区被键盘压着,不该再留白。贴着键盘走,跟微信一样
       try {
-        var up = (window.innerHeight - vv.height) > 120;
-        b.classList.toggle('kb-up', up);
+        // 以前只看 innerHeight - vv.height。可 chat.html 的 viewport 写了
+        // interactive-widget=resizes-content——键盘一上来 innerHeight 自己就缩了,
+        // 这个差永远是 0,kb-up 从来没加上过。所以我改键盘那几条 CSS 怎么改都"没区别"。
+        // 现在以「输入框正被我点着」为主,视口变矮只当补充。
+        var ae = document.activeElement;
+        var typing = !!(ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && !/button|checkbox|radio|file|submit/i.test(ae.type || ''))));
+        var shrunk = (window.innerHeight - vv.height) > 120
+          || (window.screen && window.screen.height && (window.screen.height - vv.height) > 260);
+        b.classList.toggle('kb-up', typing || shrunk);
       } catch (e) { }
       kick();
       try { if (document.activeElement === document.getElementById('input')) scrollBottom(); } catch (e) { }
     };
     vv.addEventListener('resize', fit);
     vv.addEventListener('scroll', fit);
+    // 点进输入框/离开输入框的那一下也要重算,不能只等视口变化
+    document.addEventListener('focusin', function () { fit(); setTimeout(fit, 120); setTimeout(fit, 400); });
+    document.addEventListener('focusout', function () { setTimeout(fit, 60); setTimeout(fit, 300); });
     document.addEventListener('DOMContentLoaded', fit);
     fit();
   }
