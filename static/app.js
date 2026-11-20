@@ -1277,6 +1277,7 @@ function stopRecording() {
 }
 async function sendAudio(blob, dur) {
   const btn = $('mic-btn'); btn.textContent = '…';
+  const micIco = '<svg viewBox="0 0 24 24"><path d="M12 3.2c-1.6 0-2.8 1.2-2.8 2.8v5.2c0 1.6 1.2 2.8 2.8 2.8s2.8-1.2 2.8-2.8V6c0-1.6-1.2-2.8-2.8-2.8z"/><path d="M5.8 10.8v.6a6.2 6.2 0 0 0 12.4 0v-.6"/><path d="M12 17.6V21"/></svg>';
   let audioUrl = '', text = '';
   try {
     const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
@@ -1291,7 +1292,7 @@ async function sendAudio(blob, dur) {
     text = (d2.text || '').trim();
     if (!text) { toast('没听清'); return; }
   } catch (e) { toast('出错了'); return; }
-  finally { btn.textContent = '◎'; }
+  finally { btn.innerHTML = micIco; }
   sendComposed(text, [], { audio: audioUrl, dur });
 }
 // 他自己挑的那几段（开头写了 [语音] 的）变成语音气泡。跟「凛用语音回我」那个开关无关——
@@ -1749,7 +1750,9 @@ let turnSeq = 0, typingConvId = null;
 // 他在别的窗口里回着的时候，这个窗口该是能正常发消息的样子，不然会把那边的回复误停掉
 function syncSendBtns() {
   const busy = isTyping && typingConvId === currentConvId;
-  document.querySelectorAll('.send-btn').forEach(b => b.textContent = busy ? '■' : '↑');
+  const up = '<svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg>';
+  const stop = '<svg viewBox="0 0 24 24"><rect x="6.8" y="6.8" width="10.4" height="10.4" rx="2.4"/></svg>';
+  document.querySelectorAll('.send-btn').forEach(b => b.innerHTML = busy ? stop : up);
 }
 function beginTurn(convId) {
   lastTalk = Date.now();

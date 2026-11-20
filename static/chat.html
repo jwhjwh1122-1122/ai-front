@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=64">
+<link rel="stylesheet" href="/static/style.css?v=65">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -152,11 +152,11 @@ window.addEventListener('error', function (e) {
     <span class="img-preview-count" id="img-preview-count"></span>
   </div>
   <div class="inputbar">
-    <div class="input-btn" id="mic-btn">◎</div>
+    <div class="input-btn" id="mic-btn"><svg viewBox="0 0 24 24"><path d="M12 3.2c-1.6 0-2.8 1.2-2.8 2.8v5.2c0 1.6 1.2 2.8 2.8 2.8s2.8-1.2 2.8-2.8V6c0-1.6-1.2-2.8-2.8-2.8z"/><path d="M5.8 10.8v.6a6.2 6.2 0 0 0 12.4 0v-.6"/><path d="M12 17.6V21"/></svg></div>
     <textarea id="input" rows="1"></textarea>
-    <div class="input-btn" id="btn-emoji" style="font-size:17px;">♡</div>
-    <div class="input-btn" id="btn-img" style="font-size:16px;">⊡</div>
-    <button class="send-btn" id="send-btn">↑</button>
+    <div class="input-btn" id="btn-emoji"><svg viewBox="0 0 24 24"><path d="M12 20.3s-7.4-4.6-7.4-9.6a4.3 4.3 0 0 1 7.4-3 4.3 4.3 0 0 1 7.4 3c0 5-7.4 9.6-7.4 9.6z"/></svg></div>
+    <div class="input-btn" id="btn-img"><svg viewBox="0 0 24 24"><rect x="3.4" y="4.6" width="17.2" height="14.8" rx="3.4"/><circle cx="8.6" cy="9.6" r="1.5"/><path d="M4.2 17.2l4.6-4.4a2 2 0 0 1 2.7 0l5.2 4.8"/><path d="M14.6 13.4l1.6-1.5a2 2 0 0 1 2.7 0l1.5 1.4"/></svg></div>
+    <button class="send-btn" id="send-btn"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
   </div>
   <div class="unread-pill" id="unread-pill"></div>
   <div class="ctx-warn-pill" id="ctx-warn-pill"></div>
@@ -541,7 +541,7 @@ window.addEventListener('error', function (e) {
       <div class="split-msgs" id="split-msgs-reader"></div>
       <div class="inputbar">
         <textarea class="split-input" data-ctx="reader" rows="1"></textarea>
-        <button class="send-btn" data-splitsend="reader">↑</button>
+        <button class="send-btn" data-splitsend="reader"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
       </div>
     </div>
   </div>
@@ -786,7 +786,7 @@ window.addEventListener('error', function (e) {
       <div class="split-msgs" id="split-msgs-netease"></div>
       <div class="inputbar">
         <textarea class="split-input" data-ctx="netease" rows="1"></textarea>
-        <button class="send-btn" data-splitsend="netease">↑</button>
+        <button class="send-btn" data-splitsend="netease"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
       </div>
     </div>
   </div>
@@ -822,7 +822,7 @@ window.addEventListener('error', function (e) {
       <div class="split-msgs" id="split-msgs-coread"></div>
       <div class="inputbar">
         <textarea class="split-input" data-ctx="coread" rows="1"></textarea>
-        <button class="send-btn" data-splitsend="coread">↑</button>
+        <button class="send-btn" data-splitsend="coread"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
       </div>
     </div>
   </div>
@@ -902,7 +902,7 @@ window.addEventListener('error', function (e) {
       <div class="inputbar">
         <button class="wv-cam" id="wv-cam" aria-label="把这一帧给他看"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg></button>
         <textarea class="split-input" data-ctx="stage" rows="1"></textarea>
-        <button class="send-btn" data-splitsend="stage">↑</button>
+        <button class="send-btn" data-splitsend="stage"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
       </div>
     </div>
   </div>
@@ -930,9 +930,9 @@ window.addEventListener('error', function (e) {
   <div class="ig-stories" id="ig-stories"></div>
   <div class="moments" id="post-list"></div>
   <div class="cm-bar" id="cm-bar">
-    <div class="input-btn" id="cm-emoji" style="font-size:17px;">♡</div>
+    <div class="input-btn" id="cm-emoji"><svg viewBox="0 0 24 24"><path d="M12 20.3s-7.4-4.6-7.4-9.6a4.3 4.3 0 0 1 7.4-3 4.3 4.3 0 0 1 7.4 3c0 5-7.4 9.6-7.4 9.6z"/></svg></div>
     <textarea id="cm-input" rows="1" style="flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:18px;padding:9px 14px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:90px;min-height:38px;font-family:inherit;"></textarea>
-    <button class="send-btn" id="cm-send" style="width:38px;height:38px;font-size:16px;">↑</button>
+    <button class="send-btn" id="cm-send" style="width:38px;height:38px;font-size:16px;"><svg viewBox="0 0 24 24"><path d="M12 19.4V5.2"/><path d="M6.2 11L12 5.2l5.8 5.8"/></svg></button>
   </div>
 </div>
 
@@ -1411,7 +1411,7 @@ window.addEventListener('error', function (e) {
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 <input type="file" id="lib-file-input" style="display:none">
 
-<script src="/static/app.js?v=94"></script>
+<script src="/static/app.js?v=95"></script>
 <script src="/static/ear.js?v=1"></script>
 <script src="/static/rooms.js?v=122"></script>
 <script src="/static/wangchuan.js?v=3"></script>

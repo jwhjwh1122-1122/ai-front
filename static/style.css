@@ -169,8 +169,11 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .input-btn.recording{background:var(--accent);color:#fff;border-color:var(--accent);animation:pulse 1.2s ease-in-out infinite;}
 textarea{flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:120px;min-height:42px;overflow-y:auto;font-family:inherit;line-height:1.4;}
 textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--text-muted);}
-.send-btn{width:42px;height:42px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;opacity:.88;}
-.send-btn:active{opacity:1;transform:scale(.92);}
+/* 输入栏那几个键:一套细线图标,1.5px 圆头圆角,发送也不实心了(她定的 B) */
+.send-btn{width:42px;height:42px;border-radius:50%;background:var(--input-bg);border:1.5px solid var(--border);color:var(--text-muted);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.send-btn:active{transform:scale(.92);background:var(--border);}
+.input-btn svg,.send-btn svg{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.send-btn svg{width:19px;height:19px;}
 .sys-msg{text-align:center;font-size:11px;color:var(--text-muted);margin:8px 0;padding:4px 12px;}
 /* 他留的字条 */
 .note-card{margin:10px 4px;background:var(--paper);border:1px solid var(--room-deep);border-radius:3px;padding:12px 14px;position:relative;box-shadow:0 2px 10px var(--shadow);}
