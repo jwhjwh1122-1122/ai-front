@@ -3512,6 +3512,13 @@ function doSearch() {
     doSearch();
   });
 }
+// 她这会儿是不是正待在某个聊天窗里（聊天页在最前，而且没有别的整页盖在上面）
+function inChatWindow() {
+  if (!$('page-chat').classList.contains('on')) return false;
+  const full = document.querySelector('.full.open');
+  if (full && full.id !== 'search-panel') return false;
+  return true;
+}
 function openSearch(scope) {
   searchScope = scope || 'conv';
   searchDrill = null;
@@ -5006,10 +5013,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-call-now').onclick = () => { $('calllog-panel').classList.remove('open'); startCall('user'); };
   $('btn-usage').onclick = openUsage;
   $('btn-usage-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
-  // 聊天顶栏那个 🔍：她人就在这个窗里，所以只搜这个窗
-  $('btn-search').onclick = () => openSearch('conv');
-  // 对话记录那一页里的 🔍：她不在任何窗里，搜的就是全部窗
-  $('btn-search-all') && ($('btn-search-all').onclick = () => openSearch('all'));
+  // 就这一个 🔍。范围看她人在哪：正开着某个聊天窗就搜这个窗，不在窗里就搜全部窗。
+  // 跟微信一个道理——在某个人的聊天框里搜，跳不出别人；在消息页搜，所有人都列出来。
+  $('btn-search').onclick = () => openSearch(inChatWindow() ? 'conv' : 'all');
   $('search-input').addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(doSearch, 220);
