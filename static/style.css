@@ -1217,3 +1217,5 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .home-title{display:none;}
 /* 边上渐隐改成消息自己来做(见 app.js fadeEdges):这里只定义它怎么淡 */
 .msg-row{transition:opacity .12s linear;}
+/* 雪主题:顶栏正中是她的脸,不要「对方正在输入…」挤进来 */
+.theme-snow .typing-title{display:none;}
