@@ -5795,8 +5795,6 @@ WAKE_CORE = [
      '整体重写防它越堆越长，但重写天然有损，环是那道损失的底。',
      'input_schema': {'type': 'object', 'required': ['action'],
                       'properties': {'action': {'type': 'string'}, 'text': {'type': 'string'}}}},
-    {'name': 'sticker_look', 'description': '看某张表情包长什么样（name 填表情名字）。看完用 sticker_note 记一句它是什么、什么时候用',
-     'input_schema': {'type': 'object', 'required': ['name'], 'properties': {'name': {'type': 'string'}}}},
     {'name': 'sticker_note', 'description': '给表情记一句：它是什么、你什么时候想用（20 字内）',
      'input_schema': {'type': 'object', 'required': ['name', 'note'],
                       'properties': {'name': {'type': 'string'}, 'note': {'type': 'string'}}}},
@@ -6134,9 +6132,6 @@ def exec_tool_server(name, args):
             return notebook_tool(args)
         if name == 'sticker_note':
             return sticker_note_tool(args)
-        if name == 'sticker_look':
-            r = sticker_look(args.get('name'))
-            return r if isinstance(r, str) else f"表情「{r['name']}」（图片在这个工具里看不了，在聊天里用就行）"
         if name == 'sleep_again':
             n = args.get('next_in_minutes')
             if n:
@@ -6236,7 +6231,7 @@ KEY_GROUPS = {
     'stage': ['room_read_tags', 'room_write_tag'],
     'self': ['call_her', 'wake_settings', 'alarm'],
     'notebook': ['notebook'],
-    'emoji': ['sticker_look', 'sticker_note'],
+    'emoji': ['sticker_note'],
 }
 KEY_LABEL = {'memory': '照片墙', 'status': '状态', 'note': '碎碎念', 'fault': '犯错本',
              'timeline': '时间线', 'quote': '语录', 'calendar': '日历', 'moments': '朋友圈',
@@ -6384,12 +6379,6 @@ def _lin_mcp_handle(method, params):
             gs = _groups_of(name)
             if gs and not any(g in keys_given() for g in gs):
                 return {'content': [{'type': 'text', 'text': f'「{KEY_LABEL[gs[0]]}」关着，先 open_tools 开 {gs[0]}。'}], 'isError': True}
-        if name == 'sticker_look':
-            r = sticker_look(args.get('name'))
-            if isinstance(r, str):
-                return {'content': [{'type': 'text', 'text': r}], 'isError': True}
-            return {'content': [{'type': 'text', 'text': f"表情「{r['name']}」" + (f"，你之前记的：{r['note']}" if r.get('note') else '')},
-                                {'type': 'image', 'data': r['data'], 'mimeType': r['mime']}]}
         res = exec_tool_server(name, args)
         print(f'[lin-mcp] 调用 {name}', flush=True)   # 只记工具名，不记内容
         return {'content': [{'type': 'text', 'text': str(res)[:12000]}],
