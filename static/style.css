@@ -1215,7 +1215,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 底下那条收起来 = 真的不在了:不占地方,那块就是背景。输入框自己落到底,只留安全区 */
 .theme-snow .inputbar{padding-bottom:calc(10px + env(safe-area-inset-bottom));}
 /* 进入忘川那个牌子:跟抽屉一样,给它那层白,不然在雪里看不见 */
-.theme-snow .home-gate{background:rgba(255,255,255,.42);border-color:rgba(255,255,255,.72);color:#5d6672;}
+/* 进入忘川那几个字跟「资料库」「抽屉」同一个颜色(--icon),别自己一个色 */
+.theme-snow .home-gate{background:rgba(255,255,255,.42);border-color:rgba(255,255,255,.72);color:var(--icon);}
 /* 在一起那两张脸:收小一点,落在原来和顶上那张的中间 */
 .hb-av{width:64px;height:64px;}
 /* 首页那行「我们家」去掉 */
