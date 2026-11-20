@@ -2717,6 +2717,11 @@ function startKeepalive() {
       b.style.bottom = 'auto';
       b.style.top = vv.offsetTop + 'px';
       b.style.height = vv.height + 'px';
+      // 键盘上来了:底下那截安全区被键盘压着,不该再留白。贴着键盘走,跟微信一样
+      try {
+        var up = (window.innerHeight - vv.height) > 120;
+        b.classList.toggle('kb-up', up);
+      } catch (e) { }
       kick();
       try { if (document.activeElement === document.getElementById('input')) scrollBottom(); } catch (e) { }
     };

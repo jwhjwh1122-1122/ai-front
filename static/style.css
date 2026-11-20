@@ -1219,3 +1219,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .msg-row{transition:opacity .12s linear;}
 /* 雪主题:顶栏正中是她的脸,不要「对方正在输入…」挤进来 */
 .theme-snow .typing-title{display:none;}
+/* 键盘弹出来的时候,底下那条安全区是被键盘盖住的,再留一截就是输入框跟键盘中间悬着一块空。
+   微信就是贴着的。所以键盘一上来,这几处的安全区补偿全归零 */
+body.kb-up .inputbar{padding-bottom:10px;}
+body.kb-up .theme-snow .inputbar,body.theme-snow.kb-up .inputbar{padding-bottom:10px;}
+body.kb-up .tabbar{padding-bottom:0;}
