@@ -2704,7 +2704,7 @@ function startKeepalive() {
       // 可一条高气泡的底还远在下面,k 一直是 1,它的上半截就直接被容器裁掉——
       // 她看到的「工具条会渐隐、发消息不会」就是这么来的。按顶算,长短一视同仁。
       var dTop = b.top - r.top, dBot = r.bottom - b.top;
-      if (dTop < TOP) k = Math.max(0, Math.pow(Math.max(0, dTop / TOP), 1.6)); // 淡得比糊快:到顶上就真没了,不留一层白雾
+      if (dTop < TOP) k = Math.max(0, dTop / TOP); // 线性:上去多少淡多少,像歌词滚到边上那样匀
       if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
       // 保险:只要这一条还有身子在视野里,就绝不许淡成全透明。
       // 界面难看是一回事,把她说过的话弄没了是另一回事。
