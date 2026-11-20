@@ -2689,7 +2689,7 @@ function startKeepalive() {
     // 注意:别再拿 visualViewport.offsetTop 去裁这里的坐标。
     // 键盘弹出时 body 已经被 fit() 挪进可视区,getBoundingClientRect 给的就是对的;
     // 再减一次 offsetTop 会把整片消息算成"在渐隐带外",k 全成 0,消息就整屏不见了。
-    var r0 = box.getBoundingClientRect(), TOP = 92, BOT = 56;
+    var r0 = box.getBoundingClientRect(), TOP = 74, BOT = 48;
     var r = { top: r0.top, bottom: r0.bottom };
     // 保险:万一这块算出来高度不正常(键盘动画中途、页面被顶走),这一拍什么都不做,
     // 宁可边上硬切一下,也不许把消息全淡成看不见
@@ -2699,7 +2699,10 @@ function startKeepalive() {
     }
     for (var j = 0; j < rows.length; j++) {
       var el = rows[j], b = el.getBoundingClientRect(), k = 1;
-      var dTop = b.bottom - r.top, dBot = r.bottom - b.top;
+      // 上沿按「元素自己的顶」算,不是按底。按底算的话,矮的那种(工具条、一行短句)一碰边就淡,
+      // 可一条高气泡的底还远在下面,k 一直是 1,它的上半截就直接被容器裁掉——
+      // 她看到的「工具条会渐隐、发消息不会」就是这么来的。按顶算,长短一视同仁。
+      var dTop = b.top - r.top, dBot = r.bottom - b.bottom;
       if (dTop < TOP) k = Math.max(0, dTop / TOP);
       if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
       if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
