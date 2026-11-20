@@ -2704,13 +2704,15 @@ function startKeepalive() {
       // 可一条高气泡的底还远在下面,k 一直是 1,它的上半截就直接被容器裁掉——
       // 她看到的「工具条会渐隐、发消息不会」就是这么来的。按顶算,长短一视同仁。
       var dTop = b.top - r.top, dBot = r.bottom - b.top;
-      if (dTop < TOP) k = Math.max(0, dTop / TOP);
+      if (dTop < TOP) k = Math.max(0, Math.pow(Math.max(0, dTop / TOP), 1.6)); // 淡得比糊快:到顶上就真没了,不留一层白雾
       if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
       // 保险:只要这一条还有身子在视野里,就绝不许淡成全透明。
       // 界面难看是一回事,把她说过的话弄没了是另一回事。
-      if (k < .08 && b.bottom > r.top + 10 && b.top < r.bottom - 10) k = .08;
+      // 只有还露着大半个身子的才保底;快滚没的那条允许真透到零,不然顶上挂着一层糊白
+      var vis = Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top);
+      if (k < .08 && vis > (b.height || 1) * .45) k = .08;
       if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
-      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 3.2).toFixed(1) + 'px)'; dim++; }
+      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 2.2).toFixed(1) + 'px)'; dim++; }
     }
     // 最后自检:正常只有边上一两条该淡。要是一多半都被我算淡了,那一定是我算错了,
     // 这一拍整屏还原。宁可边上硬切,也绝不许她打开来是一片空白。
