@@ -495,7 +495,10 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 @keyframes vw{0%,100%{transform:scaleY(.45)}50%{transform:scaleY(1)}}
 .vb-dur{font-size:11px;color:var(--text-muted);}
 .vb-text-btn{font-size:10px;color:var(--text-muted);opacity:.6;cursor:pointer;padding:2px 5px;border:1px solid var(--border);border-radius:8px;align-self:flex-start;}
-.vb-transcript{font-size:12px;color:var(--text-muted);line-height:1.7;padding:2px 6px;white-space:pre-wrap;}
+/* 语音点开看的文字和翻译:原来是裸字贴在背景上,背景一花就看不清。给它垫一块底、一层影,四个主题都加 */
+.vb-transcript{font-size:12px;color:var(--text);line-height:1.7;padding:8px 12px;margin-top:3px;white-space:pre-wrap;
+  background:var(--bubble-ai);border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 3px 12px var(--shadow);max-width:100%;}
 .rec-hint{display:none;position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;z-index:500;}
 .rec-hint.show{display:block;}
 .theme-menu,.avatar-menu{display:none;position:absolute;z-index:100;background:var(--bg2);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:14px;padding:8px;box-shadow:0 8px 30px var(--shadow);flex-direction:column;gap:5px;}
@@ -1110,3 +1113,9 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),inset 0 -1px 1.5px rgba(255,255,255,.55),
              0 4px 14px rgba(104,124,152,.14);}
 .theme-snow .tool-indicator{padding:4px 12px;opacity:1;margin-bottom:4px;}
+/* 雪主题下这块底也换成同一块玻璃,别在一屋子玻璃里只有它是块白板 */
+.theme-snow .vb-transcript{
+  background:linear-gradient(155deg,rgba(255,255,255,.72),rgba(255,255,255,.42) 48%,rgba(255,255,255,.58));
+  -webkit-backdrop-filter:blur(13px) saturate(1.75);backdrop-filter:blur(13px) saturate(1.75);
+  border:1px solid rgba(255,255,255,.78);color:#2f3540;
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.18);}
