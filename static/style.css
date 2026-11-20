@@ -1226,4 +1226,6 @@ body.kb-up .theme-snow .inputbar,body.theme-snow.kb-up .inputbar{padding-bottom:
 body.kb-up .tabbar{padding-bottom:0;}
 /* 底下那条展开的时候,要跟输入框粘着,中间不许有空。
    那条空是输入框自己的底部留白(给横杠让位的那一截)——底下那条一出来它就盖住了,不用再让 */
-.nav-open .theme-snow .inputbar{padding-bottom:0;}
+.nav-open .theme-snow .inputbar{padding-bottom:6px;}
+/* 键盘上来的时候,底下那条自己也不留边了:它就压在键盘上沿,中间不许再悬一块空 */
+body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:0;}
