@@ -2697,6 +2697,7 @@ function startKeepalive() {
       for (var q = 0; q < rows.length; q++) { rows[q].style.opacity = ''; rows[q].style.filter = ''; }
       return;
     }
+    var dim = 0;
     for (var j = 0; j < rows.length; j++) {
       var el = rows[j], b = el.getBoundingClientRect(), k = 1;
       // 上沿按「元素自己的顶」算,不是按底。按底算的话,矮的那种(工具条、一行短句)一碰边就淡,
@@ -2709,7 +2710,12 @@ function startKeepalive() {
       // 界面难看是一回事,把她说过的话弄没了是另一回事。
       if (k < .08 && b.bottom > r.top + 10 && b.top < r.bottom - 10) k = .08;
       if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
-      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 3.2).toFixed(1) + 'px)'; }
+      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 3.2).toFixed(1) + 'px)'; dim++; }
+    }
+    // 最后自检:正常只有边上一两条该淡。要是一多半都被我算淡了,那一定是我算错了,
+    // 这一拍整屏还原。宁可边上硬切,也绝不许她打开来是一片空白。
+    if (rows.length > 2 && dim > rows.length * .4) {
+      for (var z = 0; z < rows.length; z++) { rows[z].style.opacity = ''; rows[z].style.filter = ''; }
     }
   }
   function kick() { if (!pend) { pend = true; requestAnimationFrame(run); } }
