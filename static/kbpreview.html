@@ -22,7 +22,7 @@
   .fake-kb .k{background:#fff;border-radius:5px;width:9%;height:40px;box-shadow:0 1px 0 rgba(0,0,0,.25);}
   /* 四个可调的数 */
   .inputbar{padding-bottom:var(--d-inpad)!important;}
-  .theme-snow .tabbar{margin:var(--d-gap) 10px var(--d-below)!important;}
+  .theme-snow .tabbar{margin:var(--d-gap) 10px var(--d-below)!important;padding-bottom:0!important;}
   .tab{padding:var(--d-tabpad) 0 var(--d-tabpad)!important;}
   .panel{position:fixed;left:0;right:0;top:0;z-index:99;background:rgba(20,24,30,.9);color:#eee;
     font:12px/1.5 -apple-system,sans-serif;padding:8px 10px calc(8px + env(safe-area-inset-top));
@@ -43,6 +43,7 @@
   <div class="ln"><b>框→底栏</b><input type="range" id="s2" min="0" max="30" value="0"><i id="v2">0</i></div>
   <div class="ln"><b>底栏内高</b><input type="range" id="s3" min="2" max="20" value="9"><i id="v3">9</i></div>
   <div class="ln"><b>底栏→键盘</b><input type="range" id="s4" min="0" max="40" value="0"><i id="v4">0</i></div>
+  <div style="color:#9aa3ae;font-size:11px">底栏自己那截安全区已经清零了，0 就是真的贴死</div>
   <div class="out" id="out"></div>
 </div>
 <button class="tg" id="tg">收起</button>
