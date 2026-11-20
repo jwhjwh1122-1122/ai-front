@@ -32,10 +32,16 @@ body.dopen #words{opacity:0!important}
 .pop{position:fixed;z-index:50;transform:translate(-50%,6px);opacity:0;transition:opacity .45s,transform 2.4s ease-out;pointer-events:none;font-size:17px;line-height:1.6;letter-spacing:1px;white-space:nowrap;text-align:center;font-weight:600}
 .pop.on{opacity:1;transform:translate(-50%,-34px)}.pop.off{opacity:0}
 .pop .u{color:#8a0f1c;text-shadow:0 0 3px #f7f4ee,0 0 6px #f7f4ee,0 0 12px #f2eee6}.pop .d{color:#1a1916;text-shadow:0 0 3px #f7f4ee,0 0 6px #f7f4ee,0 0 12px #f2eee6}
+.say{position:fixed;z-index:51;transform:translate(-50%,8px);opacity:0;transition:opacity .6s,transform 1.2s ease-out;pointer-events:none;max-width:72vw;text-align:center;font-size:19px;line-height:1.55;color:#141310;letter-spacing:1px;text-shadow:0 0 3px #f7f4ee,0 0 7px #f7f4ee,0 0 14px #f2eee6,0 0 22px rgba(242,238,230,.9)}
+.say.on{opacity:1;transform:translate(-50%,0)}.say.off{opacity:0}
+.say b{display:block;font-weight:normal;font-size:12px;color:#8a0f1c;letter-spacing:3px;margin-bottom:2px}
+#warm{position:absolute;left:400px;top:655px;width:420px;text-align:center;font-size:23px;line-height:1.6;color:#2a2826;opacity:0;transition:opacity 1.2s;pointer-events:none;text-shadow:0 0 3px #f7f4ee,0 0 8px #f7f4ee,0 0 14px #f2eee6}
+#warm i{font-style:normal;color:#8a0f1c;font-size:20px}
+body.dopen #warm{opacity:0!important}
 .none{text-align:center;color:#f4f0e8;text-shadow:0 0 3px #000,0 0 8px #000;margin-top:30vh;font-size:16px}
 </style></head><body>
 <div id="wrap"><div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
-<div id="words"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
+<div id="words"></div><div id="warm"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
 <div id="diary"><div class="hd"><span class="bk" id="dbk">← 回到欲望</span><span class="tt">噜噜日记</span><span class="cb x" id="dbx">原背景</span><span class="cb" id="dbg">换背景</span><input type="file" id="dfile" accept="image/*" style="display:none"></div><div id="dlist"></div></div>
 <script>
 (function(){
@@ -141,7 +147,7 @@ var FX={poke:{miss:-6,lean:-5,unsure:-4,flutter:5,lust:2,seen:-4},hold:{miss:-10
   poke2:{miss:-4,lust:6,own:3,grip:2,flutter:3},hold2:{miss:-8,lust:12,own:5,grip:4,flutter:5}};
 var inks=[], pokeN=0, pokeTm=0;
 function bump(kind,sc){if(!D||!D.dims)return;D.dims.forEach(function(d){var v=(FX[kind]||{})[d.key];if(v)d.score=Math.max(0,Math.min(100,(+d.score||0)+v*sc));});}
-function send(kind,sc,at){try{fetch('/api/desire/event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,scale:sc})}).then(function(r){return r.json();}).then(function(j){pop(j&&j.moved,at);setTimeout(refresh,400);}).catch(function(){});}catch(e){}}
+function send(kind,sc,at){try{fetch('/api/desire/event',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,scale:sc})}).then(function(r){return r.json();}).then(function(j){pop(j&&j.moved,at);if(j&&j.line)say(j.line,j.left,at,kind);if(D){D.last_touch={kind:kind,ts:Date.now()};}warm();setTimeout(refresh,400);}).catch(function(){});}catch(e){}}
 // 戳完冒一个小条：哪几维动了、动了多少
 function pop(m,at){if(!m||!m.length)return;var el=document.createElement('div');el.className='pop';
   el.innerHTML=m.slice(0,3).map(function(x){var up=x.delta>0;return '<div class="'+(up?'u':'d')+'">'+x.name+(up?' 上升 ':' 落下 ')+Math.abs(x.delta)+'</div>';}).join('');
@@ -157,6 +163,19 @@ function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r
     if(holding){send('hold'+sfx,Math.min(3,dur/3),at);}
     else{inkAt(lastE,1);bump('poke'+sfx,0.5);pn++;clearTimeout(ptm);ptm=setTimeout(function(){send('poke'+sfx,Math.min(3,pn*0.5),at);pn=0;},900);}}
   b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);});
+
+function say(t,left,at,kind){var el=document.createElement('div');el.className='say'+(left?' left':'');
+  el.innerHTML=(left?'<b>他留给你的</b>':'')+'<span></span>';el.querySelector('span').textContent=t;
+  var X=at?at.x:innerWidth/2,Y=at?at.y:innerHeight/2;el.style.left=Math.max(110,Math.min(innerWidth-110,X))+'px';el.style.top=Math.min(innerHeight-90,Y+34)+'px';
+  document.body.appendChild(el);requestAnimationFrame(function(){el.classList.add('on');});
+  var life=left?7000:4200;setTimeout(function(){el.classList.add('off');},life);setTimeout(function(){el.remove();},life+1200);}
+var WN={poke:'碰了我一下',hold:'按着我不放',poke2:'戳了红的那只',hold2:'按着红的那只不放'};
+function warm(){var w=document.getElementById('warm');if(!w)return;var lt=D&&D.last_touch;if(!lt){w.style.opacity=0;return;}
+  var age=(Date.now()-lt.ts)/60000;if(age>30){w.style.opacity=0;return;}
+  var d=new Date(lt.ts),hm=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+  w.innerHTML='你在 '+hm+' '+(WN[lt.kind]||'碰了我')+'。<br><i>'+(age<5?'还热着。':age<15?'余温还没退。':'快凉了，再来一下？')+'</i>';
+  w.style.opacity=String(Math.max(.25,1-age/34));}
+setInterval(warm,30000);
 function drawInks(){for(var i=inks.length-1;i>=0;i--){var k=inks[i];k.t+=1/60;var p=k.t/1.6;if(p>=1){inks.splice(i,1);continue;}
   var r=(14+90*Math.pow(p,.6))*k.big,a=(1-p)*.5;var g=ctx.createRadialGradient(k.x,k.y,r*.2,k.x,k.y,r);g.addColorStop(0,'rgba(110,11,26,'+a+')');g.addColorStop(.7,'rgba(100,8,22,'+a*.35+')');g.addColorStop(1,'rgba(100,8,22,0)');
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(k.x,k.y,r,0,7);ctx.fill();}}
@@ -196,9 +215,9 @@ document.getElementById('dfile').onchange=function(){var f=this.files&&this.file
   img.src=url;this.value='';};
 document.getElementById('rose').onclick=openDiary;document.getElementById('stem').onclick=openDiary;
 document.getElementById('dbk').onclick=function(){dia.classList.remove('open');document.body.classList.remove('dopen');try{parent.postMessage({yw:'diary',open:0},'*');}catch(e){}};
-function load(){if(window.YW_DATA){D=window.YW_DATA;fillWords();return;}
-  fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;fillWords();}).catch(function(){});}
-function refresh(){if(window.YW_DATA)return;fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;}).catch(function(){});}
+function load(){if(window.YW_DATA){D=window.YW_DATA;fillWords();warm();return;}
+  fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;fillWords();warm();}).catch(function(){});}
+function refresh(){if(window.YW_DATA)return;fetch('/api/desire/state',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){D=j;warm();}).catch(function(){});}
 load();setInterval(refresh,30000);
 })();
 </script></body></html>
