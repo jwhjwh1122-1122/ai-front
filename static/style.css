@@ -1099,3 +1099,14 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   border:1px solid rgba(255,255,255,.72);border-radius:20px;
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),inset 0 -1px 1.5px rgba(255,255,255,.55),
              0 4px 16px rgba(104,124,152,.16);}
+/* 她 11/20 16:19 说的三样:顶栏那一条完全透明、气泡头像不贴边、头像方的圆角、思考和工具条也玻璃 */
+.theme-snow .topbar{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;}
+.theme-snow .messages{padding:16px 22px;}
+.theme-snow .msg-avatar,.theme-snow .msg-avatar img,.theme-snow .avatar,.theme-snow .avatar img{border-radius:12px;}
+.theme-snow .thinking-wrap,.theme-snow .tool-result-block,.theme-snow .tool-indicator{
+  background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
+  -webkit-backdrop-filter:blur(13px) saturate(1.75);backdrop-filter:blur(13px) saturate(1.75);
+  border:1px solid rgba(255,255,255,.72);border-radius:14px;color:#5d6672;
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),inset 0 -1px 1.5px rgba(255,255,255,.55),
+             0 4px 14px rgba(104,124,152,.14);}
+.theme-snow .tool-indicator{padding:4px 12px;opacity:1;margin-bottom:4px;}
