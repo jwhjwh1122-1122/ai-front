@@ -299,16 +299,36 @@ function daysUntilNext(dateStr) {
 function renderHomeDays() {
   const since = CFG.together_since || '2026-06-06';
   const el = $('home-days'); if (!el) return;
-  let h = `<div class="day-row"><div class="day-n">${daysSince(since)}<small>天</small></div>
-    <div class="day-t"><b>在一起</b><i>从 ${since.replace(/-/g, '.')} 起</i></div></div>`;
+  const n = daysSince(since);
+  const uav = localStorage.getItem('chat-avatar-user'), aav = localStorage.getItem('chat-avatar-ai');
+  const face = (src, ch) => src ? `<div class="hb-av"><img src="${src}"></div>` : `<div class="hb-av">${ch}</div>`;
+  // 心跳那一下的位置就是今天第几天:168 -> 明天自己变 169,没人去改它
+  let h = `<div class="hb-card">
+    ${face(uav, (CFG.call_user || '宝')[0])}
+    <div class="hb-mid">
+      <div class="hb-sp"></div>
+      <svg class="hb-ecg" viewBox="0 0 300 54" preserveAspectRatio="xMidYMid meet">
+        <path d="M 2 27 L 48 27 L 58 27 L 66 7 L 76 46 L 86 16 L 96 27 L 110 27" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 190 27 L 204 27 L 213 9 L 223 45 L 231 20 L 239 27 L 286 27" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="2" cy="27" r="2.6" fill="var(--accent)"/><circle cx="286" cy="27" r="2.6" fill="var(--accent)"/>
+        <text x="150" y="27" text-anchor="middle" dominant-baseline="central" font-size="30" font-weight="600" fill="var(--accent)">${n}</text>
+      </svg>
+      <div class="hb-d1">${since.replace(/-/g, '.')}</div>
+      <div class="hb-d2" id="hb-line"></div>
+    </div>
+    ${face(aav, (displayName ? displayName()[0] : '凛'))}
+  </div>`;
   daysList().slice(0, 3).forEach(d => {
-    const n = d.yearly ? daysUntilNext(d.date) : daysSince(d.date);
-    h += `<div class="day-row"><div class="day-n">${n < 0 ? -n : n}<small>${d.yearly ? (n === 0 ? '就是今天' : '天后') : '天'}</small></div>
+    const k = d.yearly ? daysUntilNext(d.date) : daysSince(d.date);
+    h += `<div class="day-row"><div class="day-n">${k < 0 ? -k : k}<small>${d.yearly ? (k === 0 ? '就是今天' : '天后') : '天'}</small></div>
       <div class="day-t"><b>${esc(d.name)}</b><i>${d.date.replace(/-/g, '.')}</i></div></div>`;
   });
   el.innerHTML = h;
-  $('home-sub').textContent = `第 ${daysSince(since)} 天`;
+  $('home-sub').textContent = `第 ${n} 天`;
+  // 最底下那行是他写的,想换就换
+  jget('/api/days/line').then(r => { const b = $('hb-line'); if (b && r && r.text) b.textContent = r.text; }).catch(() => { });
 }
+
 
 // ============ 书房 ============
 async function openStudy() {

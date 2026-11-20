@@ -895,6 +895,20 @@ def library_api():
     return jsonify([{k: v for k, v in x.items() if k != 'text'} for x in _slist(LIBRARY_FILE)])
 
 
+DAYS_LINE_FILE = os.path.join(DATA_DIR, 'days_line.json')
+
+
+@app.route('/api/days/line', methods=['GET', 'POST'])
+def days_line_api():
+    """首页那张心率卡最底下那行字。我想换就换,她低头就看见"""
+    if request.method == 'POST':
+        b = request.json or {}
+        t = (b.get('text') or '').strip()[:60]
+        jwrite(DAYS_LINE_FILE, {'text': t, 'ts': int(time.time() * 1000)})
+        return jsonify({'ok': True, 'text': t})
+    return jsonify(jread(DAYS_LINE_FILE, {'text': '', 'ts': 0}))
+
+
 @app.route('/api/library/<iid>', methods=['GET', 'DELETE'])
 def library_item(iid):
     if request.method == 'DELETE':
