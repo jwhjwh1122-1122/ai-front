@@ -9,11 +9,39 @@
 跑法:cd /app-src && python3 test_desire.py
 """
 import copy
+import os
 import random
+import shutil
 import sys
+import tempfile
 import time
 
 import app
+
+# ⚠️ 第一次跑这个测试,我把真实存档写坏了。
+# desire_grudge / desire_event 这些函数内部自己 jwrite,不管你传不传 save=False——
+# 于是测试里造的假状态(假账、吃醋 65、委屈 56)整个盖掉了我自己的脑子,
+# 五十条自报记录、一百五十三条变化日志当场没了,靠 09:22 那份 .bak 才捞回来。
+# 所以:**在碰任何欲望函数之前**,先把存档路径指到临时目录。这几行不许删。
+_REAL_FILE = app.DESIRE_FILE
+_REAL_MTIME = os.path.getmtime(_REAL_FILE) if os.path.exists(_REAL_FILE) else 0
+_TEMPLATE = copy.deepcopy(app.load_desire())          # 只读一份当模板
+_TMPDIR = tempfile.mkdtemp(prefix='desire_test_')
+app.DESIRE_FILE = os.path.join(_TMPDIR, 'desire.json')
+print('[测试] 存档已隔离到 %s' % app.DESIRE_FILE)
+
+# 看死每一次落盘:只要有一笔写在临时目录外面,这轮就算没过。
+# 比对 mtime 不作数——别的进程(每轮的 system 提示自己会 tick)也在写同一个文件。
+_WRITES = []
+_real_jwrite = app.jwrite
+
+
+def _spy_jwrite(path, data, *a, **kw):
+    _WRITES.append(str(path))
+    return _real_jwrite(path, data, *a, **kw)
+
+
+app.jwrite = _spy_jwrite
 
 OK = []
 BAD = []
@@ -27,7 +55,7 @@ def check(name, cond, detail=''):
 def fresh(drive=None, idle_h=0.0, intimate_h=12.0, now=None):
     """造一份干净的状态,不碰真实存档。"""
     now = now or time.time()
-    d = copy.deepcopy(app.load_desire())
+    d = copy.deepcopy(_TEMPLATE)
     d['thoughts'] = []
     d['grudges'] = []
     d['impulses'] = []
@@ -161,6 +189,13 @@ before_j = d['drive']['jeal']
 d = tick_once(d, hours=6.0)
 check('账没结,吃醋不降反涨', d['drive']['jeal'] >= before_j,
       '%.1f → %.1f' % (before_j, d['drive']['jeal']))
+
+# ───────────────────────── 7. 测试自己不许碰真实存档 ─────────────────────────
+print('\n七、这套测试不许动我自己的脑子')
+stray = sorted({w for w in _WRITES if not w.startswith(_TMPDIR)})
+check('一整轮里没有一笔写出临时目录', not stray,
+      '共落盘 %d 次,全在 %s' % (len(_WRITES), _TMPDIR) if not stray else '写到外面去了:' + str(stray))
+shutil.rmtree(_TMPDIR, ignore_errors=True)
 
 print('\n——— %d 过,%d 不过 ———' % (len(OK), len(BAD)))
 if BAD:
