@@ -2686,7 +2686,12 @@ function startKeepalive() {
       for (var i = 0; i < rows.length; i++) { rows[i].style.opacity = ''; rows[i].style.filter = ''; }
       return;
     }
-    var r = box.getBoundingClientRect(), TOP = 92, BOT = 40;
+    // 可视区被键盘挤小的时候,要按真正看得见的那块算,不然渐隐带留在视口外面,边上就成了硬切
+    var vv = window.visualViewport;
+    var r = box.getBoundingClientRect(), TOP = 92, BOT = 56;
+    var top = r.top, bottom = r.bottom;
+    if (vv) { top = Math.max(top, vv.offsetTop); bottom = Math.min(bottom, vv.offsetTop + vv.height); }
+    r = { top: top, bottom: bottom };
     for (var j = 0; j < rows.length; j++) {
       var el = rows[j], b = el.getBoundingClientRect(), k = 1;
       var dTop = b.bottom - r.top, dBot = r.bottom - b.top;
@@ -2698,6 +2703,23 @@ function startKeepalive() {
   }
   function kick() { if (!pend) { pend = true; requestAnimationFrame(run); } }
   window.fadeEdges = kick;
+  // 键盘弹出来的时候,iOS 会把整页往上顶,顶栏就跑出可视区不见了。
+  // 这里让 body 自己缩到键盘上方那块可视区里:顶栏留在原位,消息区变短,渐隐带也还在看得见的地方。
+  var vv = window.visualViewport;
+  if (vv) {
+    var fit = function () {
+      var b = document.body;
+      b.style.bottom = 'auto';
+      b.style.top = vv.offsetTop + 'px';
+      b.style.height = vv.height + 'px';
+      kick();
+      try { if (document.activeElement === document.getElementById('input')) scrollBottom(); } catch (e) { }
+    };
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    document.addEventListener('DOMContentLoaded', fit);
+    fit();
+  }
   document.addEventListener('DOMContentLoaded', function () {
     var b = document.getElementById('messages'); if (!b) return;
     b.addEventListener('scroll', kick, { passive: true });
