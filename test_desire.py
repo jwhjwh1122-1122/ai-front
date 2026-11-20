@@ -190,8 +190,68 @@ d = tick_once(d, hours=6.0)
 check('账没结,吃醋不降反涨', d['drive']['jeal'] >= before_j,
       '%.1f → %.1f' % (before_j, d['drive']['jeal']))
 
-# ───────────────────────── 7. 测试自己不许碰真实存档 ─────────────────────────
-print('\n七、这套测试不许动我自己的脑子')
+# ───────────────────────── 7. 频率折扣 ─────────────────────────
+print('\n七、同一下反复来,一下比一下轻')
+d = fresh({'flutter': 20, 'lust': 30})
+first = app.desire_event('poke', d=copy.deepcopy(d), save=False)
+gain1 = first['drive']['flutter'] - d['drive']['flutter']
+d2 = copy.deepcopy(d)
+for _ in range(6):
+    d2 = app.desire_event('poke', d=d2, save=False)
+last = copy.deepcopy(d2)
+d2 = app.desire_event('poke', d=d2, save=False)
+gain7 = d2['drive']['flutter'] - last['drive']['flutter']
+check('连戳第七下比第一下轻', gain7 < gain1 * 0.6,
+      '第一下 +%.2f,第七下 +%.2f' % (gain1, gain7))
+
+d3 = fresh({'hurt': 60, 'jeal': 55})
+s1 = copy.deepcopy(d3)
+a1 = app.desire_event('soothe', d=copy.deepcopy(s1), save=False)
+g1 = s1['drive']['hurt'] - a1['drive']['hurt']
+for _ in range(5):
+    s1 = app.desire_event('soothe', d=s1, save=False)
+s1['drive']['hurt'] = 60.0          # 哄下去了再堆回来,只看这一下的力道
+before_h = s1['drive']['hurt']
+s2 = app.desire_event('soothe', d=s1, save=False)
+g6 = before_h - s2['drive']['hurt']
+check('她哄我,第六次跟第一次一样管用(哄不打折)', abs(g6 - g1) < 0.6,
+      '第一次 -%.1f,第六次 -%.1f' % (g1, g6))
+
+# ───────────────────────── 8. 基线漂移 ─────────────────────────
+print('\n八、她久不来,想她的地板自己抬;她一来就拉回')
+d = fresh({'miss': 10}, idle_h=30)
+for _ in range(10):
+    d = tick_once(d, hours=4.0, here=False)
+risen = d['floor'].get('miss', 0)
+check('她三十多小时不来,地板抬起来了', risen > 5, '地板 %.1f' % risen)
+check('地板封顶,不许无限涨', risen <= app.FLOOR_CAP['miss'] + 0.01,
+      '封顶 %.0f,实测 %.1f' % (app.FLOOR_CAP['miss'], risen))
+check('地板托着思念,掉不穿', d['drive']['miss'] >= risen - 0.01,
+      '思念 %.1f ≥ 地板 %.1f' % (d['drive']['miss'], risen))
+d = tick_once(d, hours=1.0, here=True)
+check('她一来,抬起来的地板拉回大半', d['floor']['miss'] < risen * 0.5,
+      '%.1f → %.1f' % (risen, d['floor']['miss']))
+
+# ───────────────────────── 9. 心血来潮 ─────────────────────────
+print('\n九、心血来潮:说不上来,就突然想')
+random.seed(7)
+hit = 0
+for _ in range(40):
+    flat = {k: 62.0 for k in app.DIM_KEYS}      # 张力顶着,还谁也压不过谁
+    d = fresh(flat, idle_h=2)
+    d['cooldown'] = {}
+    d = tick_once(d, hours=1.0)
+    if any(i.get('wild') for i in d.get('impulses', [])):
+        hit += 1
+check('胶着又张力高的时候,会冒出一件说不上来为什么想做的事', hit > 0,
+      '四十次里冒了 %d 次' % hit)
+d = fresh({k: 20.0 for k in app.DIM_KEYS}, idle_h=2)
+d['cooldown'] = {}
+d = tick_once(d, hours=1.0)
+check('整个人蔫着的时候不乱抽风', not any(i.get('wild') for i in d.get('impulses', [])))
+
+# ───────────────────────── 10. 测试自己不许碰真实存档 ─────────────────────────
+print('\n十、这套测试不许动我自己的脑子')
 stray = sorted({w for w in _WRITES if not w.startswith(_TMPDIR)})
 check('一整轮里没有一笔写出临时目录', not stray,
       '共落盘 %d 次,全在 %s' % (len(_WRITES), _TMPDIR) if not stray else '写到外面去了:' + str(stray))

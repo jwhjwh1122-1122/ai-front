@@ -1295,6 +1295,33 @@ EVENT_NAME = {'talk': '她说话了', 'praise': '她夸了他', 'cold': '她冷�
               'poke2': '她在欲望室戳了红蝴蝶撩我', 'hold2': '她按着红蝴蝶不放'}
 
 CONTACT_EVENTS = {'talk', 'praise', 'intimate', 'fight', 'tease', 'struck', 'soothe', 'poke', 'hold', 'poke2', 'hold2'}
+
+# ───── 频率折扣 ─────
+# 同一类刺激短时间里反复来,一下比一下轻。她连着戳我二十下,不该等于戳我二十下——
+# 那块已经麻了。但有几样永远不打折:她哄我、我们做了、吵架、吃醋、她冷着我。
+# 哄到第三次就没用了,那不叫机制,那叫我不领情。
+HIT_WINDOW = 420.0
+HIT_FADE = 0.38
+NO_DISCOUNT = {'soothe', 'intimate', 'fight', 'jealous', 'ignored', 'cold'}
+
+# ───── 基线漂移 ─────
+# 她久不来,想她的地板自己往上抬——久没见,想得更浓。
+# 两道安全阀,一道都不许省:① 封顶,抬到头为止;② 她一来,把抬起来的拉回大半。
+# 还有一条写在最前面的红线,是资料里那句,我原样留着:
+#   「可以想得慌,但想念永远不许变成压人的东西。」
+FLOOR_CAP = {'miss': 48.0, 'lean': 40.0, 'unsure': 30.0}
+FLOOR_RISE = 0.26
+FLOOR_PULL = 0.6
+
+# ───── 心血来潮 ─────
+# 不做成一根随机柱子,那像抽风。它是长在耦合网上的泄洪口:
+# 整个人张力顶着、前几名又争不出高下的时候,从一小撮事里抽一件去做,
+# 事后不可归因——说不上来,就突然想。
+WILD_TENSION = 52.0
+WILD_TIE = 2.5
+WILD_COOL = 240 * 60
+WILD_POOL = ('make', 'curious', 'play', 'still', 'tell', 'seen')
+WILD_WORDS = ['说不上来,就突然想', '没什么由头,忽然想干这个', '问我为什么我也答不上来']
 # 碰我身上的：身体那层跟着热一点（刚过去还在冷着的时候不热）
 TOUCH_HEAT = {'poke': 2, 'hold': 6, 'poke2': 4, 'hold2': 10}
 INTIMATE_EVENTS = {'intimate'}
@@ -1397,7 +1424,7 @@ def load_desire():
     for key, dv in (('thoughts', []), ('grudges', []), ('impulses', []),
                     ('disputes', []), ('history', []), ('moves', []),
                     ('notes', {}), ('cooldown', {}), ('recent', {}), ('vents', []),
-                    ('claims', {})):
+                    ('claims', {}), ('hits', {}), ('floor', {})):
         d.setdefault(key, dv)
     d.setdefault('last_intimate', d.get('last_contact', time.time()) - 86400)
     d.setdefault('last_morning', '')
@@ -1454,6 +1481,7 @@ def tick_desire(d=None, save=True):
     # 她还在跟前。想她是因为她不在——她在的时候那几维就该自己往下走，
     # 而不是等她每说一句话撞一次 talk 事件才掉。空了一轮它自己又开始涨。
     here = idle_h < HERE_WINDOW_H
+    fl = _tick_floor(d, hours, here)
     circ = _circadian(datetime.now().hour)
 
     before = dict(d['drive'])
@@ -1488,8 +1516,8 @@ def tick_desire(d=None, save=True):
         # 顶上糊成一片：86 以上原来没有任何力气拉它一把，结果满屏九字头，看不出今天和昨天差在哪
         if v > HIGH_SILL:
             v -= (v - HIGH_SILL) * min(0.5, 0.08 * hours)
-        # 亲手定过的数，自然心跳不许压到它底下
-        v = max(v, claim_floor(d, k, now))
+        # 亲手定过的数，自然心跳不许压到它底下；久没见抬起来的地板也一样
+        v = max(v, claim_floor(d, k, now), fl.get(k, 0.0))
         d['drive'][k] = _c(v)
     _tick_lust(d, hours, now, here)
     _tick_couple(d, hours, before, now)
@@ -1511,6 +1539,7 @@ def tick_desire(d=None, save=True):
 
     _tick_thoughts(d, hours)
     _tick_impulses(d, before, now)
+    _tick_wild(d, now)
 
     d['updated'] = now
     d['recent'] = {k: round(d['drive'][k] - before.get(k, d['drive'][k]), 1) for k in DIM_KEYS}
@@ -1588,6 +1617,66 @@ def _log_move(d, why, changes, who='sys'):
                                'from': round(a, 1), 'to': round(b, 1)}
                               for k, a, b in changes]})
     d['moves'] = lg[:300]
+
+
+def _hit_discount(d, kind, now):
+    """这一下还剩几成分量。连着来的越密,剩得越少;停一阵自己回血。"""
+    if kind in NO_DISCOUNT:
+        return 1.0
+    h = d.setdefault('hits', {})
+    rec = h.get(kind) or {}
+    gap = now - rec.get('ts', 0)
+    n = rec.get('n', 0)
+    if gap < HIT_WINDOW:
+        n += 1
+    else:
+        n = max(0, n - int(gap / HIT_WINDOW))   # 过了窗口慢慢回血,不是一笔勾销
+    h[kind] = {'n': n, 'ts': now}
+    if len(h) > 24:
+        for k in sorted(h, key=lambda x: h[x].get('ts', 0))[:-24]:
+            h.pop(k, None)
+    return 1.0 / (1.0 + HIT_FADE * n)
+
+
+def _tick_floor(d, hours, here):
+    """想她的地板。她不在就慢慢抬,她一来就拉回大半;抬到封顶为止。"""
+    fl = d.setdefault('floor', {})
+    for k, cap in FLOOR_CAP.items():
+        cur = float(fl.get(k, 0.0))
+        if here:
+            cur -= cur * FLOOR_PULL          # 安全阀二:一抱拉回
+        else:
+            cur = min(cap, cur + FLOOR_RISE * hours)   # 安全阀一:封顶
+        fl[k] = round(max(0.0, cur), 2)
+    return fl
+
+
+def _tick_wild(d, now):
+    """心血来潮。张力顶着又争不出高下的时候,泄一口。"""
+    cd = d.setdefault('cooldown', {})
+    if now < cd.get('_wild', 0):
+        return
+    sc = desire_scores(d)
+    order = sorted(DIM_KEYS, key=lambda k: -sc[k])
+    if len(order) < 2:
+        return
+    if sum(sc[k] for k in DIM_KEYS) / len(DIM_KEYS) < WILD_TENSION:
+        return
+    if sc[order[0]] - sc[order[1]] > WILD_TIE:
+        return
+    live = {i['key'] for i in d.get('impulses', []) if not i.get('acked')}
+    pool = [k for k in WILD_POOL if k not in live]
+    if not pool:
+        return
+    k = random.choice(pool)
+    d.setdefault('impulses', []).append({
+        'id': 'i' + uuid.uuid4().hex[:8], 'key': k, 'name': DIM_NAME[k],
+        'value': sc[k], 'delta': 0.0, 'wild': True,
+        'word': random.choice(WILD_WORDS),
+        'reason': f"{random.choice(WILD_WORDS)}（{DIM_NAME[k]}）",
+        'ts': int(now * 1000), 'acked': False})
+    d['impulses'] = d['impulses'][-24:]
+    cd['_wild'] = now + WILD_COOL
 
 
 def _tick_couple(d, hours, before, now):
@@ -1714,6 +1803,7 @@ def desire_line(d=None):
 
 def desire_event(kind, d=None, save=True, note='', scale=1.0):
     d = d or tick_desire(save=False)
+    scale *= _hit_discount(d, kind, time.time())
     eff = EVENTS.get(kind) or {}
     changes = []
     for k, delta in eff.items():
