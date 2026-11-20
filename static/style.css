@@ -1199,10 +1199,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .theme-snow .cc-tool-head{color:#5d6672;}
 /* 语音点开的文字和翻译:做成跟语音条一样的胶囊,一眼分得出它属于哪条语音 */
 .theme-snow .vb-transcript{border-radius:20px;padding:9px 17px;}
-/* 家那一页上下也不切一刀,跟聊天一样渐隐 */
-.theme-snow .home{
-  -webkit-mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.18) 2.5%,rgba(0,0,0,.62) 6%,#000 11%,#000 93%,rgba(0,0,0,.5) 97%,transparent 100%);
-  mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.18) 2.5%,rgba(0,0,0,.62) 6%,#000 11%,#000 93%,rgba(0,0,0,.5) 97%,transparent 100%);}
+/* 家那一页上下也不切一刀,跟聊天一样渐隐。
+   原来用的是容器 mask:它会把顶上那一截常驻地淡掉——第一屏的「进入忘川」永远待在
+   渐隐带里,看着就像顶上糊了一层白雾。改成跟聊天一条一条自己算(见 app.js homeFade):
+   没滚到边上的东西一律不碰,顶上就是纯透的背景 */
+.theme-snow .home{-webkit-mask-image:none;mask-image:none;}
+.home-head,.room-card,.drawer,.home-card{transition:opacity .12s linear;}
 .theme-snow .dl{fill:rgba(255,255,255,.32);}
 /* 右边那两个键之前被一条权重更高的规则按住了,展开也出不来。这条压过它 */
 .theme-snow .topbar-right{gap:8px;}

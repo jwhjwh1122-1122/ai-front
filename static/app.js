@@ -2708,6 +2708,46 @@ function startKeepalive() {
   }
   function kick() { if (!pend) { pend = true; requestAnimationFrame(run); } }
   window.fadeEdges = kick;
+
+  // 家那一页同样的活儿:原来用容器 mask,顶上那一截是常驻淡的,
+  // 「进入忘川」永远待在渐隐带里,看着就像顶上糊了一层白。改成一条一条算,
+  // 只有真滚到上下边的那几块才淡才糊,没滚到的一律不碰,顶上就是纯背景。
+  var hbox, hpend = false;
+  function runHome() {
+    hpend = false;
+    hbox = hbox || document.querySelector('.home');
+    if (!hbox) return;
+    var items = hbox.querySelectorAll('.home-head,.room-card,.drawer,.home-card');
+    var snow = document.body.classList.contains('theme-snow');
+    if (!snow) {
+      for (var i = 0; i < items.length; i++) { items[i].style.opacity = ''; items[i].style.filter = ''; }
+      return;
+    }
+    var r = hbox.getBoundingClientRect(), TOP = 44, BOT = 44;
+    if (!(r.bottom - r.top > 120)) {
+      for (var q = 0; q < items.length; q++) { items[q].style.opacity = ''; items[q].style.filter = ''; }
+      return;
+    }
+    for (var j = 0; j < items.length; j++) {
+      var el = items[j], b = el.getBoundingClientRect(), k = 1;
+      var dTop = b.bottom - r.top, dBot = r.bottom - b.top;
+      if (dTop < TOP) k = Math.max(0, dTop / TOP);
+      if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
+      if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
+      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 2.6).toFixed(1) + 'px)'; }
+    }
+  }
+  function hkick() { if (!hpend) { hpend = true; requestAnimationFrame(runHome); } }
+  window.homeFade = hkick;
+  function bindHome() {
+    var h = document.querySelector('.home');
+    if (h && !h._fadeBound) { h._fadeBound = 1; h.addEventListener('scroll', hkick, { passive: true }); }
+    hkick();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindHome);
+  else bindHome();
+  window.addEventListener('resize', hkick);
+  setTimeout(hkick, 300);
   // 键盘弹出来的时候,iOS 会把整页往上顶,顶栏就跑出可视区不见了。
   // 这里让 body 自己缩到键盘上方那块可视区里:顶栏留在原位,消息区变短,渐隐带也还在看得见的地方。
   var vv = window.visualViewport;
