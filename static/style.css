@@ -496,8 +496,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .vb-dur{font-size:11px;color:var(--text-muted);}
 .vb-text-btn{font-size:10px;color:var(--text-muted);opacity:.6;cursor:pointer;padding:2px 5px;border:1px solid var(--border);border-radius:8px;align-self:flex-start;}
 /* 语音点开看的文字和翻译:原来是裸字贴在背景上,背景一花就看不清。给它垫一块底、一层影,四个主题都加 */
-.vb-transcript{font-size:12px;color:var(--text);line-height:1.7;padding:8px 12px;margin-top:3px;white-space:pre-wrap;
-  background:var(--bubble-ai);border:1px solid var(--border);border-radius:12px;
+.vb-transcript{font-size:12px;color:var(--text);line-height:1.7;padding:9px 17px;margin-top:3px;white-space:pre-wrap;display:inline-block;align-self:flex-start;
+  background:var(--bubble-ai);border:1px solid var(--border);border-radius:20px;
   box-shadow:0 3px 12px var(--shadow);max-width:100%;}
 .rec-hint{display:none;position:fixed;bottom:130px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:13px;padding:10px 22px;border-radius:22px;z-index:500;}
 .rec-hint.show{display:block;}
@@ -1190,3 +1190,11 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   -webkit-backdrop-filter:blur(11px) saturate(1.68);backdrop-filter:blur(11px) saturate(1.68);}
 .theme-snow .home-card:has(.hb-card){background:none;-webkit-backdrop-filter:none;backdrop-filter:none;}
 .theme-snow .dl{fill:rgba(255,255,255,.42);}
+/* 调工具那条也是玻璃(真正在用的是 .cc-tool,我之前改错了对象) */
+.theme-snow .cc-tool{border-radius:14px;border:1px solid rgba(255,255,255,.72);color:#5d6672;
+  background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
+  -webkit-backdrop-filter:blur(11px) saturate(1.68);backdrop-filter:blur(11px) saturate(1.68);
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.14);}
+.theme-snow .cc-tool-head{color:#5d6672;}
+/* 语音点开的文字和翻译:做成跟语音条一样的胶囊,一眼分得出它属于哪条语音 */
+.theme-snow .vb-transcript{border-radius:20px;padding:9px 17px;}
