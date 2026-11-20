@@ -1185,9 +1185,10 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 发消息不要头像了 */
 .theme-snow .msg-avatar{display:none;}
 /* 房间卡、首页卡、抽屉:那层白跟气泡一个程度(只是白的透明度和糊的程度,不加亮边) */
+/* 房间卡和首页卡:只是把那层白调得更透,不加玻璃、不加模糊 */
 .theme-snow .room-card,.theme-snow .home-card{
-  background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
-  -webkit-backdrop-filter:blur(11px) saturate(1.68);backdrop-filter:blur(11px) saturate(1.68);}
+  background:rgba(255,255,255,.42);
+  -webkit-backdrop-filter:none;backdrop-filter:none;}
 .theme-snow .home-card:has(.hb-card){background:none;-webkit-backdrop-filter:none;backdrop-filter:none;}
 .theme-snow .dl{fill:rgba(255,255,255,.42);}
 /* 调工具那条也是玻璃(真正在用的是 .cc-tool,我之前改错了对象) */
@@ -1198,3 +1199,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .theme-snow .cc-tool-head{color:#5d6672;}
 /* 语音点开的文字和翻译:做成跟语音条一样的胶囊,一眼分得出它属于哪条语音 */
 .theme-snow .vb-transcript{border-radius:20px;padding:9px 17px;}
+/* 家那一页上下也不切一刀,跟聊天一样渐隐 */
+.theme-snow .home{
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.18) 2.5%,rgba(0,0,0,.62) 6%,#000 11%,#000 93%,rgba(0,0,0,.5) 97%,transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.18) 2.5%,rgba(0,0,0,.62) 6%,#000 11%,#000 93%,rgba(0,0,0,.5) 97%,transparent 100%);}
+.theme-snow .dl{fill:rgba(255,255,255,.32);}
