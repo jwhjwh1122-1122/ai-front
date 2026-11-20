@@ -48,12 +48,14 @@ body.dopen .pop{opacity:0!important}
 body.dopen #warm{opacity:0!important}
 /* 排版预览的门：开在右下角，小小一个，她要摆字的时候才看得见 */
 #plv{position:fixed;right:10px;bottom:12px;z-index:8;font-size:12px;letter-spacing:2px;color:#f2ece1;padding:7px 12px;border-radius:16px;background:rgba(30,24,20,.55);border:1px solid rgba(255,255,255,.35);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);text-shadow:0 1px 3px rgba(0,0,0,.8);cursor:pointer}
-body.dopen #plv{display:none}
+#plv2{position:fixed;right:72px;bottom:12px;z-index:8;font-size:12px;letter-spacing:2px;color:#f2ece1;padding:7px 13px;border-radius:16px;background:rgba(30,24,20,.55);border:1px solid rgba(255,255,255,.35);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);text-shadow:0 1px 3px rgba(0,0,0,.8);cursor:pointer}
+body.dopen #plv,body.dopen #plv2{display:none}
 .none{text-align:center;color:#f4f0e8;text-shadow:0 0 3px #000,0 0 8px #000;margin-top:30vh;font-size:16px}
 </style></head><body>
 <div id="wrap"><div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
 <div id="words"></div><div id="tsay"></div><div id="warm"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
 <div id="plv" onclick="location.href='/static/yuwang/preview.html?v='+Date.now()">排版</div>
+<div id="plv2" onclick="location.href='/static/yuwang/netpv.html?v='+Date.now()">网</div>
 <div id="diary"><div class="hd"><span class="bk" id="dbk">← 回到欲望</span><span class="tt">噜噜日记</span><span class="cb x" id="dbx">原背景</span><span class="cb" id="dbg">换背景</span><input type="file" id="dfile" accept="image/*" style="display:none"></div><div id="dlist"></div></div>
 <script>
 (function(){
