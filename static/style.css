@@ -1163,3 +1163,10 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .theme-snow .send-btn svg{width:17px;height:17px;}
 .theme-snow .msg-avatar{border:none;box-shadow:0 3px 10px rgba(104,124,152,.18);}
 .theme-snow .messages{padding:16px 26px;}
+/* 别的三个主题:那四个键还是待在右边、挨着电话,顺序别乱 */
+.tb-togglewrap{order:2;}
+.topbar-left{order:0;}
+.typing-title{order:1;}
+.topbar-right{order:3;}
+.theme-snow .tb-togglewrap{order:0;}
+.theme-snow .topbar-left{order:1;}
