@@ -6,12 +6,12 @@
 <title>凛</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="凛">
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=74">
+<link rel="stylesheet" href="/static/style.css?v=75">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -1423,7 +1423,7 @@ window.addEventListener('error', function (e) {
 (function(){
   var t=document.getElementById('tb-toggle'); if(!t) return;
   var wrap=t.parentNode;
-  ['btn-select','btn-search','btn-convs','btn-theme'].forEach(function(id){
+  ['btn-select','btn-search'].forEach(function(id){
     var el=document.getElementById(id); if(el) wrap.appendChild(el);
   });
   t.onclick=function(){document.documentElement.classList.toggle('nav-open');};
