@@ -1120,32 +1120,46 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   border:1px solid rgba(255,255,255,.78);color:#2f3540;
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.18);}
 
-/* ===== 雪主题:顶栏收起/展开。平时只剩返回键、她的脸、电话;底下那条也收起来 ===== */
-.tb-togglewrap{display:none;}
-.tb-toggle{display:flex;align-items:center;gap:7px;border-radius:19px;padding:7px 13px 7px 10px;cursor:pointer;color:#5d6672;
+/* ===== 雪主题:顶栏收起/展开。平时只剩返回键、她的脸、电话;那四个键藏在返回键里 ===== */
+.tb-togglewrap{display:flex;align-items:center;gap:8px;}
+.tb-toggle{display:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;cursor:pointer;color:#5d6672;
   background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
   -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
   border:1px solid rgba(255,255,255,.72);
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.16);}
-.tb-toggle svg{width:17px;height:17px;display:block;transition:transform .25s;}
-.tb-toggle .tb-days{font-family:Georgia,serif;font-size:11px;color:#fff;background:#2b2f36;border-radius:9px;padding:2px 8px;}
-.nav-open .tb-toggle svg{transform:rotate(-90deg);}
-.theme-snow .tb-togglewrap{display:flex;flex:1;}
-.theme-snow .topbar{padding:12px 14px 6px;}
+.tb-toggle svg{width:18px;height:18px;display:block;transition:transform .25s;}
+.nav-open .tb-toggle svg{transform:rotate(180deg);}
+/* 三等分:返回键在左三分之一,脸在正中,电话在右三分之一 */
+.theme-snow .topbar{padding:12px 14px 8px;align-items:center;}
+.theme-snow .tb-toggle{display:flex;}
+.theme-snow .tb-togglewrap{flex:1;justify-content:flex-start;}
 .theme-snow .topbar-left{flex:0 0 auto;gap:0;}
 .theme-snow .topbar-left > div:not(.avatar){display:none;}
 .theme-snow .topbar-right{flex:1;justify-content:flex-end;}
-.theme-snow .topbar-right > *:not(#btn-call){display:none;}
-.nav-open .theme-snow .topbar-right > *{display:flex;}
-.theme-snow .tabbar{display:none;}
-.nav-open .theme-snow .tabbar{display:flex;}
-/* 底下那条做成浮着的一块玻璃,不贴屏幕底 */
+/* 脸最大、圆的;返回键和电话一样大、都比脸小 */
+.theme-snow .avatar{width:50px;height:50px;border-radius:50%;border:none;opacity:1;
+  box-shadow:0 3px 12px rgba(104,124,152,.2);}
+.theme-snow .avatar img{border-radius:50%;}
+.theme-snow #btn-call{width:38px;height:38px;}
+.theme-snow #btn-call svg{width:17px;height:17px;}
+/* 那四个键平时藏在返回键里,按一下才从它右边长出来 */
+.theme-snow .tb-togglewrap > .theme-btn{display:none;width:34px;height:34px;}
+.nav-open .theme-snow .tb-togglewrap > .theme-btn{display:flex;}
+/* 顶上不是切一刀,是从上往下渐隐 */
+.theme-snow .topbar{border-bottom:none;
+  background:linear-gradient(180deg,rgba(248,249,251,.72),rgba(248,249,251,0));
+  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
+  -webkit-mask-image:linear-gradient(180deg,#000 58%,rgba(0,0,0,.45) 82%,transparent);
+  mask-image:linear-gradient(180deg,#000 58%,rgba(0,0,0,.45) 82%,transparent);}
+/* 底下那条收起来的时候位置留着,只是变透明:输入框不许往下掉 */
 .theme-snow .tabbar{margin:0 10px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.72);
   background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
   -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
-  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 16px rgba(104,124,152,.16);}
-/* 发送键收到跟其他几个一样大;头像外面那圈白框去掉 */
-.theme-snow .send-btn{width:36px;height:36px;}
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 16px rgba(104,124,152,.16);
+  opacity:0;pointer-events:none;transition:opacity .25s;}
+.nav-open .theme-snow .tabbar{opacity:1;pointer-events:auto;}
+/* 发送键跟那三个一排:一样大、一样的底边 */
+.theme-snow .send-btn{width:36px;height:36px;margin-bottom:3px;}
 .theme-snow .send-btn svg{width:17px;height:17px;}
-.theme-snow .msg-avatar,.theme-snow .avatar{border:none;box-shadow:0 3px 10px rgba(104,124,152,.18);}
+.theme-snow .msg-avatar{border:none;box-shadow:0 3px 10px rgba(104,124,152,.18);}
 .theme-snow .messages{padding:16px 26px;}

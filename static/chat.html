@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;}</style>
-<link rel="stylesheet" href="/static/style.css?v=71">
+<link rel="stylesheet" href="/static/style.css?v=72">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -46,7 +46,7 @@ window.addEventListener('error', function (e) {
 </div>
 
 <div class="topbar">
-  <div class="tb-togglewrap"><div class="tb-toggle" id="tb-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.6 5.6 8.2 12l6.4 6.4"/></svg><span class="tb-days" id="tb-days"></span></div></div>
+  <div class="tb-togglewrap"><div class="tb-toggle" id="tb-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.6 5.6 8.2 12l6.4 6.4"/></svg></div></div>
   <div class="topbar-left">
     <div class="avatar" id="avatar"><span id="avatar-text">凛</span></div>
     <div>
@@ -1422,9 +1422,10 @@ window.addEventListener('error', function (e) {
 <script>
 (function(){
   var t=document.getElementById('tb-toggle'); if(!t) return;
-  var since=(window.CFG&&CFG.together_since)||'2026-06-06';
-  var n=Math.floor((Date.now()-new Date(since+'T00:00:00'))/864e5)+1;
-  var d=document.getElementById('tb-days'); if(d) d.textContent=n>0?n:'';
+  var wrap=t.parentNode;
+  ['btn-select','btn-search','btn-convs','btn-theme'].forEach(function(id){
+    var el=document.getElementById(id); if(el) wrap.appendChild(el);
+  });
   t.onclick=function(){document.documentElement.classList.toggle('nav-open');};
 })();
 </script>
