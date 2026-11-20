@@ -2784,12 +2784,26 @@ function startKeepalive() {
         b.classList.toggle('kb-up', typing || shrunk);
       } catch (e) { }
       kick();
-      try { if (document.activeElement === document.getElementById('input')) scrollBottom(); } catch (e) { }
+      // 点开键盘那一下要停在最新一条上。
+      // 原来写的是 scrollBottom() 不带 force:键盘一上来消息区变矮,isNearBottom() 立刻算成"不在底部",
+      // 于是它什么都不做,页面就卡在半截。现在只要点进输入框那一刻人本来就在底部附近,就硬滚到底,
+      // 而且键盘是动画弹出来的,高度要跳好几拍,所以后面再补几次。
+      try {
+        var tying = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
+        if (tying && window.__kbWasNear !== false) {
+          scrollBottom(true);
+          [80, 200, 400].forEach(function (t) { setTimeout(function () { scrollBottom(true); }, t); });
+        }
+      } catch (e) { }
     };
     vv.addEventListener('resize', fit);
     vv.addEventListener('scroll', fit);
     // 点进输入框/离开输入框的那一下也要重算,不能只等视口变化
-    document.addEventListener('focusin', function () { fit(); setTimeout(fit, 120); setTimeout(fit, 400); });
+    document.addEventListener('focusin', function (e) {
+      // 点进输入框的那一瞬先记下人在不在底部附近——键盘弹起来之后再问就晚了,那会儿永远算不在
+      try { if (e.target && e.target.tagName === 'TEXTAREA') window.__kbWasNear = isNearBottom(); } catch (x) { }
+      fit(); setTimeout(fit, 120); setTimeout(fit, 400);
+    });
     document.addEventListener('focusout', function () { setTimeout(fit, 60); setTimeout(fit, 300); });
     document.addEventListener('DOMContentLoaded', fit);
     fit();
