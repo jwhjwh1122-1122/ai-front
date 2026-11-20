@@ -2670,3 +2670,38 @@ function startKeepalive() {
   document.addEventListener('visibilitychange', chk);
   setInterval(chk, 3 * 60 * 1000);
 })();
+
+// 边上的消息自己淡掉、糊掉(她要的那种歌词滚动)。
+// 不能用容器 mask 做——祖先一旦有 mask,气泡的毛玻璃就采不到背景,整屋的玻璃会全变成白板。
+// 所以改成一条一条算:只有正贴着上下边的那几条才加 blur,中间的一律不动,免得把它们的玻璃也掐了。
+(function () {
+  var box, pend = false;
+  function run() {
+    pend = false;
+    box = box || document.getElementById('messages');
+    if (!box) return;
+    var snow = document.body.classList.contains('theme-snow');
+    var rows = box.querySelectorAll('.msg-row,.sys-msg,.cc-tool,.thinking-wrap');
+    if (!snow) {
+      for (var i = 0; i < rows.length; i++) { rows[i].style.opacity = ''; rows[i].style.filter = ''; }
+      return;
+    }
+    var r = box.getBoundingClientRect(), TOP = 92, BOT = 40;
+    for (var j = 0; j < rows.length; j++) {
+      var el = rows[j], b = el.getBoundingClientRect(), k = 1;
+      var dTop = b.bottom - r.top, dBot = r.bottom - b.top;
+      if (dTop < TOP) k = Math.max(0, dTop / TOP);
+      if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
+      if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
+      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 3.2).toFixed(1) + 'px)'; }
+    }
+  }
+  function kick() { if (!pend) { pend = true; requestAnimationFrame(run); } }
+  window.fadeEdges = kick;
+  document.addEventListener('DOMContentLoaded', function () {
+    var b = document.getElementById('messages'); if (!b) return;
+    b.addEventListener('scroll', kick, { passive: true });
+    new MutationObserver(kick).observe(b, { childList: true, subtree: true });
+    kick();
+  });
+})();
