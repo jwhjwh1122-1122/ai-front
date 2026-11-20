@@ -2711,8 +2711,11 @@ function startKeepalive() {
       // 只有还露着大半个身子的才保底;快滚没的那条允许真透到零,不然顶上挂着一层糊白
       var vis = Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top);
       if (k < .08 && vis > (b.height || 1) * .45) k = .08;
-      if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
-      else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 2.2).toFixed(1) + 'px)'; dim++; }
+      // 只淡,不糊。blur 是我自己加的戏,而且它才是那层「模糊白」的真凶:
+      // 父元素一旦有 filter,里面气泡的 backdrop-filter 就采不到背景,玻璃当场变成一块实白板,
+      // 淡下去的时候看着就是一团白雾糊在顶上,不是化开。
+      if (k > .995) { if (el.style.opacity || el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
+      else { el.style.opacity = k.toFixed(2); el.style.filter = ''; dim++; }
     }
     // 最后自检:正常只有边上一两条该淡。要是一多半都被我算淡了,那一定是我算错了,
     // 这一拍整屏还原。宁可边上硬切,也绝不许她打开来是一片空白。
