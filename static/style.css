@@ -1008,8 +1008,8 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 朋友圈 · ins */
 .ig-room{color:var(--text);font-family:-apple-system,"PingFang SC",sans-serif}
 .ig-top{display:flex;align-items:center;padding:max(14px,env(safe-area-inset-top)) 10px 6px 16px;gap:4px}
-.ig-logo{flex:1;font-family:"Snell Roundhand","Brush Script MT","Savoye LET",cursive;font-size:31px;font-style:italic;letter-spacing:.5px;color:#f5f5f5}
-.ig-ib{background:none;border:0;color:#f5f5f5;padding:6px 7px;cursor:pointer;display:flex}
+.ig-logo{flex:1;font-family:"Snell Roundhand","Brush Script MT","Savoye LET",cursive;font-size:31px;font-style:italic;letter-spacing:.5px;color:var(--text)}
+.ig-ib{background:none;border:0;color:var(--text);padding:6px 7px;cursor:pointer;display:flex}
 .ig-stories{display:flex;gap:16px;padding:8px 16px 12px;border-bottom:1px solid var(--border)}
 .ig-st{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--text)}
 .ig-ring{padding:2.5px;border-radius:50%;background:conic-gradient(from 200deg,var(--accent),var(--text-muted),var(--accent),var(--border),var(--accent))}
