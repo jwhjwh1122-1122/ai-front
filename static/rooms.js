@@ -311,7 +311,7 @@ function renderHomeDays() {
         <path d="M 2 27 L 48 27 L 58 27 L 66 7 L 76 46 L 86 16 L 96 27 L 110 27" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M 190 27 L 204 27 L 213 9 L 223 45 L 231 20 L 239 27 L 286 27" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
         <circle cx="2" cy="27" r="2.6" fill="var(--accent)"/><circle cx="286" cy="27" r="2.6" fill="var(--accent)"/>
-        <text x="150" y="27" text-anchor="middle" dominant-baseline="central" font-size="30" font-weight="600" fill="var(--accent)">${n}</text>
+        <text x="150" y="27" text-anchor="middle" dominant-baseline="central" font-size="30" font-weight="700" fill="var(--accent)">${n}</text>
       </svg>
       <div class="hb-d1">${since.replace(/-/g, '.')}</div>
       <div class="hb-d2" id="hb-line"></div>
