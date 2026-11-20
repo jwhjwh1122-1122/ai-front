@@ -1,6 +1,25 @@
 
 // 顶上那条状态栏也要铺满:body 被 visualViewport 缩进可视区以后,屏幕最上面那截露的是 html。
 // 所以 html 跟着 body 一起穿同一张背景、同一个底色。
+// 顶栏那几个键:只有雪主题才把「多选·搜索」收进返回键里。
+// 别的主题顺序是原来的——电话、多选、搜索、☰、✦,一排等距,谁也不挪。
+// 以前这段是写死的,不管什么主题都搬,于是别的主题顶栏被雪主题带乱了。
+function syncTopbarOrder() {
+  try {
+    var t = document.getElementById('tb-toggle'); if (!t) return;
+    var wrap = t.parentNode, right = document.querySelector('.topbar-right');
+    var convs = document.getElementById('btn-convs');
+    var snow = document.body.classList.contains('theme-snow');
+    ['btn-select', 'btn-search'].forEach(function (id) {
+      var el = document.getElementById(id); if (!el) return;
+      if (snow) { if (el.parentNode !== wrap) wrap.appendChild(el); }
+      else if (el.parentNode !== right || (convs && el.compareDocumentPosition(convs) & Node.DOCUMENT_POSITION_PRECEDING)) {
+        right.insertBefore(el, convs || null);
+      }
+    });
+  } catch (e) { }
+}
+window.syncTopbarOrder = syncTopbarOrder;
 function syncRootBg() {
   try {
     var r = document.documentElement, b = document.body;
@@ -11,6 +30,7 @@ function syncRootBg() {
     var c = getComputedStyle(b).getPropertyValue('--bg').trim();
     if (c) r.style.backgroundColor = c;
   } catch (e) { }
+  syncTopbarOrder();
 }
 window.syncRootBg = syncRootBg;
 /* 凛 · 房间与交互 */

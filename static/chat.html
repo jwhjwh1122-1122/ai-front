@@ -1406,7 +1406,7 @@ window.addEventListener('error', function (e) {
 
 <script src="/static/app.js?v=109"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=126"></script>
+<script src="/static/rooms.js?v=127"></script>
 <script src="/static/wangchuan.js?v=3"></script>
 <script src="/static/silk-sprites.js?v=1"></script>
 <script src="/static/brain-silk.js?v=2"></script>
@@ -1414,10 +1414,8 @@ window.addEventListener('error', function (e) {
 <script>
 (function(){
   var t=document.getElementById('tb-toggle'); if(!t) return;
-  var wrap=t.parentNode;
-  ['btn-select','btn-search'].forEach(function(id){
-    var el=document.getElementById(id); if(el) wrap.appendChild(el);
-  });
+  // 搬不搬要看主题,雪主题才搬。别的主题那一排保持原样、等距
+  if (window.syncTopbarOrder) window.syncTopbarOrder();
   t.onclick=function(){document.documentElement.classList.toggle('nav-open');};
 })();
 </script>
