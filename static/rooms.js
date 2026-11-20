@@ -3474,12 +3474,7 @@ function srRenderList(hits, q, el, withBack) {
 function doSearch() {
   const q = $('search-input').value.trim();
   const el = $('search-result');
-  if (!q) {
-    searchDrill = null;
-    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">' +
-      (searchScope === 'all' ? '搜全部窗里说过的话' : '搜这个窗里说过的话') + '</div>';
-    return;
-  }
+  if (!q) { searchDrill = null; el.innerHTML = ''; return; }
   const low = q.toLowerCase();
   // 在某个窗里搜（她本来就在这个窗，或者从全部窗点进来的）
   if (searchScope === 'conv' || searchDrill) {
@@ -3524,9 +3519,8 @@ function openSearch(scope) {
   searchDrill = null;
   $('search-panel').classList.add('open');
   $('search-input').value = '';
-  $('search-input').placeholder = scope === 'all' ? '搜全部窗' : '搜这个窗';
-  $('search-result').innerHTML = '<div class="room-empty" style="color:var(--text-muted)">' +
-    (scope === 'all' ? '搜全部窗里说过的话' : '搜这个窗里说过的话') + '</div>';
+  $('search-input').placeholder = '';
+  $('search-result').innerHTML = '';
   setTimeout(() => $('search-input').focus(), 120);
 }
 
