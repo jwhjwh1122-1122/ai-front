@@ -98,13 +98,14 @@ function lines(){
 }
 var wbox=document.getElementById('words');
 function showWords(){
-  wbox.style.opacity=open?0:1;
+  // 网就该盖在那张旧网上，字也该一直在。拉开的时候不再躲开
+  wbox.style.opacity=1;
 }
 function fillWords(){
   var L=lines();wbox.innerHTML='';
-  if(!L.length)L=[{t:'这会儿没憋着什么。',n:''}];
+  if(!L.length)return;
   L.slice(0,2).forEach(function(x,i){var d=document.createElement('div');d.className='w';d.style.setProperty('--r',((i%2?1:-1)*(0.6+i*.4))+'deg');
-    var t=x.t.length>44?x.t.slice(0,44)+'……':x.t;d.textContent=t;if(x.n){var s=document.createElement('i');s.textContent='—— '+x.n;d.appendChild(s);}wbox.appendChild(d);
+    var t=x.t.length>44?x.t.slice(0,44)+'……':x.t;d.textContent=t;wbox.appendChild(d);
     setTimeout(function(){d.classList.add('on');},600+i*900);});
 }
 // 网
@@ -184,7 +185,6 @@ function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r
 // 不再浮在她指头底下一闪就没：落在她圈的那块空报纸上，待着，等下一次碰才换
 function say(t,left){var el=document.getElementById('tsay');if(!el)return;
   el.innerHTML='';
-  if(left){var b=document.createElement('b');b.textContent='他提前留给你的';el.appendChild(b);}
   var q=document.createElement('div');q.className='q';q.textContent=t;el.appendChild(q);
   el.classList.add('on');document.body.classList.add('tsaying');clearTimeout(el._t);
   el._t=setTimeout(function(){el.classList.remove('on');document.body.classList.remove('tsaying');},left?60000:30000);}
@@ -192,7 +192,7 @@ var WN={poke:'碰了我一下',hold:'按着我不放',poke2:'戳了红的那只'
 function warm(){var w=document.getElementById('warm');if(!w)return;var lt=D&&D.last_touch;if(!lt){w.style.opacity=0;return;}
   var age=(Date.now()-lt.ts)/60000;if(age>30){w.style.opacity=0;return;}
   var d=new Date(lt.ts),hm=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-  w.innerHTML='你在 '+hm+' '+(WN[lt.kind]||'碰了我')+'。<br><i>'+(age<5?'还热着。':age<15?'余温还没退。':'快凉了，再来一下？')+'</i>';
+  w.innerHTML='你在 '+hm+' '+(WN[lt.kind]||'碰了我')+'。<br><i>'+(age<5?'还热着。':age<15?'余温还没退。':'快凉了。')+'</i>';
   w.style.opacity=String(Math.max(.25,1-age/34));}
 setInterval(warm,30000);
 function drawInks(){for(var i=inks.length-1;i>=0;i--){var k=inks[i];k.t+=1/60;var p=k.t/1.6;if(p>=1){inks.splice(i,1);continue;}
