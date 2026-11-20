@@ -1119,3 +1119,33 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   -webkit-backdrop-filter:blur(13px) saturate(1.75);backdrop-filter:blur(13px) saturate(1.75);
   border:1px solid rgba(255,255,255,.78);color:#2f3540;
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.18);}
+
+/* ===== 雪主题:顶栏收起/展开。平时只剩返回键、她的脸、电话;底下那条也收起来 ===== */
+.tb-togglewrap{display:none;}
+.tb-toggle{display:flex;align-items:center;gap:7px;border-radius:19px;padding:7px 13px 7px 10px;cursor:pointer;color:#5d6672;
+  background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
+  -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
+  border:1px solid rgba(255,255,255,.72);
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 14px rgba(104,124,152,.16);}
+.tb-toggle svg{width:17px;height:17px;display:block;transition:transform .25s;}
+.tb-toggle .tb-days{font-family:Georgia,serif;font-size:11px;color:#fff;background:#2b2f36;border-radius:9px;padding:2px 8px;}
+.nav-open .tb-toggle svg{transform:rotate(-90deg);}
+.theme-snow .tb-togglewrap{display:flex;flex:1;}
+.theme-snow .topbar{padding:12px 14px 6px;}
+.theme-snow .topbar-left{flex:0 0 auto;gap:0;}
+.theme-snow .topbar-left > div:not(.avatar){display:none;}
+.theme-snow .topbar-right{flex:1;justify-content:flex-end;}
+.theme-snow .topbar-right > *:not(#btn-call){display:none;}
+.nav-open .theme-snow .topbar-right > *{display:flex;}
+.theme-snow .tabbar{display:none;}
+.nav-open .theme-snow .tabbar{display:flex;}
+/* 底下那条做成浮着的一块玻璃,不贴屏幕底 */
+.theme-snow .tabbar{margin:0 10px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.72);
+  background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
+  -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
+  box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 16px rgba(104,124,152,.16);}
+/* 发送键收到跟其他几个一样大;头像外面那圈白框去掉 */
+.theme-snow .send-btn{width:36px;height:36px;}
+.theme-snow .send-btn svg{width:17px;height:17px;}
+.theme-snow .msg-avatar,.theme-snow .avatar{border:none;box-shadow:0 3px 10px rgba(104,124,152,.18);}
+.theme-snow .messages{padding:16px 26px;}
