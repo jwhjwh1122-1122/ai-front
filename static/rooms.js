@@ -3433,7 +3433,7 @@ const IGI = {
 async function openMoments() {
   $('momentsroom').classList.add('open');
   const el = $('post-list');
-  el.innerHTML = '<div class="room-empty" style="color:#8e8e8e">正在看…</div>';
+  el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">正在看…</div>';
   const items = await jget('/api/posts');
   $('moments-sub').textContent = items.length ? `${items.length} 条` : '还没有人发';
   const avU = localStorage.getItem('chat-avatar-user'), avL = localStorage.getItem('chat-avatar-ai');
@@ -3442,7 +3442,7 @@ async function openMoments() {
     return `<div class="ig-av${big ? ' big' : ''}">${u ? `<img src="${u}">` : esc(n[0])}</div>`; };
   $('ig-stories').innerHTML = ['user', 'ai'].map(w =>
     `<div class="ig-st"><div class="ig-ring"><div>${avHtml(w, 1)}</div></div>${esc(w === 'user' ? nU : nL)}</div>`).join('');
-  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:#8e8e8e">还没有人发过<br>右上角发一条</div>'; return; }
+  if (!items.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">还没有人发过<br>右上角发一条</div>'; return; }
   el.innerHTML = '';
   const nm = a => a === 'user' ? nU : nL;
   items.forEach(p => {
