@@ -8,11 +8,28 @@ canvas{position:absolute;left:0;top:0}
 /* 下面这四块的位置、宽窄、字号，是她 11/20 上午在预览页上一块一块亲手拖出来的。
    我猜了三回都没猜准，这一版是她摆的，照抄，不改 */
 /* 框钉死，字在框里上下居中——她拖的是字多那一版，字一少就不许整块往上缩 */
-#words{position:absolute;left:377px;top:751px;width:420px;height:380px;font-size:38px;text-align:center;display:flex;flex-direction:column;justify-content:center;gap:22px;pointer-events:none;transition:opacity .9s}
+/* 框加宽了：原来 420 太窄,话一多就一行四五个字,整块往下长,长到跟余温挨一起去。
+   现在 480 宽,再加一道:装不下就自己缩字号,缩到装进这个框为止——框是她定的,不许越界 */
+#words{position:absolute;left:360px;top:751px;width:480px;height:380px;font-size:38px;text-align:center;display:flex;flex-direction:column;justify-content:center;gap:22px;pointer-events:none;transition:opacity .9s}
 #tsay{position:absolute;left:422px;top:1365px;width:520px;height:80px;font-size:30px;text-align:center;display:flex;flex-direction:column;justify-content:center;opacity:0;transition:opacity 1.1s;pointer-events:none}
 #tsay.on{opacity:1}
 #tsay b{display:block;font-weight:700;font-size:.66em;color:#8a0f1c;letter-spacing:3px;margin-bottom:8px;text-shadow:0 0 4px #f7f4ee,0 0 9px #f7f4ee,0 0 15px #f2eee6}
 #tsay .q{font-size:1em;font-weight:700;line-height:1.5;color:#141310;letter-spacing:1px;text-shadow:0 0 3px #f7f4ee,0 0 6px #f7f4ee,0 0 11px #f2eee6,0 0 18px rgba(242,238,230,.95),0 0 28px rgba(242,238,230,.85)}
+/* 只有被她碰出来的那一句走这套：宋体,逐字五种质感。别的三块一个字都不动 */
+#tsay .q{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;font-family:"Songti SC","SimSun","STSong",serif}
+#tsay .c{display:inline-block;font-family:"Songti SC","SimSun","STSong",serif;font-weight:700;margin:0 -1px;
+  text-shadow:0 0 3px #f7f4ee,0 0 7px #f7f4ee,0 0 12px #f2eee6}
+#tsay .e1{color:#141310}
+#tsay .e2{-webkit-text-stroke:1px rgba(20,19,16,.92);color:transparent;text-shadow:none}
+#tsay .e3{color:rgba(20,19,16,.9);filter:blur(.4px)}
+#tsay .e4{color:#141310;-webkit-mask-image:linear-gradient(to bottom,black 42%,transparent 100%);mask-image:linear-gradient(to bottom,black 42%,transparent 100%)}
+#tsay .e5{background:linear-gradient(180deg,#141310 0%,#8a0f1c 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+/* 红线:只缠在那句话这一块,跟着字的尺度走,不横跨整张画 */
+#thread{position:absolute;left:0;top:0;width:961px;height:2081px;pointer-events:none;opacity:0;transition:opacity 1.3s;z-index:3}
+#thread.on{opacity:1}
+#thread path{fill:none;stroke:#8f0a16;stroke-width:1.5;opacity:.7;filter:drop-shadow(0 0 2px rgba(179,0,0,.3))}
+#thread path.t2{stroke-width:1.1;opacity:.45}
+body.dopen #thread{opacity:0!important}
 body.dopen #tsay{opacity:0!important}
 .w{color:#141310;font-size:1em;font-weight:700;line-height:1.55;opacity:0;transform:translateY(8px) rotate(var(--r));transition:opacity 1.6s,transform 1.6s;text-shadow:0 0 3px #f7f4ee,0 0 6px #f7f4ee,0 0 10px #f2eee6,0 0 16px rgba(242,238,230,.9),0 0 24px rgba(242,238,230,.8)}
 .w.on{opacity:.96;transform:translateY(0) rotate(var(--r))}
@@ -53,7 +70,7 @@ body.dopen #plv,body.dopen #plv2{display:none}
 .none{text-align:center;color:#f4f0e8;text-shadow:0 0 3px #000,0 0 8px #000;margin-top:30vh;font-size:16px}
 </style></head><body>
 <div id="wrap"><div id="st"><img id="bg" src="/static/yuwang/bg.jpg?v=4"><canvas id="cv" width="961" height="2081"></canvas>
-<div id="words"></div><div id="tsay"></div><div id="warm"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
+<div id="words"></div><svg id="thread" viewBox="0 0 961 2081"><path d="M 395 1372 C 450 1340, 470 1404, 530 1392 C 575 1383, 580 1348, 616 1362 C 652 1376, 648 1420, 606 1416 C 566 1412, 572 1370, 628 1378 C 700 1388, 742 1356, 800 1374"/><path class="t2" d="M 470 1428 C 540 1406, 610 1442, 690 1414 C 745 1395, 782 1408, 822 1396"/></svg><div id="tsay"></div><div id="warm"></div><div id="rose"></div><div id="stem"></div><div id="spHit"></div><div class="bf" id="bf1" style="left:615px;top:1054px;width:283px;height:257px"></div><div class="bf" id="bf2" style="left:507px;top:1439px;width:212px;height:179px"></div></div></div>
 <div id="plv" onclick="location.href='/static/yuwang/preview.html?v='+Date.now()">排版</div>
 <div id="plv2" onclick="location.href='/static/yuwang/netpv.html?v='+Date.now()">网</div>
 <div id="diary"><div class="hd"><span class="bk" id="dbk">← 回到欲望</span><span class="tt">噜噜日记</span><span class="cb x" id="dbx">原背景</span><span class="cb" id="dbg">换背景</span><input type="file" id="dfile" accept="image/*" style="display:none"></div><div id="dlist"></div></div>
@@ -107,6 +124,13 @@ function fillWords(){
   L.slice(0,2).forEach(function(x,i){var d=document.createElement('div');d.className='w';d.style.setProperty('--r',((i%2?1:-1)*(0.6+i*.4))+'deg');
     var t=x.t.length>44?x.t.slice(0,44)+'……':x.t;d.textContent=t;wbox.appendChild(d);
     setTimeout(function(){d.classList.add('on');},600+i*900);});
+  fitWords();
+}
+// 装不下就自己缩:38 起,每次小 2 号,缩到进得了这个框为止(最小 26)。框是她定的,字得迁就框
+function fitWords(){var sz=38,H=380;
+  function need(){var t=0,k=wbox.children;for(var j=0;j<k.length;j++)t+=k[j].offsetHeight;return t+(k.length>1?22*(k.length-1):0);}
+  wbox.style.fontSize=sz+'px';
+  for(var i=0;i<7&&need()>H;i++){sz-=2;wbox.style.fontSize=sz+'px';}
 }
 // 网
 function webPts(c,R,t){var ds=dims(),n=ds.length,pts=[];for(var i=0;i<n;i++){var a=-Math.PI/2+i/n*Math.PI*2,v=val(ds[i].key)/100;var r=R*(0.06+0.94*v)*(1+0.012*Math.sin(t*1.3+i));pts.push({x:c.x+Math.cos(a)*r,y:c.y+Math.sin(a)*r,a:a,v:v,name:ds[i].name,raw:val(ds[i].key)});}return pts;}
@@ -185,9 +209,18 @@ function inkAt(e,big){var r=st.getBoundingClientRect();inks.push({x:(e.clientX-r
 // 不再浮在她指头底下一闪就没：落在她圈的那块空报纸上，待着，等下一次碰才换
 function say(t,left){var el=document.getElementById('tsay');if(!el)return;
   el.innerHTML='';
-  var q=document.createElement('div');q.className='q';q.textContent=t;el.appendChild(q);
+  var q=document.createElement('div');q.className='q';
+  // 逐字:实心、空心、糊一点点、往下化掉、往红里渐变,轮着来;再上下错开两三像素,让它浮着
+  var seed=7;function rnd(){seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;}
+  for(var i=0;i<t.length;i++){var ch=t[i],s=document.createElement('span');
+    var punct='，。、？！…—《》“”：；,.?!'.indexOf(ch)>=0;
+    s.className='c e'+(punct?1:(i%5)+1);
+    if(!punct)s.style.transform='translateY('+([-3,-2,0,2,3][Math.floor(rnd()*5)])+'px)';
+    s.textContent=ch;q.appendChild(s);}
+  el.appendChild(q);
+  var th=document.getElementById('thread');if(th)th.classList.add('on');
   el.classList.add('on');document.body.classList.add('tsaying');clearTimeout(el._t);
-  el._t=setTimeout(function(){el.classList.remove('on');document.body.classList.remove('tsaying');},left?60000:30000);}
+  el._t=setTimeout(function(){el.classList.remove('on');if(th)th.classList.remove('on');document.body.classList.remove('tsaying');},left?60000:30000);}
 var WN={poke:'碰了我一下',hold:'按着我不放',poke2:'戳了红的那只',hold2:'按着红的那只不放'};
 function warm(){var w=document.getElementById('warm');if(!w)return;var lt=D&&D.last_touch;if(!lt){w.style.opacity=0;return;}
   var age=(Date.now()-lt.ts)/60000;if(age>30){w.style.opacity=0;return;}
