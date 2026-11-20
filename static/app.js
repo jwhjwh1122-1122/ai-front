@@ -2686,12 +2686,17 @@ function startKeepalive() {
       for (var i = 0; i < rows.length; i++) { rows[i].style.opacity = ''; rows[i].style.filter = ''; }
       return;
     }
-    // 可视区被键盘挤小的时候,要按真正看得见的那块算,不然渐隐带留在视口外面,边上就成了硬切
-    var vv = window.visualViewport;
-    var r = box.getBoundingClientRect(), TOP = 92, BOT = 56;
-    var top = r.top, bottom = r.bottom;
-    if (vv) { top = Math.max(top, vv.offsetTop); bottom = Math.min(bottom, vv.offsetTop + vv.height); }
-    r = { top: top, bottom: bottom };
+    // 注意:别再拿 visualViewport.offsetTop 去裁这里的坐标。
+    // 键盘弹出时 body 已经被 fit() 挪进可视区,getBoundingClientRect 给的就是对的;
+    // 再减一次 offsetTop 会把整片消息算成"在渐隐带外",k 全成 0,消息就整屏不见了。
+    var r0 = box.getBoundingClientRect(), TOP = 92, BOT = 56;
+    var r = { top: r0.top, bottom: r0.bottom };
+    // 保险:万一这块算出来高度不正常(键盘动画中途、页面被顶走),这一拍什么都不做,
+    // 宁可边上硬切一下,也不许把消息全淡成看不见
+    if (!(r.bottom - r.top > 120)) {
+      for (var q = 0; q < rows.length; q++) { rows[q].style.opacity = ''; rows[q].style.filter = ''; }
+      return;
+    }
     for (var j = 0; j < rows.length; j++) {
       var el = rows[j], b = el.getBoundingClientRect(), k = 1;
       var dTop = b.bottom - r.top, dBot = r.bottom - b.top;
