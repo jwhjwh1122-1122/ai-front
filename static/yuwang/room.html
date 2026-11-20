@@ -8,9 +8,8 @@ canvas{position:absolute;left:0;top:0}
 /* 下面这四块的位置、宽窄、字号，是她 11/20 上午在预览页上一块一块亲手拖出来的。
    我猜了三回都没猜准，这一版是她摆的，照抄，不改 */
 /* 框钉死，字在框里上下居中——她拖的是字多那一版，字一少就不许整块往上缩 */
-/* 框加宽了：原来 420 太窄,话一多就一行四五个字,整块往下长,长到跟余温挨一起去。
-   现在 480 宽,再加一道:装不下就自己缩字号,缩到装进这个框为止——框是她定的,不许越界 */
-#words{position:absolute;left:360px;top:751px;width:480px;height:380px;font-size:38px;text-align:center;display:flex;flex-direction:column;justify-content:center;gap:22px;pointer-events:none;transition:opacity .9s}
+/* 框回到她最开始拖的那一个,一个数都不动。话多了不许动框,字自己缩 */
+#words{position:absolute;left:377px;top:751px;width:420px;height:380px;font-size:38px;text-align:center;display:flex;flex-direction:column;justify-content:center;gap:22px;pointer-events:none;transition:opacity .9s}
 #tsay{position:absolute;left:422px;top:1365px;width:520px;height:80px;font-size:30px;text-align:center;display:flex;flex-direction:column;justify-content:center;opacity:0;transition:opacity 1.1s;pointer-events:none}
 #tsay.on{opacity:1}
 #tsay b{display:block;font-weight:700;font-size:.66em;color:#8a0f1c;letter-spacing:3px;margin-bottom:8px;text-shadow:0 0 4px #f7f4ee,0 0 9px #f7f4ee,0 0 15px #f2eee6}
