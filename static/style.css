@@ -1156,7 +1156,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .theme-snow .avatar{width:56px;height:56px;}
 /* 底下那条收起来的时候位置留着,只是变透明:输入框不许往下掉 */
 .theme-snow .tabbar{display:none;}
-.theme-snow .tabbar{margin:0 10px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.72);
+.theme-snow .tabbar{margin:3px 10px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.72);
   background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
   -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 16px rgba(104,124,152,.16);
@@ -1228,6 +1228,9 @@ body.kb-up .theme-snow .inputbar,body.theme-snow.kb-up .inputbar{padding-bottom:
 body.kb-up .tabbar{padding-bottom:0;}
 /* 底下那条展开的时候,要跟输入框粘着,中间不许有空。
    那条空是输入框自己的底部留白(给横杠让位的那一截)——底下那条一出来它就盖住了,不用再让 */
-.nav-open .theme-snow .inputbar{padding-bottom:6px;}
+.nav-open .theme-snow .inputbar{padding-bottom:3px;}
 /* 键盘上来的时候,底下那条自己也不留边了:它就压在键盘上沿,中间不许再悬一块空 */
-body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:0;}
+/* 她拖出来的四个数:输入框下留白 3 / 框→底栏 3 / 底栏内高 2 / 底栏→键盘 0。
+   但 0 会把底栏自己那条下边框压在键盘上沿底下,线露不出来,所以这里给 2——肉眼还是贴着的 */
+body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
+.theme-snow .tab{padding:2px 0 2px;}
