@@ -110,7 +110,7 @@ function fillWords(){
 // 网
 function webPts(c,R,t){var ds=dims(),n=ds.length,pts=[];for(var i=0;i<n;i++){var a=-Math.PI/2+i/n*Math.PI*2,v=val(ds[i].key)/100;var r=R*(0.06+0.94*v)*(1+0.012*Math.sin(t*1.3+i));pts.push({x:c.x+Math.cos(a)*r,y:c.y+Math.sin(a)*r,a:a,v:v,name:ds[i].name,raw:val(ds[i].key)});}return pts;}
 // 拉开以后那张：自己织一张完整的网，铺在中间那块白上
-var BC={x:380,y:600}, BRR=290, PW=null, PWR=null, PWS=0;
+var BC={x:186,y:531}, BRR=250, PW=null, PWR=null, PWS=0;
 function weave(){var sz=Math.ceil(BRR*2.3),c=document.createElement('canvas');c.width=c.height=sz;var x=c.getContext('2d'),o=sz/2,n=18,ang=[];
   for(var i=0;i<n;i++)ang.push(-Math.PI/2+i/n*Math.PI*2+(Math.sin(i*7.3)*0.05));
   x.strokeStyle='#161514';x.lineCap='round';
@@ -143,7 +143,10 @@ function drawWeb(t,k){
   if(k>0.4){ctx.save();ctx.globalAlpha=(k-0.4)/0.6;ctx.textBaseline='middle';ctx.shadowColor='#f3f0e9';ctx.shadowBlur=6;
     ctx.textAlign='center';
     bp.forEach(function(p){var lx=c.x+Math.cos(p.a)*R*1.12,ly=c.y+Math.sin(p.a)*R*1.12;
-      ctx.font='700 19px "Kaiti SC","STKaiti",serif';ctx.fillStyle='#7a0e1c';ctx.fillText(p.name,lx,ly-9);
+      ctx.font='700 19px "Kaiti SC","STKaiti",serif';
+      // 网心贴着墙角那张网，左边几根丝的尽头本来在画外面；名字按在画边上，别掉出去
+      var tw=ctx.measureText(p.name).width;lx=Math.min(Math.max(lx,14+tw/2),947-tw/2);
+      ctx.fillStyle='#7a0e1c';ctx.fillText(p.name,lx,ly-9);
       ctx.font='700 14px Georgia,serif';ctx.fillStyle='#3a2b24';ctx.fillText(Math.round(p.raw),lx,ly+10);});
     ctx.restore();}
 }

@@ -58,7 +58,7 @@ body{background-color:var(--bg);background-size:cover;background-position:center
 .ic.thin{stroke-width:1.15;}
 .ic.hair{stroke-width:.85;}
 .ic.fillbg{fill:var(--bg2);stroke:var(--icon);stroke-width:1.4;stroke-linejoin:round;stroke-linecap:round;}
-.rc-name{font-size:12.5px;letter-spacing:4px;padding-left:4px;color:var(--text);}
+.rc-name{font-size:12.5px;letter-spacing:4px;padding-left:4px;color:var(--text);text-align:center;}
 .rc-sub{font-size:10px;color:var(--text-muted);text-align:center;margin-top:4px;line-height:1.5;max-height:2.6em;overflow:hidden;padding:0 4px;}
 .rc-dot{position:absolute;top:11px;right:12px;width:7px;height:7px;border-radius:50%;background:var(--accent);display:none;}
 .rc-dot.on{display:block;}
