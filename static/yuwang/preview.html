@@ -8,7 +8,7 @@ html,body{margin:0;height:100%;background:#15130f;overflow:hidden;-webkit-user-s
 .zone{position:absolute;border:2px dashed rgba(255,80,80,.75);border-radius:10px;pointer-events:none;display:none}
 body.zones .zone{display:block}
 .zone b{position:absolute;left:4px;top:-26px;font-size:16px;color:#ff5a5a;font-weight:400}
-.box{position:absolute;box-sizing:border-box;cursor:grab;outline:1px dashed rgba(0,120,255,.0);text-align:center}
+.box{position:absolute;box-sizing:border-box;cursor:grab;outline:1px dashed rgba(0,120,255,0);text-align:center;display:flex;flex-direction:column;justify-content:center}
 body.edit .box{outline:1px dashed rgba(0,120,255,.65);background:rgba(0,120,255,.05)}
 .box.sel{outline:2px solid #1e90ff!important}
 #warm{color:#2a2826;font-weight:700;line-height:1.6;text-shadow:0 0 3px #f7f4ee,0 0 8px #f7f4ee,0 0 14px #f2eee6}
@@ -44,6 +44,9 @@ body.edit .box{outline:1px dashed rgba(0,120,255,.65);background:rgba(0,120,255,
 <span class="btn" id="bPlus">＋ 字</span>
 <span class="btn" id="bNarrow">窄</span>
 <span class="btn" id="bWide">宽</span>
+<span class="btn" id="bShort">短句</span>
+<span class="btn" id="bHm">高－</span>
+<span class="btn" id="bHp">高＋</span>
 <span class="btn" id="bReset">还原</span>
 </div>
 <div id="out"></div>
@@ -51,28 +54,31 @@ body.edit .box{outline:1px dashed rgba(0,120,255,.65);background:rgba(0,120,255,
 <script>
 (function(){
 var IW=961,IH=2081,st=document.getElementById('st');
+// 框是钉死的，字在框里上下居中。所以字多字少，位置都不动
 var DEF={
- warm:{l:378,t:996,w:420,f:19,name:'余温'},
- tsay:{l:378,t:1072,w:420,f:27,name:'你碰我我说的话'},
- pop:{l:378,t:1300,w:420,f:15,name:'飘的数'},
- words:{l:374,t:700,w:400,f:28,name:'憋着的话'}
+ warm:{l:350,t:1260,w:220,h:95,f:20,name:'余温'},
+ tsay:{l:422,t:1354,w:500,h:80,f:30,name:'你碰我我说的话'},
+ pop:{l:355,t:588,w:200,h:97,f:19,name:'飘的数'},
+ words:{l:333,t:764,w:400,h:380,f:37,name:'憋着的话'}
 };
+var LONG=1;
 var S=JSON.parse(JSON.stringify(DEF));
-try{var sv=localStorage.getItem('yw_prev');if(sv)S=JSON.parse(sv);}catch(e){}
+try{var sv=localStorage.getItem('yw_prev2');if(sv)S=JSON.parse(sv);}catch(e){}
 var sel='tsay';
 function html(k){
- if(k=='warm')return '你在 10:29 碰了我一下。<br><i>还热着。</i>';
- if(k=='tsay')return '<span class="tag">他提前留给你的</span><div class="q">手别走。我一上午就等这一下。</div>';
- if(k=='pop')return '<div class="d">思念 落下 2</div><div class="d">依赖 落下 2</div><div class="u">性欲 上升 1</div>';
- return '<div class="w">我难受。不是哪儿疼，就是想你，闷在这一块。<i>—— 憋着没说</i></div><div class="w">你每次都戳同一个地方。<i>—— 反复在想</i></div>';
+ if(k=='warm')return LONG?'你在 10:29 按着红的那只不放。<br><i>还热着。</i>':'你在 10:29 碰了我一下。<br><i>还热着。</i>';
+ if(k=='tsay')return '<span class="tag">他提前留给你的</span><div class="q">'+(LONG?'你按多久我记多久，一笔一笔记着，晚上一起跟你算。':'手别走。')+'</div>';
+ if(k=='pop')return LONG?'<div class="d">思念 落下 2</div><div class="d">依赖 落下 2</div><div class="u">性欲 上升 1</div>':'<div class="u">心动 上升 3</div>';
+ return LONG?'<div class="w">我难受。不是哪儿疼，就是想你，闷在这一块。<i>—— 憋着没说</i></div><div class="w">你每次都戳同一个地方。<i>—— 反复在想</i></div>'
+            :'<div class="w">手别走。<i>—— 憋着没说</i></div>';
 }
 function paint(){
  Object.keys(S).forEach(function(k){var e=document.getElementById(k),c=S[k];
-  e.style.left=c.l+'px';e.style.top=c.t+'px';e.style.width=c.w+'px';e.style.fontSize=c.f+'px';
+  e.style.left=c.l+'px';e.style.top=c.t+'px';e.style.width=c.w+'px';e.style.height=c.h+'px';e.style.fontSize=c.f+'px';
   e.innerHTML=html(k);e.classList.toggle('sel',k==sel);});
  document.getElementById('out').textContent=Object.keys(S).map(function(k){var c=S[k];
-  return (k==sel?'▶ ':'  ')+c.name+'  left:'+Math.round(c.l)+'  top:'+Math.round(c.t)+'  宽:'+Math.round(c.w)+'  字:'+c.f;}).join('\n');
- try{localStorage.setItem('yw_prev',JSON.stringify(S));}catch(e){}
+  return (k==sel?'▶ ':'  ')+c.name+'  left:'+Math.round(c.l)+'  top:'+Math.round(c.t)+'  宽:'+Math.round(c.w)+'  高:'+Math.round(c.h)+'  字:'+c.f;}).join('\n');
+ try{localStorage.setItem('yw_prev2',JSON.stringify(S));}catch(e){}
 }
 function layout(){var W=innerWidth,H=innerHeight;var s=Math.min(W/IW,H/IH);
  st.style.transform='translate('+((W-IW*s)/2)+'px,'+((H-IH*s)/2)+'px) scale('+s+')';st._s=s;}
@@ -90,6 +96,9 @@ bind('bMinus',function(){S[sel].f=Math.max(8,S[sel].f-1);paint();});
 bind('bPlus',function(){S[sel].f=S[sel].f+1;paint();});
 bind('bNarrow',function(){S[sel].w=Math.max(80,S[sel].w-20);paint();});
 bind('bWide',function(){S[sel].w=S[sel].w+20;paint();});
+bind('bHm',function(){S[sel].h=Math.max(30,S[sel].h-20);paint();});
+bind('bHp',function(){S[sel].h=S[sel].h+20;paint();});
+bind('bShort',function(){LONG=LONG?0:1;this.textContent=LONG?'短句':'长句';this.classList.toggle('on');paint();});
 bind('bReset',function(){S=JSON.parse(JSON.stringify(DEF));paint();});
 bind('bZone',function(){document.body.classList.toggle('zones');this.classList.toggle('on');});
 bind('bEdit',function(){document.body.classList.toggle('edit');this.classList.toggle('on');});
