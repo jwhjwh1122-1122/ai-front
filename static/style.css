@@ -1065,7 +1065,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 /* 气泡:不是一块白板,是一滴水。底下的雪透得过来 */
 .theme-snow .bubble.ai,.theme-snow .bubble.user{
   background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
-  -webkit-backdrop-filter:blur(11px) saturate(1.68);backdrop-filter:blur(11px) saturate(1.68);
+  -webkit-backdrop-filter:blur(14px) saturate(1.7);backdrop-filter:blur(14px) saturate(1.7);
   border:1px solid rgba(255,255,255,.72);border-radius:20px;padding:9px 16px;font-size:14px;
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),inset 0 -1px 1.5px rgba(255,255,255,.55),
              inset 0 0 16px rgba(255,255,255,.28),0 4px 16px rgba(104,124,152,.16);}
@@ -1157,12 +1157,13 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .theme-snow .topbar-left{position:absolute;left:50%;transform:translateX(-50%);}
 .theme-snow .avatar{width:56px;height:56px;}
 /* 底下那条收起来的时候位置留着,只是变透明:输入框不许往下掉 */
+.theme-snow .tabbar{display:none;}
 .theme-snow .tabbar{margin:0 10px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.72);
   background:linear-gradient(155deg,rgba(255,255,255,.62),rgba(255,255,255,.30) 48%,rgba(255,255,255,.48));
   -webkit-backdrop-filter:blur(9px) saturate(1.6);backdrop-filter:blur(9px) saturate(1.6);
   box-shadow:inset 0 1px 1.5px rgba(255,255,255,.95),0 4px 16px rgba(104,124,152,.16);
-  opacity:0;pointer-events:none;transition:opacity .25s;}
-.nav-open .theme-snow .tabbar{opacity:1;pointer-events:auto;}
+  }
+.nav-open .theme-snow .tabbar{display:flex;}
 /* 发送键跟那三个一排:一样大、一样的底边 */
 .theme-snow .send-btn{width:36px;height:36px;margin-bottom:3px;}
 .theme-snow .send-btn svg{width:17px;height:17px;}
@@ -1180,8 +1181,9 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .topbar{padding-top:max(14px,env(safe-area-inset-top));}
 .theme-snow .topbar{padding-top:max(12px,env(safe-area-inset-top));}
 /* 展开的四个键一边两个,不挡中间那张脸 */
-.theme-snow .topbar-right > *:not(#btn-call){display:none;width:34px;height:34px;}
-.nav-open .theme-snow .topbar-right > *{display:flex;}
+.theme-snow .topbar-right > .theme-btn{display:none;width:34px;height:34px;}
+.theme-snow #btn-call{display:flex;}
+.nav-open .theme-snow .topbar-right > .theme-btn{display:flex;}
 /* 发消息不要头像了 */
 .theme-snow .msg-avatar{display:none;}
 /* 房间卡、首页卡、抽屉:那层白跟气泡一个程度(只是白的透明度和糊的程度,不加亮边) */
@@ -1205,6 +1207,7 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
   mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.18) 2.5%,rgba(0,0,0,.62) 6%,#000 11%,#000 93%,rgba(0,0,0,.5) 97%,transparent 100%);}
 .theme-snow .dl{fill:rgba(255,255,255,.32);}
 /* 右边那两个键之前被一条权重更高的规则按住了,展开也出不来。这条压过它 */
-html.nav-open body.theme-snow .topbar-right > *:not(.never){display:flex;}
 .theme-snow .topbar-right{gap:8px;}
 .theme-snow .tb-togglewrap{gap:8px;}
+/* 底下那条收起来 = 真的不在了:不占地方,那块就是背景。输入框自己落到底,只留安全区 */
+.theme-snow .inputbar{padding-bottom:calc(10px + env(safe-area-inset-bottom));}
