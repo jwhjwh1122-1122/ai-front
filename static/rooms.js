@@ -1,3 +1,18 @@
+
+// 顶上那条状态栏也要铺满:body 被 visualViewport 缩进可视区以后,屏幕最上面那截露的是 html。
+// 所以 html 跟着 body 一起穿同一张背景、同一个底色。
+function syncRootBg() {
+  try {
+    var r = document.documentElement, b = document.body;
+    r.style.backgroundImage = b.style.backgroundImage || '';
+    r.style.backgroundSize = 'cover';
+    r.style.backgroundPosition = 'center';
+    r.style.backgroundRepeat = 'no-repeat';
+    var c = getComputedStyle(b).getPropertyValue('--bg').trim();
+    if (c) r.style.backgroundColor = c;
+  } catch (e) { }
+}
+window.syncRootBg = syncRootBg;
 /* 凛 · 房间与交互 */
 let currentBook = null, currentPage = 0, curMedia = null, curKind = 'video';
 let curSubs = null, dialogueReadTo = 0, nudgeTimer = null, lastNudgeAt = 0;
@@ -3842,8 +3857,10 @@ async function boot() {
   showLinState(CFG.lin_status);
   const theme = localStorage.getItem('theme') || '';
   document.body.className = theme ? 'theme-' + theme : '';
+  syncRootBg();
   const bg = localStorage.getItem('chat-bg');
   if (bg) { document.body.style.backgroundImage = `url(${bg})`; $('clear-bg-btn').style.display = 'flex'; }
+  syncRootBg();
   const av = localStorage.getItem('chat-avatar-ai');
   if (av) { $('avatar').classList.add('has-img'); $('avatar').innerHTML = `<img src="${av}">`; }
   showUserStatus(localStorage.getItem('user-status'));
@@ -4069,8 +4086,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 锁屏
   const th = localStorage.getItem('theme') || '';
   document.body.className = th ? 'theme-' + th : '';
+  syncRootBg();
   const bg0 = localStorage.getItem('chat-bg');
   if (bg0) document.body.style.backgroundImage = `url(${bg0})`;
+  syncRootBg();
 
   const unlock = async () => {
     let pwd = '0606';
@@ -4164,6 +4183,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.theme-option').forEach(o => o.onclick = () => {
     const t = o.dataset.theme;
     document.body.className = t ? 'theme-' + t : '';
+    syncRootBg();
     localStorage.setItem('theme', t); $('theme-menu').classList.remove('open');
   });
   let avatarTarget = 'ai';
@@ -4175,7 +4195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (a === 'status') $('status-modal').classList.add('open');
     else if (a === 'bg') $('bg-input').click();
     else if (a === 'bg-clear') {
-      localStorage.removeItem('chat-bg'); document.body.style.backgroundImage = '';
+      localStorage.removeItem('chat-bg'); document.body.style.backgroundImage = ''; syncRootBg();
       $('clear-bg-btn').style.display = 'none';
     }
   });
@@ -4210,7 +4230,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let url;
     try { url = await shrinkToDataUrl(f, 1280, 0.8); } catch (err) { toast('这张图打不开'); return; }
     try { localStorage.setItem('chat-bg', url); } catch (err) { toast('图片太大了'); return; }
-    document.body.style.backgroundImage = `url(${url})`;
+    document.body.style.backgroundImage = `url(${url})`; syncRootBg();
     $('clear-bg-btn').style.display = 'flex'; toast('换好了');
   };
   document.querySelectorAll('#status-presets .status-preset').forEach(p => p.onclick = () => {
