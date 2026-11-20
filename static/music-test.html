@@ -420,7 +420,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   </div>
   <div class="lp-search" id="search-box" style="display:none;">
     <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-    <input id="q" placeholder="搜歌名 / 歌手" enterkeyhint="search">
+    <input id="q" enterkeyhint="search">
   </div>
   <div class="lp-body" id="lp-body"></div>
 </div>
@@ -494,7 +494,7 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
   <div class="chat-view" id="chat-view">
     <div class="cv-msgs" id="cv-msgs"></div>
     <div class="cv-input">
-      <input id="cv-text" placeholder="就着这首歌，说点什么…" enterkeyhint="send">
+      <input id="cv-text" enterkeyhint="send">
       <button id="cv-send">发送</button>
     </div>
     <div class="reply-bar" id="reply-bar"><b id="reply-who"></b><span class="t" id="reply-tx"></span><button class="x" id="reply-x">&#10005;</button></div>
@@ -560,8 +560,8 @@ body{font-family:-apple-system,"PingFang SC","Hiragino Sans",sans-serif;
     <div class="ed-body">
       <div class="ed-cover" id="ed-cover">点这里<br>换封面</div>
       <div class="ed-fields">
-        <input id="ed-name" placeholder="歌名">
-        <input id="ed-artist" placeholder="歌手">
+        <input id="ed-name">
+        <input id="ed-artist">
       </div>
     </div>
     <div class="ed-hint">只改这里的显示，网易云里的原数据不动。改完歌单、播放器、排行里都会跟着变。</div>
@@ -1119,7 +1119,7 @@ function renderSongList(songs,title,queue,editable,onBack,playAllText){
     '<span id="list-count" style="font-size:12px;color:#9298a0;">'+songs.length+'首</span></div>'+
     '<div class="lp-search" style="margin:0 0 10px;">'+
       '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'+
-      '<input id="pl-q" placeholder="在这个列表里找" enterkeyhint="search">'+
+      '<input id="pl-q" enterkeyhint="search">'+
     '</div>'+
     (playAllText?playAllRow(playAllText,songs.length+' 首'):'')+
     '<div id="song-rows"></div><div class="more-tip" id="more-tip"></div>';

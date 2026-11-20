@@ -1192,7 +1192,6 @@ function watchUiOn(m) {
   $('wv-with').textContent = `与 ${nm} 一起看`;
   const av = localStorage.getItem('chat-avatar-ai');
   $('wv-av').innerHTML = av ? `<img src="${av}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : esc(nm[0] || '凛');
-  document.querySelector('.split-input[data-ctx="stage"]').placeholder = `边看边说给${nm}…`;
   $('wv-rate').textContent = '倍速'; v.playbackRate = 1;
   $('wv-cc').classList.toggle('on', $('stage-subs').style.display !== 'none');
   wvShow(true); wvSync();
@@ -3628,7 +3627,7 @@ function faultCard(x) {
   if (faultEdit === x.id) {
     return `<div class="fault" data-id="${x.id}">
       ${FF.map(([k, h]) => `<div class="fault-h">${h}</div>
-        <textarea class="fault-in" data-f="${k}" placeholder="${k === 'what' ? '这一栏不能空' : '不写就不显示'}">${esc(x[k] || '')}</textarea>`).join('')}
+        <textarea class="fault-in" data-f="${k}">${esc(x[k] || '')}</textarea>`).join('')}
       <div class="fault-ops">
         <div class="fault-op" data-a="cancel">算了</div>
         <div class="fault-op go" data-a="save">存下</div>

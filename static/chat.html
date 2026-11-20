@@ -90,32 +90,32 @@ window.addEventListener('error', function (e) {
       <div class="rooms">
         <div class="room-card" data-room="study">
           <div class="rc-ic"><img src="/static/rooms-ic/study.png?v=1" style="width:84px" alt=""></div>
-          <div><div class="rc-name">书 房</div><div class="rc-sub" id="st-study">—</div></div>
+          <div><div class="rc-name">书 房</div></div>
           <div class="rc-dot" id="dot-study"></div>
         </div>
         <div class="room-card" data-room="cinema">
           <div class="rc-ic"><img src="/static/rooms-ic/cinema.png?v=1" style="width:62px" alt=""></div>
-          <div><div class="rc-name">放映室</div><div class="rc-sub" id="st-cinema">—</div></div>
+          <div><div class="rc-name">放映室</div></div>
           <div class="rc-dot" id="dot-cinema"></div>
         </div>
         <div class="room-card" data-room="music">
           <div class="rc-ic"><img src="/static/rooms-ic/music.png?v=1" style="width:100px" alt=""></div>
-          <div><div class="rc-name">一起听</div><div class="rc-sub" id="st-music">—</div></div>
+          <div><div class="rc-name">一起听</div></div>
           <div class="rc-dot" id="dot-music"></div>
         </div>
         <div class="room-card" data-room="mailbox">
           <div class="rc-ic"><img src="/static/rooms-ic/mailbox.png?v=1" style="width:104px" alt=""></div>
-          <div><div class="rc-name">记 忆</div><div class="rc-sub" id="st-mail">—</div></div>
+          <div><div class="rc-name">记 忆</div></div>
           <div class="rc-dot" id="dot-mail"></div>
         </div>
         <div class="room-card" data-room="moments">
           <div class="rc-ic"><img src="/static/rooms-ic/moments.png?v=1" style="width:78px" alt=""></div>
-          <div><div class="rc-name">朋友圈</div><div class="rc-sub" id="st-moments">—</div></div>
+          <div><div class="rc-name">朋友圈</div></div>
           <div class="rc-dot" id="dot-moments"></div>
         </div>
         <div class="room-card" data-room="game">
           <div class="rc-ic"><img src="/static/rooms-ic/game.png?v=1" style="width:82px" alt=""></div>
-          <div><div class="rc-name">游戏房</div><div class="rc-sub">还没开张</div></div>
+          <div><div class="rc-name">游戏房</div></div>
         </div>
       </div>
       <div class="drawers">
@@ -154,7 +154,7 @@ window.addEventListener('error', function (e) {
   </div>
   <div class="inputbar">
     <div class="input-btn" id="mic-btn">◎</div>
-    <textarea id="input" placeholder="说点什么..." rows="1"></textarea>
+    <textarea id="input" rows="1"></textarea>
     <div class="input-btn" id="btn-emoji" style="font-size:17px;">♡</div>
     <div class="input-btn" id="btn-img" style="font-size:16px;">⊡</div>
     <button class="send-btn" id="send-btn">↑</button>
@@ -237,9 +237,9 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="quote-modal">
   <div class="sheet-inner">
     <div class="sheet-title">收一句他的话</div>
-    <textarea class="note-input" id="q-text" placeholder="他说的那句…" style="height:100px;"></textarea>
+    <textarea class="note-input" id="q-text" style="height:100px;"></textarea>
     <div class="settings-label" style="margin-top:12px;">为什么喜欢这句</div>
-    <textarea class="note-input" id="q-why" placeholder="因为…" style="height:70px;margin-top:6px;"></textarea>
+    <textarea class="note-input" id="q-why" style="height:70px;margin-top:6px;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="quote-modal">算了</button>
       <button class="btn-solid" id="btn-save-quote">收起来</button>
@@ -541,7 +541,7 @@ window.addEventListener('error', function (e) {
     <div class="split-chat" id="split-chat-reader">
       <div class="split-msgs" id="split-msgs-reader"></div>
       <div class="inputbar">
-        <textarea class="split-input" data-ctx="reader" placeholder="一起读，说点什么…" rows="1"></textarea>
+        <textarea class="split-input" data-ctx="reader" rows="1"></textarea>
         <button class="send-btn" data-splitsend="reader">↑</button>
       </div>
     </div>
@@ -551,7 +551,7 @@ window.addEventListener('error', function (e) {
 
 <div class="annot-new" id="annot-new">
   <div class="annot-new-quote" id="annot-new-quote"></div>
-  <textarea class="annot-input" id="annot-input" placeholder="写点什么…"></textarea>
+  <textarea class="annot-input" id="annot-input"></textarea>
   <div class="sheet-btns">
     <button class="btn-ghost" id="annot-cancel">算了</button>
     <button class="btn-solid" id="annot-save">贴上去</button>
@@ -563,21 +563,21 @@ window.addEventListener('error', function (e) {
     <div class="sheet-title">添一本书</div>
     <div class="settings-label">在网上找</div>
     <div style="display:flex;gap:8px;margin-top:6px;">
-      <input id="book-search-input" class="mini-input" placeholder="书名或作者">
+      <input id="book-search-input" class="mini-input">
       <button class="btn-solid" id="btn-book-search" style="flex:none;padding:8px 16px;font-size:13px;">找</button>
     </div>
     <div class="settings-sub">中文古籍找维基文库，外文名著找古腾堡</div>
     <div id="book-results" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
     <div class="settings-label" style="margin-top:16px;">贴个网址</div>
     <div style="display:flex;gap:8px;margin-top:6px;">
-      <input id="book-url-input" class="mini-input" placeholder="txt / epub / 网页" autocapitalize="off">
+      <input id="book-url-input" class="mini-input" autocapitalize="off">
       <button class="btn-ghost" id="btn-book-url" style="flex:none;padding:8px 16px;font-size:13px;">取</button>
     </div>
     <div class="settings-label" style="margin-top:16px;">从手机里选</div>
     <button class="btn-ghost" id="btn-book-file" style="width:100%;margin-top:6px;">选 txt 或 epub</button>
     <div class="settings-label" style="margin-top:16px;">或者贴文字</div>
-    <input id="book-title-input" class="mini-input" placeholder="书名" style="margin:6px 0 8px;">
-    <textarea class="note-input" id="book-text-input" placeholder="粘贴正文…" style="height:90px;"></textarea>
+    <input id="book-title-input" class="mini-input" style="margin:6px 0 8px;">
+    <textarea class="note-input" id="book-text-input" style="height:90px;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="addbook-modal">关掉</button>
       <button class="btn-solid" id="btn-book-paste">放上书架</button>
@@ -786,7 +786,7 @@ window.addEventListener('error', function (e) {
     <div class="split-chat" id="split-chat-netease">
       <div class="split-msgs" id="split-msgs-netease"></div>
       <div class="inputbar">
-        <textarea class="split-input" data-ctx="netease" placeholder="一起听，说点什么…" rows="1"></textarea>
+        <textarea class="split-input" data-ctx="netease" rows="1"></textarea>
         <button class="send-btn" data-splitsend="netease">↑</button>
       </div>
     </div>
@@ -822,7 +822,7 @@ window.addEventListener('error', function (e) {
     <div class="split-chat" id="split-chat-coread">
       <div class="split-msgs" id="split-msgs-coread"></div>
       <div class="inputbar">
-        <textarea class="split-input" data-ctx="coread" placeholder="一起读，说点什么…" rows="1"></textarea>
+        <textarea class="split-input" data-ctx="coread" rows="1"></textarea>
         <button class="send-btn" data-splitsend="coread">↑</button>
       </div>
     </div>
@@ -841,8 +841,8 @@ window.addEventListener('error', function (e) {
   </div>
   <div class="link-card" id="link-card">
     <div class="link-card-t">粘一个网址，一起看</div>
-    <input id="link-url" class="link-in" placeholder="视频地址（mp4 / m3u8）" autocapitalize="off" autocomplete="off">
-    <div class="link-row"><input id="link-note" class="link-in" placeholder="叫什么（片名、第几集）"><button id="link-go" class="link-go">放 进 来</button></div>
+    <input id="link-url" class="link-in" autocapitalize="off" autocomplete="off">
+    <div class="link-row"><input id="link-note" class="link-in"><button id="link-go" class="link-go">放 进 来</button></div>
   </div>
   <div class="reel-list" id="cinema-list"></div>
 </div>
@@ -872,8 +872,8 @@ window.addEventListener('error', function (e) {
         <video id="stage-video" playsinline controls preload="metadata" style="display:none"></video>
         <div class="wv-empty" id="wv-empty">
           <div class="wv-empty-t">电视开着，还没放片子</div>
-          <input id="tv-url" class="wv-in" placeholder="粘视频地址（mp4 / m3u8）" autocapitalize="off" autocomplete="off">
-          <div class="wv-empty-row"><input id="tv-note" class="wv-in" placeholder="叫什么"><button id="tv-go" class="wv-go">放</button></div>
+          <input id="tv-url" class="wv-in" autocapitalize="off" autocomplete="off">
+          <div class="wv-empty-row"><input id="tv-note" class="wv-in"><button id="tv-go" class="wv-go">放</button></div>
           <div class="wv-empty-sub"><span id="tv-local">直接放手机里的（不用上传）</span><br><span id="tv-lib">从片库挑一部</span> · <span id="tv-up">上传到片库</span></div>
         </div>
         <div class="wv-ui" id="wv-ui">
@@ -902,7 +902,7 @@ window.addEventListener('error', function (e) {
       <div class="split-msgs" id="split-msgs-stage"></div>
       <div class="inputbar">
         <button class="wv-cam" id="wv-cam" aria-label="把这一帧给他看"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/></svg></button>
-        <textarea class="split-input" data-ctx="stage" placeholder="一起看，说点什么…" rows="1"></textarea>
+        <textarea class="split-input" data-ctx="stage" rows="1"></textarea>
         <button class="send-btn" data-splitsend="stage">↑</button>
       </div>
     </div>
@@ -932,7 +932,7 @@ window.addEventListener('error', function (e) {
   <div class="moments" id="post-list"></div>
   <div class="cm-bar" id="cm-bar">
     <div class="input-btn" id="cm-emoji" style="font-size:17px;">♡</div>
-    <textarea id="cm-input" placeholder="说点什么…" rows="1" style="flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:18px;padding:9px 14px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:90px;min-height:38px;font-family:inherit;"></textarea>
+    <textarea id="cm-input" rows="1" style="flex:1;background:var(--input-bg);border:1.5px solid var(--border);border-radius:18px;padding:9px 14px;font-size:15px;color:var(--text);resize:none;outline:none;max-height:90px;min-height:38px;font-family:inherit;"></textarea>
     <button class="send-btn" id="cm-send" style="width:38px;height:38px;font-size:16px;">↑</button>
   </div>
 </div>
@@ -940,7 +940,7 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="post-modal">
   <div class="sheet-inner">
     <div class="sheet-title">发一条</div>
-    <textarea class="note-input" id="post-text" placeholder="这一刻想说什么…" style="height:110px;"></textarea>
+    <textarea class="note-input" id="post-text" style="height:110px;"></textarea>
     <div class="pc-thumbs" id="post-thumbs"></div>
     <div style="display:flex;gap:8px;margin-top:10px;">
       <button class="btn-ghost" id="btn-post-img" style="font-size:13px;padding:9px;">加图片</button>
@@ -1014,7 +1014,7 @@ window.addEventListener('error', function (e) {
       <span>0</span><span id="dim-val" style="color:var(--accent);font-size:19px;font-weight:600;">—</span><span>100</span>
     </div>
     <div class="settings-label" style="margin-top:14px;">为什么改</div>
-    <textarea class="note-input" id="dim-why" placeholder="系统算的不对，因为…" style="height:70px;margin-top:6px;"></textarea>
+    <textarea class="note-input" id="dim-why" style="height:70px;margin-top:6px;"></textarea>
     <div class="settings-sub">这句话会单独存着。</div>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="dim-modal">算了</button>
@@ -1036,7 +1036,7 @@ window.addEventListener('error', function (e) {
 
 <div class="full" id="search-panel">
   <div class="full-head" style="padding-bottom:10px;">
-    <input id="search-input" class="mini-input" style="flex:1;margin-right:10px;" placeholder="搜聊天记录" autocapitalize="off">
+    <input id="search-input" class="mini-input" style="flex:1;margin-right:10px;" autocapitalize="off">
     <div class="mem-close-btn" data-close-full="search-panel">✕</div>
   </div>
   <div id="search-result" style="flex:1;overflow-y:auto;padding:0 0 30px;"></div>
@@ -1112,7 +1112,7 @@ window.addEventListener('error', function (e) {
   <div class="brain-top">
     <div class="brain-chips" id="brain-chips"></div>
     <div class="brain-chips brain-rooms" id="brain-rooms"></div>
-    <input class="brain-q" id="brain-q" placeholder="找一个词…" autocomplete="off">
+    <input class="brain-q" id="brain-q" autocomplete="off">
     <div class="brain-legend">一朵花是一件事。越大越要紧，越亮越常想起。白的记着，蓝的答应过，粉的是信，带暖光的钉住了。点一下看原话；跟别的事连着的，会牵出丝来。<span id="brain-bg-clear" style="display:none;text-decoration:underline;cursor:pointer;margin-left:6px">换回水面</span></div>
   </div>
   <div class="mail-list" id="mail-list"></div>
@@ -1128,7 +1128,7 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="write-letter-modal">
   <div class="sheet-inner">
     <div class="sheet-title">写给凛</div>
-    <textarea class="note-input" id="letter-input" placeholder="想说什么就写什么…" style="height:180px;line-height:1.9;"></textarea>
+    <textarea class="note-input" id="letter-input" style="height:180px;line-height:1.9;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="write-letter-modal">先不写</button>
       <button class="btn-solid" id="btn-send-letter">寄出去</button>
@@ -1151,10 +1151,10 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="drawer-add-modal">
   <div class="sheet-inner">
     <div class="sheet-title" id="drawer-add-title">放进抽屉</div>
-    <input id="d-title" class="mini-input" placeholder="叫什么">
-    <input id="d-note" class="mini-input" style="margin-top:8px;" placeholder="一句话说明（可留空）">
-    <input id="d-url" class="mini-input" style="margin-top:8px;display:none;" placeholder="或者贴个网址，自动抓下来" autocapitalize="off">
-    <textarea class="note-input" id="d-body" style="height:150px;margin-top:8px;" placeholder="内容…"></textarea>
+    <input id="d-title" class="mini-input">
+    <input id="d-note" class="mini-input" style="margin-top:8px;">
+    <input id="d-url" class="mini-input" style="margin-top:8px;display:none;" autocapitalize="off">
+    <textarea class="note-input" id="d-body" style="height:150px;margin-top:8px;"></textarea>
     <div id="lib-file-row" style="margin-top:8px;display:none;align-items:center;gap:10px;">
       <button class="btn-ghost" id="btn-lib-file" style="padding:6px 12px;font-size:13px;">选个文件</button>
       <span id="lib-file-tip" style="font-size:12px;color:var(--text-muted);">PDF / txt / md / docx / epub / 代码都行</span>
@@ -1328,7 +1328,7 @@ window.addEventListener('error', function (e) {
 <div class="sheet" id="note-modal">
   <div class="sheet-inner">
     <div class="sheet-title">加个备注（可以跳过）</div>
-    <textarea class="note-input" id="note-input" placeholder="写点什么…" maxlength="100"></textarea>
+    <textarea class="note-input" id="note-input" maxlength="100"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" id="note-skip">跳过</button>
       <button class="btn-solid" id="note-ok">确定</button>
@@ -1345,7 +1345,7 @@ window.addEventListener('error', function (e) {
       <div class="status-preset">在家</div><div class="status-preset">出门了</div>
       <div class="status-preset" data-clear="1">清除状态</div>
     </div>
-    <textarea class="note-input" id="status-custom-input" placeholder="自定义状态…" maxlength="20" style="height:44px;"></textarea>
+    <textarea class="note-input" id="status-custom-input" maxlength="20" style="height:44px;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" data-close-sheet="status-modal">取消</button>
       <button class="btn-solid" id="status-ok">确定</button>
@@ -1362,7 +1362,7 @@ window.addEventListener('error', function (e) {
     <div class="settings-label" style="margin-top:14px;">涂个颜色</div>
     <div id="day-colors" style="display:flex;gap:10px;margin-top:6px;"></div>
     <div class="settings-label" style="margin-top:14px;">写一句</div>
-    <textarea class="note-input" id="day-note" placeholder="今天…" style="height:70px;margin-top:6px;"></textarea>
+    <textarea class="note-input" id="day-note" style="height:70px;margin-top:6px;"></textarea>
     <div class="sheet-btns">
       <button class="btn-ghost" id="day-clear">清掉</button>
       <button class="btn-solid" id="day-save">记下</button>
@@ -1375,7 +1375,7 @@ window.addEventListener('error', function (e) {
     <div class="sheet-title">纪念日</div>
     <div id="days-list" style="display:flex;flex-direction:column;gap:8px;"></div>
     <div class="settings-label" style="margin-top:16px;">添一个</div>
-    <input id="day-name-input" class="mini-input" placeholder="叫什么" style="margin-top:6px;">
+    <input id="day-name-input" class="mini-input" style="margin-top:6px;">
     <input id="day-date-input" type="date" class="mini-input" style="margin-top:8px;">
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--text-muted);">
       <input type="checkbox" id="day-yearly" checked> 每年都过
@@ -1414,7 +1414,7 @@ window.addEventListener('error', function (e) {
 
 <script src="/static/app.js?v=94"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=119"></script>
+<script src="/static/rooms.js?v=120"></script>
 <script src="/static/wangchuan.js?v=3"></script>
 <script src="/static/silk-sprites.js?v=1"></script>
 <script src="/static/brain-silk.js?v=2"></script>
