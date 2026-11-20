@@ -1236,3 +1236,13 @@ body.kb-up .tabbar{padding-bottom:0;}
    但 0 会把底栏自己那条下边框压在键盘上沿底下,线露不出来,所以这里给 2——肉眼还是贴着的 */
 body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 .theme-snow .tab{padding:2px 0 2px;}
+
+/* 搜索结果：一条一条（窗里搜）和一组一组（全部窗搜） */
+.sr-item{display:flex;align-items:flex-start;gap:10px;}
+.sr-main{flex:1;min-width:0;}
+.sr-time{font-size:11.5px;color:var(--text-muted);white-space:nowrap;padding-top:2px;}
+.sr-group{padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;}
+.sr-ghead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+.sr-gtitle{font-size:14px;font-weight:600;color:var(--text);}
+.sr-n{font-size:11.5px;color:var(--text-muted);margin-top:3px;}
+.sr-back{padding:10px 14px;font-size:13px;color:var(--accent);border-bottom:1px solid var(--border);cursor:pointer;}

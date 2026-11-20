@@ -3381,7 +3381,23 @@ function currentConvMessages() {
     const t = typeof m.content === 'string' ? m.content
       : (Array.isArray(m.content) ? m.content.filter(x => x && x.type === 'text').map(x => x.text).join(' ') : '');
     if (!t.trim()) return;
-    out.push({ conv: currentConvId, title, idx: i, role: m.role, text: t });
+    out.push({ conv: currentConvId, title, idx: i, role: m.role, text: t, ts: m._ts || 0 });
+  });
+  return out;
+}
+// 某一个窗口里的全部消息（不是正开着的那个，从存档里读）
+function convMessagesOf(c) {
+  let arr = null;
+  try { const raw = (c.id === currentConvId) ? null : readConv(c.id); arr = raw ? JSON.parse(raw) : null; } catch (e) { arr = null; }
+  if (!Array.isArray(arr)) arr = (c.id === currentConvId && Array.isArray(messages)) ? messages : [];
+  const out = [];
+  arr.forEach((m, i) => {
+    if (!m || m._internal || m.role === 'tool') return;
+    if (m.role === 'user' && Array.isArray(m.content) && m.content.some(x => x && x.type === 'tool_result')) return;
+    const t = typeof m.content === 'string' ? m.content
+      : (Array.isArray(m.content) ? m.content.filter(x => x && x.type === 'text').map(x => x.text).join(' ') : '');
+    if (!t.trim()) return;
+    out.push({ conv: c.id, title: c.title || '对话', idx: i, role: m.role, text: t, ts: m._ts || 0 });
   });
   return out;
 }
@@ -3393,55 +3409,118 @@ function hiWord(text, q) {
     '<b class="hl-w">' + esc(text.slice(i, i + q.length)) + '</b>' +
     esc(text.slice(i + q.length, b)) + (b < text.length ? '…' : '');
 }
+function srDay(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), n = new Date();
+  if (d.toDateString() === n.toDateString()) return fmtTime(ts);
+  if (d.getFullYear() === n.getFullYear()) return (d.getMonth() + 1) + '/' + d.getDate();
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+}
+function srClock(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
 let searchTimer = null;
+// 搜索的范围：'conv' = 正开着的这个窗（她在窗里点的搜索），'all' = 全部窗（她不在任何窗里点的）
+let searchScope = 'conv';
+let searchDrill = null;   // 从全部窗点进了某一个窗：{id, title}
+function srJump(cid, idx) {
+  $('search-panel').classList.remove('open');
+  if (cid !== currentConvId) { if (messages.length) saveConv(); loadConv(cid); }
+  showPage('chat');
+  pinUntil = 0;
+  const findRow = () => document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
+  let row = findRow();
+  if (!row && idx < renderFrom) { loadOlder(idx); row = findRow(); }
+  if (!row) { toast('这条在聊天里找不到了'); return; }
+  row.scrollIntoView({ block: 'center' });
+  row.classList.add('sr-flash');
+  setTimeout(() => row.classList.remove('sr-flash'), 2200);
+  let holdUntil = Date.now() + 2500;
+  const stop = () => { holdUntil = 0; };
+  const box = msgBox();
+  ['touchstart', 'wheel', 'mousedown'].forEach(ev => box.addEventListener(ev, stop, { once: true, passive: true }));
+  const hold = () => {
+    if (Date.now() > holdUntil) return;
+    pinUntil = 0;
+    const r = findRow(); if (!r) return;
+    const bt = box.getBoundingClientRect(), rt = r.getBoundingClientRect();
+    const off = (rt.top + rt.height / 2) - (bt.top + bt.height / 2);
+    if (Math.abs(off) > 4) box.scrollTop += off;
+    requestAnimationFrame(hold);
+  };
+  requestAnimationFrame(hold);
+}
+// 一条一条列出来（窗里搜、或者从全部窗点进某个窗之后）
+function srRenderList(hits, q, el, withBack) {
+  let h = '';
+  if (withBack) {
+    h += '<div class="sr-back" id="sr-back">‹ 全部窗　｜　<b>' + esc(withBack) + '</b></div>';
+  }
+  h += '<div class="sr-total">共 <b>' + hits.length + '</b> 条相关聊天记录</div>';
+  hits.slice(0, 80).forEach(m => {
+    const who = m.role === 'user' ? (CFG.call_user || '宝宝') : displayName();
+    h += '<div class="sr-item" data-conv="' + m.conv + '" data-idx="' + m.idx + '">' +
+      '<div class="sr-main"><div class="sr-who">' + esc(who) + '</div>' +
+      '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>' +
+      '<div class="sr-time">' + srClock(m.ts) + '</div></div>';
+  });
+  el.innerHTML = h;
+  const bk = $('sr-back');
+  if (bk) bk.onclick = () => { searchDrill = null; doSearch(); };
+  el.querySelectorAll('[data-conv]').forEach(it => it.onclick = () => srJump(it.dataset.conv, parseInt(it.dataset.idx)));
+}
 function doSearch() {
   const q = $('search-input').value.trim();
   const el = $('search-result');
-  if (!q) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">搜你们说过的话</div>'; return; }
-  const hits = currentConvMessages().filter(m => m.text.toLowerCase().includes(q.toLowerCase()));
-  if (!hits.length) {
-    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">没找到「' + esc(q) + '」</div>';
+  if (!q) {
+    searchDrill = null;
+    el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">' +
+      (searchScope === 'all' ? '搜全部窗里说过的话' : '搜这个窗里说过的话') + '</div>';
     return;
   }
-  let h = '<div class="sr-total">这个窗口里共 <b>' + hits.length + '</b> 条相关聊天记录</div>';
-  hits.slice(0, 60).forEach(m => {
-    const who = m.role === 'user' ? (CFG.call_user || '宝宝') : displayName();
-    h += '<div class="sr-item" data-conv="' + m.conv + '" data-idx="' + m.idx + '">' +
-      '<div class="sr-who">' + esc(who) + '</div>' +
-      '<div class="sr-text">' + hiWord(m.text, q) + '</div></div>';
+  const low = q.toLowerCase();
+  // 在某个窗里搜（她本来就在这个窗，或者从全部窗点进来的）
+  if (searchScope === 'conv' || searchDrill) {
+    const src = searchDrill ? convMessagesOf({ id: searchDrill.id, title: searchDrill.title }) : currentConvMessages();
+    const hits = src.filter(m => m.text.toLowerCase().includes(low));
+    if (!hits.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">没找到「' + esc(q) + '」</div>'; return; }
+    srRenderList(hits, q, el, searchDrill ? searchDrill.title : '');
+    return;
+  }
+  // 全部窗：一个窗一组，像微信那样
+  const groups = [];
+  getConvs().forEach(c => {
+    const hits = convMessagesOf(c).filter(m => m.text.toLowerCase().includes(low));
+    if (hits.length) groups.push({ id: c.id, title: c.title || '对话', n: hits.length, last: hits[hits.length - 1] });
+  });
+  if (!groups.length) { el.innerHTML = '<div class="room-empty" style="color:var(--text-muted)">没找到「' + esc(q) + '」</div>'; return; }
+  groups.sort((a, b) => (b.last.ts || 0) - (a.last.ts || 0));
+  let h = '<div class="sr-total">全部窗里共 <b>' + groups.reduce((s2, g) => s2 + g.n, 0) + '</b> 条</div>';
+  groups.forEach(g => {
+    h += '<div class="sr-group" data-gid="' + g.id + '">' +
+      '<div class="sr-ghead"><span class="sr-gtitle">' + esc(g.title) + '</span>' +
+      '<span class="sr-time">' + srDay(g.last.ts) + '</span></div>' +
+      '<div class="sr-text">' + hiWord(g.last.text, q) + '</div>' +
+      '<div class="sr-n">共 <b>' + g.n + '</b> 条相关聊天记录</div></div>';
   });
   el.innerHTML = h;
-  el.querySelectorAll('[data-conv]').forEach(it => it.onclick = () => {
-    const cid = it.dataset.conv, idx = parseInt(it.dataset.idx);
-    $('search-panel').classList.remove('open');
-    if (cid !== currentConvId) { if (messages.length) saveConv(); loadConv(cid); }
-    showPage('chat');
-    // 打开聊天页会「贴底 3 秒」等图片加载，会把这里的跳转拽回最底下：先关掉，
-    // 改成这几秒一直贴着点的那一条（上面的图片加载完把它挤下去也会追回来）；她自己一碰屏幕就不管了
-    pinUntil = 0;
-    const findRow = () => document.querySelector('#messages .msg-row[data-msg-idx="' + idx + '"]');
-    let row = findRow();
-    // 很早的消息还没画出来：先把到这条为止的往前补上
-    if (!row && idx < renderFrom) { loadOlder(idx); row = findRow(); }
-    if (!row) { toast('这条在聊天里找不到了'); return; }
-    row.scrollIntoView({ block: 'center' });
-    row.classList.add('sr-flash');
-    setTimeout(() => row.classList.remove('sr-flash'), 2200);
-    let holdUntil = Date.now() + 2500;
-    const stop = () => { holdUntil = 0; };
-    const box = msgBox();
-    ['touchstart', 'wheel', 'mousedown'].forEach(ev => box.addEventListener(ev, stop, { once: true, passive: true }));
-    const hold = () => {
-      if (Date.now() > holdUntil) return;
-      pinUntil = 0;
-      const r = findRow(); if (!r) return;
-      const bt = box.getBoundingClientRect(), rt = r.getBoundingClientRect();
-      const off = (rt.top + rt.height / 2) - (bt.top + bt.height / 2);
-      if (Math.abs(off) > 4) box.scrollTop += off;
-      requestAnimationFrame(hold);
-    };
-    requestAnimationFrame(hold);
+  el.querySelectorAll('[data-gid]').forEach(it => it.onclick = () => {
+    const g = groups.find(x => x.id === it.dataset.gid);
+    searchDrill = { id: g.id, title: g.title };
+    doSearch();
   });
+}
+function openSearch(scope) {
+  searchScope = scope || 'conv';
+  searchDrill = null;
+  $('search-panel').classList.add('open');
+  $('search-input').value = '';
+  $('search-input').placeholder = scope === 'all' ? '搜全部窗' : '搜这个窗';
+  $('search-result').innerHTML = '<div class="room-empty" style="color:var(--text-muted)">' +
+    (scope === 'all' ? '搜全部窗里说过的话' : '搜这个窗里说过的话') + '</div>';
+  setTimeout(() => $('search-input').focus(), 120);
 }
 
 // ============ 朋友圈 ============
@@ -4927,12 +5006,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-call-now').onclick = () => { $('calllog-panel').classList.remove('open'); startCall('user'); };
   $('btn-usage').onclick = openUsage;
   $('btn-usage-topup').onclick = () => window.open('https://openrouter.ai/settings/credits', '_blank');
-  $('btn-search').onclick = () => {
-    $('search-panel').classList.add('open');
-    $('search-input').value = '';
-    $('search-result').innerHTML = '<div class="room-empty" style="color:var(--text-muted)">搜你们说过的话</div>';
-    setTimeout(() => $('search-input').focus(), 120);
-  };
+  // 聊天顶栏那个 🔍：她人就在这个窗里，所以只搜这个窗
+  $('btn-search').onclick = () => openSearch('conv');
+  // 对话记录那一页里的 🔍：她不在任何窗里，搜的就是全部窗
+  $('btn-search-all') && ($('btn-search-all').onclick = () => openSearch('all'));
   $('search-input').addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(doSearch, 220);
