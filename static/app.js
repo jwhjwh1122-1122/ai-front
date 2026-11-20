@@ -2702,9 +2702,12 @@ function startKeepalive() {
       // 上沿按「元素自己的顶」算,不是按底。按底算的话,矮的那种(工具条、一行短句)一碰边就淡,
       // 可一条高气泡的底还远在下面,k 一直是 1,它的上半截就直接被容器裁掉——
       // 她看到的「工具条会渐隐、发消息不会」就是这么来的。按顶算,长短一视同仁。
-      var dTop = b.top - r.top, dBot = r.bottom - b.bottom;
+      var dTop = b.top - r.top, dBot = r.bottom - b.top;
       if (dTop < TOP) k = Math.max(0, dTop / TOP);
       if (dBot < BOT) k = Math.min(k, Math.max(0, dBot / BOT));
+      // 保险:只要这一条还有身子在视野里,就绝不许淡成全透明。
+      // 界面难看是一回事,把她说过的话弄没了是另一回事。
+      if (k < .08 && b.bottom > r.top + 10 && b.top < r.bottom - 10) k = .08;
       if (k > .995) { if (el.style.filter) { el.style.opacity = ''; el.style.filter = ''; } }
       else { el.style.opacity = k.toFixed(2); el.style.filter = 'blur(' + ((1 - k) * 3.2).toFixed(1) + 'px)'; }
     }
