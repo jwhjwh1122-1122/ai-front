@@ -866,7 +866,7 @@ window.addEventListener('error', function (e) {
           <div class="wv-empty-t">电视开着，还没放片子</div>
           <input id="tv-url" class="wv-in" autocapitalize="off" autocomplete="off">
           <div class="wv-empty-row"><input id="tv-note" class="wv-in"><button id="tv-go" class="wv-go">放</button></div>
-          <div class="wv-empty-sub"><span id="tv-local">直接放手机里的（不用上传）</span><br><span id="tv-lib">从片库挑一部</span> · <span id="tv-up">上传到片库</span></div>
+          <div class="wv-empty-sub"><span id="tv-local">直接放手机里的（不用上传·选「浏览」别选相册）</span><br><span id="tv-lib">从片库挑一部</span> · <span id="tv-up">上传到片库</span></div>
         </div>
         <div class="wv-ui" id="wv-ui">
           <div class="wv-top"><button class="wv-ic" id="wv-back" aria-label="返回"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><div class="wv-title" id="wv-title"></div><button class="wv-pill" id="wv-lib">片库</button><button class="wv-pill" id="wv-fs">全屏</button></div>
@@ -1400,7 +1400,8 @@ window.addEventListener('error', function (e) {
 <input type="file" id="emoji-input" accept="image/*" style="display:none">
 <input type="file" id="book-file" accept=".txt,.epub,text/plain,application/epub+zip" style="display:none">
 <input type="file" id="video-file" accept="video/*" style="display:none">
-<input type="file" id="tv-local-file" accept="video/*" style="display:none">
+<!-- 不写 video/* ：iOS 看见它就默认弹"照片图库"，从相册拿视频系统要先导出转码一遍，那就是她说的"还是要等"。写扩展名更容易直接进"浏览"（文件 App），拿到的是原件，秒开。 -->
+<input type="file" id="tv-local-file" accept=".mp4,.mov,.m4v,.mkv,.webm,.avi,.ts,.flv" style="display:none">
 <input type="file" id="music-file" accept="audio/*" style="display:none">
 <input type="file" id="lib-file-input" style="display:none">
 
