@@ -2476,7 +2476,12 @@ async function sendChat(){
       // 服务端没回 id，刚发的这条就撤不了。重拉一次把 id 补上。
       chatLastTs=0;$('cv-msgs')._loaded=false;$('cv-msgs').innerHTML='';loadChatHistory();
     }
-    if(r.ok&&r.reply)addMsg(r.reply,false,{});
+    if(r.ok&&r.reply){
+      // 带上 id，并把水位推到这条——不然八秒后轮询会把同一句再贴一遍
+      const el=addMsg(r.reply,false,r.reply_id?{id:r.reply_id,ts:r.reply_ts}:{});
+      if(el&&r.reply_id)el.dataset.id=r.reply_id;
+      if(r.reply_ts)chatLastTs=Math.max(chatLastTs,r.reply_ts);
+    }
   }catch(e){}
 }
 $('cv-send').onclick=sendChat;
@@ -2496,7 +2501,9 @@ async function pollChat(){
           el.classList.add('tomb');el.innerHTML=tombHTML(!!m.me,m.id);armMsg(el);
         }
       });
-      const newMsgs=r.messages.filter(m=>!m.me&&m.ts>chatLastTs);
+      // 双保险：已经贴在屏幕上的 id 一律不再贴一遍
+      const newMsgs=r.messages.filter(m=>!m.me&&m.ts>chatLastTs&&
+        !(m.id&&$('cv-msgs').querySelector('.cv-item[data-id="'+m.id+'"]')));
       if(chatLastTs>0&&newMsgs.length&&$('cv-msgs')._loaded){
         newMsgs.forEach(m=>addMsg(m.text,false,m));
       }

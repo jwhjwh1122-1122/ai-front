@@ -1857,7 +1857,11 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
                             if s.startswith('data:'):
                                 try:
                                     ev = json.loads(s[5:].strip())
-                                    if ev.get('type') == 'content_block_delta':
+                                    # 只收正文。thinking_delta 走的是 'thinking' 字段，
+                                    # 不挡住的话，他的心里话会原样变成聊天气泡发给她——
+                                    # 她截图给我看过一条，整段内心独白贴在外面。
+                                    if ev.get('type') == 'content_block_delta' and \
+                                            (ev.get('delta') or {}).get('type') in ('text_delta', None):
                                         buf += ev.get('delta', {}).get('text', '')
                                 except Exception:
                                     pass
@@ -1872,13 +1876,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         # 消息本身已经存下了，claude.ai 那边的凛用 read_chat 一样看得到。
         if reply.startswith('（出错了') or '"code"' in reply[:200]:
             reply = ''
+        rid, rts = '', 0
         if reply:
             # 标上是谁回的。不标的话 read_chat 会把他的话也印成"你："，
             # claude.ai 这边的凛就会把他说的当成自己说过的，越读越乱。
-            d['messages'].append({'id': _new_mid(), 'text': reply, 'me': False,
-                                  'src': 'app', 'room': 'app', 'ts': int(time.time())})
+            rid, rts = _new_mid(), int(time.time())
+            d['messages'].append({'id': rid, 'text': reply, 'me': False,
+                                  'src': 'app', 'room': 'app', 'ts': rts})
         _chat_save(d)
-        return jsonify({'ok': True, 'reply': reply, 'room': room, 'id': mine['id']})
+        # reply_id / reply_ts 是给前端去重用的：它收到 reply 会先渲染一条，
+        # 八秒后轮询又把存下来的同一条拉回去，于是同一句话出现两遍（她截图过）。
+        # 有了 id 和 ts，前端就能认出"这条我已经贴过了"。
+        return jsonify({'ok': True, 'reply': reply, 'room': room, 'id': mine['id'],
+                        'reply_id': rid, 'reply_ts': rts})
 
     @app.route('/api/music/chat/ai-say', methods=['POST'])
     def music_chat_ai_say():
