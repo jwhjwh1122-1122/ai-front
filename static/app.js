@@ -13,6 +13,9 @@ let currentAudio = null, currentAudioBtn = null, voicePlayingEl = null;
 let currentModel = 'anthropic/claude-sonnet-4-6';
 let ctxWindow = 15, sendFrom = 0, currentConvId = null;
 let roomCtx = null;   // 'reader' | 'stage' | null —— 决定发哪组工具、气泡去哪
+// 主聊天页已经画到第几条。在房间里（影房/共读/一起听）聊的那些只画进了分屏，
+// 主消息页是空的；记着这个水位，退出房间时把欠的那几条补上去。
+let mainDrawnUpto = 0;
 
 const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const nowStr = ts => new Date(ts || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -2345,9 +2348,23 @@ function redrawMsgs() {
 // 画一条消息。一条坏了不能把整屏拖没：里面出错就只跳过这一条
 function renderOneMsg(msg, i) {
   if (!msg || typeof msg !== 'object') return;
+  if (!roomCtx && typeof i === 'number' && i + 1 > mainDrawnUpto) mainDrawnUpto = i + 1;
   try { return renderOneMsgRaw(msg, i); }
   catch (e) { console.error('渲染这条出错了', i, e); }
 }
+// 从房间里退出来的时候喊一声：房间里聊的那几条补画到主消息页，不然她退出来发现刚说的话不见了
+function syncMainChat() {
+  if (mainDrawnUpto >= messages.length) return;
+  const keep = roomCtx, kb = currentBubble, kt = currentThinkWrap, kr = currentAiRow;
+  roomCtx = null; currentBubble = null; currentThinkWrap = null; currentAiRow = null;
+  try { for (let i = mainDrawnUpto; i < messages.length; i++) renderOneMsg(messages[i], i); }
+  finally {
+    mainDrawnUpto = messages.length;
+    roomCtx = keep; currentBubble = kb; currentThinkWrap = kt; currentAiRow = kr;
+  }
+  try { scrollBottom(true); } catch (e) { }
+}
+window.syncMainChat = syncMainChat;
 function renderOneMsgRaw(msg, i) {
     if (msg._call && !msg._callmark) {
       const g = callGroupMark(i);

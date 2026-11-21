@@ -856,6 +856,7 @@ function closeNetease() {
   // 不要把 iframe 设成 about:blank —— 那等于把播放器整个销毁，歌会停。
   // 只把面板收起来，播放器留在后台继续放。
   roomCtx = null;
+  if (typeof syncMainChat === 'function') syncMainChat();
 }
 
 function closeCoread() {
@@ -864,6 +865,7 @@ function closeCoread() {
   $('coread-frame').src = 'about:blank';
   $('study').classList.remove('open');
   roomCtx = 'reader';
+  if (typeof syncMainChat === 'function') syncMainChat();
 }
 
 // ============ 分屏 ============
@@ -4372,6 +4374,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => {
     $(b.dataset.close).classList.remove('open', 'over');
     if (['cinema', 'musicroom', 'study'].includes(b.dataset.close)) roomCtx = $('stage').classList.contains('open') ? 'stage' : null;
+    // 彻底退回主界面了（不是从片库退回电视），把房间里聊的补回主消息页
+    if (!roomCtx && typeof syncMainChat === 'function') syncMainChat();
   });
   document.querySelectorAll('.sheet').forEach(s => s.onclick = e => { if (e.target === s) s.classList.remove('open'); });
   $('lightbox').onclick = () => $('lightbox').classList.remove('open');
@@ -4558,6 +4562,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('stage').classList.remove('open'); roomCtx = null;
     $('stage-video').pause(); $('stage-audio').pause();
     clearNudge(); watchStopReport();
+    if (typeof syncMainChat === 'function') syncMainChat();   // 一起看里聊的那些，补回主消息页
     refreshHome();
   };
 
