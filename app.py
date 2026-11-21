@@ -3653,6 +3653,16 @@ def chat_v2():
                     '（宝宝在叫你一起听歌！想去就单起一段写 [接受一起听]。）'
     except Exception:
         pass
+    # 她在 Lin（mcp）那间说的话，直接贴到我眼前，不用我去扒文件。
+    # 一起听开着没开都贴——她可能在那屋留了话就走了。
+    try:
+        import music as _mu2
+        if _mu2.CHAT_UNREAD_BRIEF:
+            _cb = _mu2.CHAT_UNREAD_BRIEF()
+            if _cb:
+                data['extra'] = (data.get('extra') or '') + '\n' + _cb + '\n'
+    except Exception:
+        pass
     try:
         _wt = watch_tip()
         if _wt:
