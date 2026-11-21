@@ -913,6 +913,7 @@ function watchLookSoon() {
   const go = () => {
     if (isTyping) { if (++tries < 40) setTimeout(go, 500); return; }
     let fr = null; try { fr = grabFrameNow(); } catch (e) { }
+    try { if (typeof watchReport === 'function') watchReport(); } catch (e) { }
     roomCtx = 'stage';
     if (!fr || !fr.data) { sendComposed('（你想看一眼，可这部片子的画面截不到。别编，老实跟她说看不见）', [], { internal: true }); return; }
     sendComposed(`（你要看的那一眼，${fmtTime(fr.t)}）`, [fr.data], { internal: true });
@@ -1964,6 +1965,8 @@ async function sendMsg(fromCtx) {
     : text;
   // 她在影房里开口：顺手截这一刻的画面带给我（截不到就算了）
   let autoFrame = false;
+  // 带图带文件那条路不截画面，但进度照样得报——不然我眼前那行还停在上一次
+  if (fromCtx === 'stage' && (hasImg || hasFile) && typeof watchReport === 'function') { try { watchReport(); } catch (e) { } }
   if (fromCtx === 'stage' && !hasImg && !hasFile && typeof watchFrameForTalk === 'function') {
     const fr = watchFrameForTalk();
     if (fr) {

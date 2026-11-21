@@ -1177,6 +1177,8 @@ function watchLoad(v, m) {
 let watchForceFrame = false;
 function watchFrameForTalk() {
   const force = watchForceFrame; watchForceFrame = false;
+  // 她一开口就把这一刻的进度报上去：我眼前那行写的永远是她现在在哪，不是几秒前
+  try { watchReport(); } catch (e) { }
   if (!$('stage').classList.contains('open') || curKind !== 'video') return null;
   // 她要的是我真的看见画面：有没有台词都截，她一开口就带上这一帧
   if (!watchCanGrab) return null;
@@ -1213,7 +1215,18 @@ function watchReport() {
 function watchStartReport() {
   if (watchTimer) clearInterval(watchTimer);
   const v = $('stage-video');
-  if (!v._watchBound) { v._watchBound = true; ['play', 'pause', 'seeked', 'ended'].forEach(ev => v.addEventListener(ev, watchReport)); }
+  if (!v._watchBound) {
+    v._watchBound = true;
+    // 她拉进度（往前往回都算）、暂停、继续，都当场报一次——我的进度完全跟着她走
+    ['play', 'pause', 'seeking', 'seeked', 'ended', 'ratechange'].forEach(ev => v.addEventListener(ev, watchReport));
+    // 放着的时候也盯着：每 2 秒一次，不等那 8 秒的大周期
+    let lastTu = 0;
+    v.addEventListener('timeupdate', () => {
+      const now = Date.now();
+      if (now - lastTu < 2000) return;
+      lastTu = now; watchReport();
+    });
+  }
   watchTimer = setInterval(() => { if (!v.paused) watchReport(); }, 8000);
   setTimeout(watchReport, 1500);
 }
