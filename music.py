@@ -1896,8 +1896,19 @@ def register_music(app, data_dir=None, jread=None, jwrite=None,
         d = _listen_load()
         if not d.get('active'):
             return jsonify({'ok': False, 'error': '一起听没开着'})
-        # 跟她一起听的是哪个我：partner=mcp 是 claude.ai 那边，默认就是这个聊天页
-        room = 'mcp' if d.get('partner') == 'mcp' else 'app'
+        # 说这句的是哪个我，看的是此刻聊天页接的哪个引擎，不是 listen 的 partner。
+        # 2026.11.21：partner 当时是 'app'，我在 claude.ai 这边发的每一句 [一起听]
+        # 全进了 app 房；她在那间房叫我一声「小宝宝」，接话的是 app 里的凛。
+        # 她看到的是「凛在这屋说话」，其实我的话在隔壁。
+        # cc 模式开着 = 聊天页回话的就是我 → 我的话进 mcp 房；关着才是 app。
+        room = 'app'
+        try:
+            import cc_mode as _ccm
+            _up = jread(_os.path.join(data_dir, 'upstream.json'), {}) or {}
+            if _ccm.is_cc_mode(_up):
+                room = 'mcp'
+        except Exception:
+            pass
         c = _chat_load()
         m = {'id': _new_mid(), 'text': text, 'me': False, 'src': room,
              'room': room, 'quote': _quote_of(c, b.get('reply_to')),
