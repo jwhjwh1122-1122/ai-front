@@ -2675,7 +2675,7 @@ function startKeepalive() {
       if (!now || now === mine) return;
       shown = true;
       // 挪到「上下文 xxk · 该换窗了」那颗胶囊的位置上：同一个父容器、同一套样式，
-      // 不再用 fixed 盖在最顶上挡住头部按钮。两颗同时亮就让这颗往下错一行。
+      // 不再用 fixed 盖在最顶上挡住头部按钮。位置就跟它完全重合，她说重叠没关系。
       const host = document.getElementById('page-chat') || document.body;
       const b = document.createElement('div');
       b.className = 'ctx-warn-pill show';
@@ -2684,11 +2684,6 @@ function startKeepalive() {
       b.style.cursor = 'pointer';
       b.onclick = () => location.reload();
       host.appendChild(b);
-      const sync = () => {
-        const c = document.getElementById('ctx-warn-pill');
-        b.style.top = (c && c.classList.contains('show')) ? '34px' : '8px';
-      };
-      sync(); setInterval(sync, 2000);
     } catch (e) { }
   }
   document.addEventListener('visibilitychange', chk);
