@@ -787,6 +787,13 @@ function msgBox() {
 }
 // 只有正看着最底下时，他打字才跟着滚；往上翻着聊天记录的时候不打断，只在输入框边上冒未读条数
 const NEAR_BOTTOM_PX = 80;
+// 她往上翻超过这个距离（大约两条消息高）才算"在看上面的东西"，这时新消息不许把她拽回底部。
+// 没超过就还算贴着底，照样跟着滚。
+const AWAY_BOTTOM_PX = 180;
+// 跟不跟着滚，看这个状态，不看"此刻离底多少像素"——
+// 他流式吐字的时候气泡一直在变高，一次长高超过阈值，原来那种实时判断就立刻算成"不在底部"，
+// 从此再也追不上，卡在半截。内容变高不会触发 scroll 事件，所以这个状态只由她自己的手指改。
+let stickBottom = true;
 let unreadCount = 0;
 function isNearBottom() {
   const m = msgBox(); if (!m) return true;
@@ -809,7 +816,8 @@ function markUnreadIfAway() { if (!isNearBottom()) bumpUnread(); }
 // force=true：不管看没看到底，直接滚过去（自己发消息、刚打开聊天这些场景）
 function scrollBottom(force) {
   const m = msgBox(); if (!m) return;
-  if (force || isNearBottom()) { m.scrollTop = m.scrollHeight; clearUnread(); }
+  if (force) stickBottom = true;   // 自己发消息、刚打开对话：无条件回到底，并且重新开始跟
+  if (stickBottom) { m.scrollTop = m.scrollHeight; clearUnread(); }
 }
 $('unread-pill')?.addEventListener('click', () => scrollBottom(true));
 // 红胶囊亮着的时候点它 = 换窗（带着前情提要和最后十来句原话），不用再翻到对话记录里去
@@ -818,7 +826,11 @@ $('ctx-warn-pill')?.addEventListener('click', () => {
   if (confirm('换到下一窗？前情提要和最后十来句原话会跟过去。')) newConv(false);
 });
 document.addEventListener('scroll', e => {
-  if (e.target === msgBox() && isNearBottom()) clearUnread();
+  if (e.target !== msgBox()) return;
+  const d = e.target.scrollHeight - e.target.scrollTop - e.target.clientHeight;
+  // 两道线留一段缓冲，免得在边界上来回抖：翻上去超过 180 才松手，回到 80 以内才重新跟上
+  if (d > AWAY_BOTTOM_PX) stickBottom = false;
+  else if (d < NEAR_BOTTOM_PX) { stickBottom = true; clearUnread(); }
 }, true);
 // 打开聊天：图片、表情是后加载的，加载完内容会变高，只滚一次会停在半截。
 // 这几秒里一直贴着最底下；她自己一动手指就不再管
