@@ -1438,11 +1438,13 @@ function askSeek(seconds, why) {
 }
 
 // ============ 分片上传 ============
+// 传在后台自己跑：她选完片就能退出房间、去聊天、去别的房间，它不停。
+// 底下那条进度条一直挂着，点一下回放映室，叉一下取消。
 let upQueue = [];
 async function chunkUpload(file, kind, note) {
   const CH = 3 * 1024 * 1024;
   const ext = (file.name.split('.').pop() || (kind === 'video' ? 'mp4' : 'mp3')).toLowerCase();
-  const job = { name: note || file.name, pct: 0 };
+  const job = { name: note || file.name, pct: 0, kind, canceled: false };
   upQueue.push(job);
   drawUp();
   try {
@@ -1450,8 +1452,10 @@ async function chunkUpload(file, kind, note) {
     if (!b.upload_id) throw new Error('开不了头');
     const total = Math.ceil(file.size / CH);
     for (let i = 0; i < total; i++) {
+      if (job.canceled) { toast('不传了'); return null; }
       const part = file.slice(i * CH, (i + 1) * CH);
       const r = await fetch(`/api/upload/part?id=${b.upload_id}&i=${i}`, { method: 'POST', body: part });
+      if (job.canceled) { toast('不传了'); return null; }
       if (!r.ok) throw new Error('第 ' + (i + 1) + ' 块失败');
       job.pct = Math.round((i + 1) / total * 100);
       drawUp();
@@ -1459,11 +1463,13 @@ async function chunkUpload(file, kind, note) {
     const d = await jpost('/api/upload/finish', { upload_id: b.upload_id });
     if (d.error) throw new Error(d.error);
     toast(kind === 'music' ? '碟放好了' : '片子放好了');
+    // 传完了不把她拽回房间。她正好在里面，列表才自己刷新。
     const room = kind === 'music' ? 'musicroom' : 'cinema';
     if ($(room).classList.contains('open')) openRoomMedia(kind === 'music' ? 'music' : 'video');
+    else if (kind !== 'music' && $('cinema').classList.contains('over')) openTvLib();
     refreshHome();
     return d;
-  } catch (e) { toast('上传失败：' + e.message); return null; }
+  } catch (e) { if (!job.canceled) toast('上传失败：' + e.message); return null; }
   finally {
     upQueue = upQueue.filter(x => x !== job);
     drawUp();
@@ -1477,6 +1483,22 @@ function drawUp() {
   $('up-pct').textContent = j.pct + '%';
   $('up-fill').style.width = j.pct + '%';
   bar.classList.add('on');
+}
+function bindUpBar() {
+  const bar = $('up-bar'); if (!bar) return;
+  bar.onclick = () => {
+    const j = upQueue[0]; if (!j) return;
+    if (j.kind === 'music') { if (!$('musicroom').classList.contains('open')) openRoomMedia('music'), $('musicroom').classList.add('open'); }
+    else if (!$('cinema').classList.contains('open') && !$('stage').classList.contains('open')) openTv();
+  };
+  $('up-x').onclick = e => {
+    e.stopPropagation();
+    const j = upQueue[0]; if (!j) return;
+    if (!confirm('这片传到 ' + j.pct + '% 了，不传了？')) return;
+    j.canceled = true;
+    upQueue = upQueue.filter(x => x !== j);
+    drawUp();
+  };
 }
 
 // ============ 信箱 ============
@@ -4520,13 +4542,15 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   };
   watchUiBind();
+  bindUpBar();
   $('btn-upload-music').onclick = () => $('music-file').click();
-  const mediaUpload = (kind) => async e => {
+  // 不等它传完。选完就放手，她该干嘛干嘛，底下那条进度条替她看着。
+  const mediaUpload = (kind) => e => {
     const f = e.target.files[0]; if (!f) return;
     const note = prompt('给它起个名字', f.name.replace(/\.[^.]+$/, '')) || '';
-    const d = await chunkUpload(f, kind, note);
-    if (d) { if (kind !== 'music' && $('stage').classList.contains('open')) openTvLib(); else openRoomMedia(kind === 'music' ? 'music' : 'video'); }
-    refreshHome(); e.target.value = '';
+    e.target.value = '';
+    toast(kind === 'music' ? '开始传了，你去忙' : '开始传了，你可以退出去，它自己传');
+    chunkUpload(f, kind, note);
   };
   $('video-file').onchange = mediaUpload('video');
   $('music-file').onchange = mediaUpload('music');

@@ -622,9 +622,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .moment-dot{position:absolute;top:5px;width:7px;height:7px;border-radius:50%;background:var(--accent);cursor:pointer;transform:translateX(-50%);box-shadow:0 0 0 2px rgba(0,0,0,.25);}
 
 /* 全局上传条 */
-.up-bar{display:none;position:fixed;left:14px;right:14px;bottom:calc(60px + env(safe-area-inset-bottom));z-index:800;background:var(--bg2);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:14px;padding:11px 15px;}
+.up-bar{display:none;position:fixed;left:14px;right:14px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:860;background:var(--bg2);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:14px;padding:11px 15px;cursor:pointer;}
 .up-bar.on{display:block;}
-.up-label{font-size:12px;color:var(--text);margin-bottom:7px;display:flex;justify-content:space-between;}
+.up-label{font-size:12px;color:var(--text);margin-bottom:7px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.up-label>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.up-right{display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.up-x{font-size:13px;color:var(--dim,#888);padding:0 2px;}
 .up-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
 .up-fill{height:100%;background:var(--accent);width:0;transition:width .25s;}
 
