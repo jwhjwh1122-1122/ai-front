@@ -70,6 +70,38 @@ def _safe_str(v, default='') -> str:
     return str(v) if v not in (None, '') else default
 
 
+def _fix_mojibake(text: str) -> str:
+    """修一行行的乱码歌词。
+
+    她截图里《我曾诅咒你》那句和声写着「æˆ'ä¸ç±ä½」——那是「我不爱你」的
+    UTF-8 字节被当成 cp1252 读了一遍。坏在上传者那边，网易云存的就是这个，
+    不是我们解码解错的（我们这儿走 r.json()，是对的）。
+
+    所以只能拿到之后还原：按 cp1252 / latin-1 各编回字节，再按 UTF-8 读一次。
+    必须一行一行来——整段里只坏一两行，其余是正常中文，整段 encode 会直接报错。
+    还原完要看看有没有真的变出汉字/假名/韩文，没有就说明这行本来就是正常的
+    西欧文字（Café、déjà vu 之类），原样放回去，不乱动。
+    """
+    if not text or not isinstance(text, str):
+        return text
+    out = []
+    for line in text.split('\n'):
+        fixed = line
+        if any('\u0080' <= ch <= '\u00ff' for ch in line):
+            for enc in ('cp1252', 'latin-1'):
+                try:
+                    cand = line.encode(enc).decode('utf-8')
+                except (UnicodeEncodeError, UnicodeDecodeError, LookupError):
+                    continue
+                if any('\u4e00' <= ch <= '\u9fff'
+                       or '\u3040' <= ch <= '\u30ff'
+                       or '\uac00' <= ch <= '\ud7a3' for ch in cand):
+                    fixed = cand
+                    break
+        out.append(fixed)
+    return '\n'.join(out)
+
+
 # ── 加密 ────────────────────────────────────────────────────────────────
 def _pad(data: bytes) -> bytes:
     n = 16 - len(data) % 16
@@ -409,9 +441,9 @@ class NeteaseClient:
                           headers=self._headers(pc=True), timeout=12)
         j = r.json()
         # rv=-1 顺手把罗马音也要回来（外语歌才有），给"译/音"那个切换用
-        out = {'lyric': (j.get('lrc') or {}).get('lyric', ''),
-               'tlyric': (j.get('tlyric') or {}).get('lyric', ''),
-               'romalrc': (j.get('romalrc') or {}).get('lyric', '')}
+        out = {'lyric': _fix_mojibake((j.get('lrc') or {}).get('lyric', '')),
+               'tlyric': _fix_mojibake((j.get('tlyric') or {}).get('lyric', '')),
+               'romalrc': _fix_mojibake((j.get('romalrc') or {}).get('lyric', ''))}
         if out['lyric']:
             if len(self._lyric_cache) > 300:
                 self._lyric_cache.clear()
