@@ -399,6 +399,12 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .stage-subs-line{font-size:1.4em;line-height:1.3;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 8px rgba(0,0,0,.5);font-weight:600;}
 .stage-subs-line:empty{display:none;}
 .stage-subs-b{font-size:1em;font-weight:400;opacity:.88;}
+/* 旧痕：以前一起看到这一刻说过的话，再放到这儿它自己浮出来 */
+.wv-echo{position:absolute;left:4%;right:4%;top:14%;display:flex;flex-direction:column;align-items:flex-start;gap:5px;pointer-events:none;opacity:0;transition:opacity .5s ease;}
+.wv-echo.on{opacity:1;}
+.wv-echo-item{max-width:86%;font-size:.86em;line-height:1.45;color:#fff;background:rgba(0,0,0,.42);backdrop-filter:blur(4px);padding:5px 9px;border-radius:10px;border-left:2px solid rgba(255,255,255,.5);text-shadow:0 1px 2px rgba(0,0,0,.8);animation:fadeUp .4s ease;}
+.wv-echo-item.mine{align-self:flex-end;border-left:none;border-right:2px solid rgba(255,190,120,.75);}
+.wv-echo-who{display:block;font-size:.78em;opacity:.65;margin-bottom:1px;}
 .stage-top{display:flex;align-items:center;justify-content:space-between;padding:max(12px,env(safe-area-inset-top)) 16px 6px;flex-shrink:0;background:var(--paper);}
 .stage-name{font-size:13px;color:var(--ink-soft);letter-spacing:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .stage-x{background:transparent;border:none;color:var(--ink-soft);font-size:16px;cursor:pointer;padding:4px 8px;}

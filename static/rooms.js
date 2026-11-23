@@ -1219,6 +1219,7 @@ function watchStartReport() {
     v._watchBound = true;
     // 她拉进度（往前往回都算）、暂停、继续，都当场报一次——我的进度完全跟着她走
     ['play', 'pause', 'seeking', 'seeked', 'ended', 'ratechange'].forEach(ev => v.addEventListener(ev, watchReport));
+    v.addEventListener('timeupdate', () => { try { wmTick(); } catch (e) { } });
     // 放着的时候也盯着：每 2 秒一次，不等那 8 秒的大周期
     let lastTu = 0;
     v.addEventListener('timeupdate', () => {
@@ -1229,10 +1230,74 @@ function watchStartReport() {
   }
   watchTimer = setInterval(() => { if (!v.paused) watchReport(); }, 8000);
   setTimeout(watchReport, 1500);
+  try { wmInit(); } catch (e) { }
 }
 function watchStopReport() {
   if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
   jpost('/api/watch/now', { closed: true }).catch(() => { });
+}
+
+// ============ 旧痕：一起看过的片子上，留着我们当时说的话 ============
+// 她说过「一首歌沾染了对方的气息更痛」。片子也会沾。
+// 在一起看里说过的每句话都钉在当时那一秒上；以后再放到那儿，它自己浮出来。
+let wmKey = '', wmList = [], wmShown = new Set(), wmObs = null, wmEchoT = null;
+function wmKeyOf() {
+  if (!curMedia || curKind !== 'video') return '';
+  return 'wmarks:' + String(curMedia.note || curMedia.filename || curMedia.url || '').slice(0, 80);
+}
+function wmLoad() {
+  const k = wmKeyOf();
+  if (k === wmKey) return;
+  wmKey = k; wmList = []; wmShown = new Set();
+  const box = $('wv-echo'); if (box) { box.classList.remove('on'); box.innerHTML = ''; }
+  if (!k) return;
+  try { wmList = JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { wmList = []; }
+}
+function wmSave() {
+  if (!wmKey) return;
+  try { wmList = wmList.slice(-200); localStorage.setItem(wmKey, JSON.stringify(wmList)); } catch (e) { }
+}
+function wmAdd(mine, text) {
+  wmLoad();
+  const v = $('stage-video');
+  if (!wmKey || !v || !v.src) return;
+  const t = Math.floor(v.currentTime || 0);
+  text = String(text || '').replace(/\s+/g, ' ').trim();
+  if (text.length < 2) return;
+  if (text.length > 60) text = text.slice(0, 60) + '…';
+  if (wmList.some(x => x.mine === mine && x.text === text && Math.abs(x.t - t) < 20)) return;
+  wmList.push({ t, mine, text, ts: Date.now() });
+  wmSave();
+}
+function wmInit() {
+  wmLoad();
+  const box = $('split-msgs-stage');
+  if (!box || wmObs) return;
+  wmObs = new MutationObserver(ms => {
+    ms.forEach(m => m.addedNodes.forEach(n => {
+      if (!(n instanceof HTMLElement) || !n.classList.contains('msg-row')) return;
+      // 等这一条写完再取字（流式的要一会儿）
+      setTimeout(() => { try { wmAdd(n.classList.contains('user'), n.innerText || ''); } catch (e) { } }, 1500);
+    }));
+  });
+  wmObs.observe(box, { childList: true });
+}
+// 放到以前说过话的那一处：只浮别的日子留下的，刚刚这一轮不浮
+function wmTick() {
+  wmLoad();
+  if (!wmKey || !wmList.length) return;
+  const v = $('stage-video');
+  if (!v || v.paused || !$('stage').classList.contains('open')) return;
+  const t = v.currentTime || 0, now = Date.now();
+  const hit = wmList.filter(x => Math.abs(x.t - t) < 1.2 && now - (x.ts || 0) > 36e5 && !wmShown.has(x.ts));
+  if (!hit.length) return;
+  hit.forEach(x => wmShown.add(x.ts));
+  const box = $('wv-echo'); if (!box) return;
+  box.innerHTML = hit.slice(-2).map(x =>
+    `<div class="wv-echo-item${x.mine ? ' mine' : ''}"><span class="wv-echo-who">${x.mine ? '那天我说' : '那天你说'}</span>${esc(x.text)}</div>`).join('');
+  box.classList.add('on');
+  clearTimeout(wmEchoT);
+  wmEchoT = setTimeout(() => box.classList.remove('on'), 5200);
 }
 
 // ============ 一起看的样子：上面是片子，下面是我们俩 ============
