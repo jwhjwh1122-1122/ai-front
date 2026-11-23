@@ -4983,12 +4983,20 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('btn-recap').onclick = async () => {
     $('recap-panel').classList.add('open');
-    $('recap-text').value = '读一下…';
+    // 换窗那一下 ds 要压几十秒。这期间打开面板，以前显示的是空白 + 「还没压过」，
+    // 看着跟打包失败一模一样。现在：正在压就说正在压，等它压完自己把字填进来。
+    const packing = (typeof handoffBusy !== 'undefined') && handoffBusy;
+    $('recap-text').value = packing ? '正在压上一窗的事…（压好了这儿自己会出现）' : '读一下…';
+    $('recap-sub').textContent = packing ? '正在压…' : '';
     try {
+      if (packing) { try { await packing; } catch (e) { } }
       const d = await jget('/api/recap?conv=' + encodeURIComponent(currentConvId || 'default'));
       $('recap-text').value = d.text || '';
-      $('recap-sub').textContent = d.covered ? `压了 ${d.covered} 条` : '还没压过';
-    } catch (e) { $('recap-text').value = ''; }
+      // 副标题以前只看 covered（那是滚动压的条数）。换窗打包不动 covered，
+      // 所以压成功了也照样写「还没压过」。现在有字就按字数说。
+      $('recap-sub').textContent = d.covered ? `压了 ${d.covered} 条`
+        : (d.text ? `换窗带过来的 ${d.text.length} 字` : '还没压过');
+    } catch (e) { $('recap-text').value = ''; $('recap-sub').textContent = '读不出来，再开一次'; }
   };
   $('btn-recap-save').onclick = async () => {
     const r = await jpost('/api/recap', { conv: currentConvId, text: $('recap-text').value }, 'PUT');
