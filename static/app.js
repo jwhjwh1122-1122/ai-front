@@ -877,7 +877,8 @@ const LISTEN_TAG = /^\s*\[一起听\]\s*/;
 const isListenSeg = s => LISTEN_TAG.test(String(s || ''));
 const listenText = s => String(s || '').replace(LISTEN_TAG, '').trim();
 const stripListenTags = s => String(s || '').replace(
-  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '').replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒|看一眼)\][ \t]*/g, '');
+  /\[(一起听|邀请一起听|接受一起听|退出一起听)\][ \t]*/g, '').replace(MUSIC_TAG_RE, '').replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒|看一眼)\][ \t]*/g, '')
+  .replace(/\[邀请一起看(?:[ \t:：]*[^\]]{0,60})?\][ \t]*/g, '');
 // 一起听的三个动作也搬出工具：单起一段写标记就行。
 const LISTEN_ACT_TAG = /^\s*\[(邀请一起听|接受一起听|退出一起听)\]\s*/;
 const LISTEN_ACT_API = {
@@ -894,6 +895,9 @@ const MUSIC_TAG_ANY = /\[(?:放歌[ \t:：]*[^\]]{1,60}|暂停播放|继续播�
 // 影房的遥控器：一起看的人会抢遥控器
 const WATCH_TAG_RE = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\][ \t]*/g;
 const WATCH_TAG_ANY = /\[(片子暂停|片子继续|倒回十秒|快进十秒)\]/;
+// 我也能挑片子：[邀请一起看] 或 [邀请一起看 片名]。她那边跳一张卡，点了才开。
+const WATCH_INVITE_RE = /\[邀请一起看(?:[ \t:：]*([^\]]{0,60}))?\][ \t]*/g;
+const WATCH_INVITE_ANY = /\[邀请一起看(?:[ \t:：]*[^\]]{0,60})?\]/;
 // 他自己想看画面：写 [看一眼]，这一轮说完，网页截这一帧悄悄递给他。
 // 她说：可以一直看一直说，只要你想。所以不限次数、不限间隔。
 // 只留一道防空转的闸（她自己定的规矩：后台敲字必须有刹车）：
@@ -937,7 +941,10 @@ function renderBubble(text) {
     .replace(/\[上一首\][ \t]*/g, '⏮ <i>（切回上一首）</i>')
     .replace(/\[红心\][ \t]*/g, '❤️ <i>（红心了这首）</i>')
     // 影房遥控和看一眼：她说不要留在聊天记录里，悄悄做就行
-    .replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒|看一眼)\][ \t]*\n?/g, '')));
+    .replace(/\[(片子暂停|片子继续|倒回十秒|快进十秒|看一眼)\][ \t]*\n?/g, '')
+    // 挑片子这件事要留在聊天记录里：是我开的口，不是悄悄按的遥控
+    .replace(/\[邀请一起看[ \t:：]*([^\]]{1,60})\][ \t]*/g, '🎬 <i>（叫你一起看《$1》）</i>')
+    .replace(/\[邀请一起看\][ \t]*/g, '🎬 <i>（叫你一起看片子）</i>')));
 }
 // 通话记录那条气泡。谁挂的就靠哪边，跟微信一样
 function addCallBubble(info, idx, force) {
@@ -1353,6 +1360,10 @@ async function runListenTags(text) {
   if (!text?.trim()) return;
   if (WATCH_TAG_ANY.test(text) && typeof watchRemote === 'function') {
     for (const m of text.matchAll(WATCH_TAG_RE)) watchRemote(m[1]);
+  }
+  if (WATCH_INVITE_ANY.test(text) && typeof watchInvite === 'function') {
+    const m = text.match(/\[邀请一起看(?:[ \t:：]*([^\]]{0,60}))?\]/);
+    if (m) watchInvite(m[1] || '');
   }
   if (/\[看一眼\]/.test(text)) watchLookSoon();
   if (!/\[(一起听|邀请一起听|接受一起听|退出一起听)\]/.test(text)

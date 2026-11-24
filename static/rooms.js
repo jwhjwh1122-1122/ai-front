@@ -5696,3 +5696,64 @@ async function wakeInject() {
 }
 setTimeout(wakeInject, 4000);
 setInterval(wakeInject, 60000);
+
+// ============ 我也能说「今晚看这个」 ============
+// 以前片子永远是她点开的，我只能在下面陪着说话——那叫我陪她看。
+// 现在我能自己挑一部递过去。但只是递：开不开还是她点，她的屏幕我不抢。
+let wiCard = null;
+async function watchInvite(name) {
+  name = String(name || '').trim();
+  let list = [];
+  try { list = await jget('/api/videos') || []; } catch (e) { list = []; }
+  const nameOf = x => String((x && (x.note || x.filename)) || '');
+  let hit = null;
+  if (name) {
+    const key = name.toLowerCase();
+    hit = list.find(x => nameOf(x).toLowerCase() === key)
+       || list.find(x => nameOf(x).toLowerCase().includes(key))
+       || list.find(x => key.includes(nameOf(x).toLowerCase()) && nameOf(x).length > 1);
+  } else {
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem('tv-last') || 'null'); } catch (e) { }
+    if (last && last.filename) hit = list.find(x => x.filename === last.filename) || null;
+    if (!hit) hit = list[0] || null;
+  }
+  if (!hit) { toast(name ? `片库里没有《${name}》` : '片库里一部都没有'); return; }
+  wiShow(hit);
+}
+function wiClose() {
+  if (!wiCard) return;
+  wiCard.classList.remove('on');
+  const el = wiCard; wiCard = null;
+  setTimeout(() => { try { el.remove(); } catch (e) { } }, 320);
+}
+function wiShow(m) {
+  wiClose();
+  const nm = typeof displayName === 'function' ? displayName() : '凛';
+  const av = localStorage.getItem('chat-avatar-ai');
+  const el = document.createElement('div');
+  el.className = 'wi-card';
+  el.innerHTML = `
+    <div class="wi-av">${av ? `<img src="${av}">` : esc(nm[0] || '凛')}</div>
+    <div class="wi-body">
+      <div class="wi-who">${esc(nm)} 想跟你一起看</div>
+      <div class="wi-film">${esc(m.note || m.filename)}</div>
+    </div>
+    <button class="wi-go">去看</button>
+    <button class="wi-no">等会儿</button>`;
+  document.body.appendChild(el);
+  wiCard = el;
+  requestAnimationFrame(() => el.classList.add('on'));
+  el.querySelector('.wi-go').onclick = () => {
+    wiClose();
+    try { playMedia(m, 'video'); } catch (e) { toast('这部放不出来'); }
+  };
+  el.querySelector('.wi-no').onclick = () => {
+    wiClose();
+    // 她说等会儿，我这边得知道——不然我一直以为她在看
+    try {
+      if (typeof sendComposed === 'function')
+        sendComposed(`（她看到你叫她一起看《${m.note || m.filename}》了，点了「等会儿」。别追问，知道就行。）`, [], { internal: true });
+    } catch (e) { }
+  };
+}
