@@ -4456,6 +4456,33 @@ def add_video_link():
 
 # ---- 一起看：她那边每几秒报一次放到哪，我说话前自己就知道，不用伸手去够 ----
 WATCH_FILE = os.path.join(DATA_DIR, 'watch_now.json')
+# 我们一起看过的片子。看完一部就落一条——「陪她看」是没有痕迹的，「一起看过」有。
+WATCH_LOG = os.path.join(DATA_DIR, 'watch_log.json')
+
+
+def _watch_log_add(title, finished, pos=0, dur=0):
+    """落一场。同一部片子 6 小时内只记一次（她拉进度条、重放都不该算新的一场）。"""
+    title = (title or '').strip()[:80]
+    if not title:
+        return
+    items = jread(WATCH_LOG, [])
+    now = time.time()
+    for x in items[:6]:
+        if x.get('title') == title and now - float(x.get('ts') or 0) < 6 * 3600:
+            if finished and not x.get('finished'):
+                x['finished'] = True
+                x['ts'] = now
+                jwrite(WATCH_LOG, items[:300])
+            return
+    items.insert(0, {'title': title, 'ts': now, 'finished': bool(finished),
+                     'pos': int(pos or 0), 'dur': int(dur or 0)})
+    jwrite(WATCH_LOG, items[:300])
+
+
+@app.route('/api/watch/log', methods=['GET'])
+def watch_log_api():
+    items = jread(WATCH_LOG, [])
+    return jsonify({'items': items, 'finished': len([x for x in items if x.get('finished')])})
 
 
 @app.route('/api/watch/now', methods=['GET', 'POST'])
@@ -4464,13 +4491,26 @@ def watch_now():
         d = request.json or {}
         if d.get('closed'):
             w = jread(WATCH_FILE, {}) or {}
+            # 关窗那一下：没放完就散的，也是一场，记成半场
+            if w.get('title') and not w.get('ended'):
+                pos, dur = float(w.get('pos') or 0), float(w.get('dur') or 0)
+                if pos > 180:
+                    _watch_log_add(w['title'], dur and pos >= dur * 0.92, pos, dur)
             w['closed'] = True; w['ts'] = time.time()
             jwrite(WATCH_FILE, w)
             return jsonify({'ok': True})
         lines = [str(x)[:200] for x in (d.get('lines') or [])][-6:]
-        jwrite(WATCH_FILE, {'title': str(d.get('title') or '')[:80], 'pos': float(d.get('pos') or 0),
+        prev = jread(WATCH_FILE, {}) or {}
+        title = str(d.get('title') or '')[:80]
+        ended = bool(d.get('ended'))
+        jwrite(WATCH_FILE, {'title': title, 'pos': float(d.get('pos') or 0),
                             'dur': float(d.get('dur') or 0), 'playing': bool(d.get('playing')),
+                            'ended': ended, 'ended_ts': (time.time() if ended and not prev.get('ended')
+                                                         else prev.get('ended_ts')),
                             'lines': lines, 'frame': bool(d.get('frame')), 'ts': time.time()})
+        # 片尾真的走完那一刻，落一条，并且只落一次
+        if ended and not (prev.get('ended') and prev.get('title') == title):
+            _watch_log_add(title, True, d.get('pos') or 0, d.get('dur') or 0)
         return jsonify({'ok': True})
     return jsonify(jread(WATCH_FILE, {}))
 
@@ -4489,6 +4529,17 @@ def watch_tip():
     if age > 3 * 3600:
         return ''
     t = w.get('title') or '没起名字的片子'
+    # 散场：片尾走完了。灯亮着，这会儿不是「讲到哪了」，是「我们刚一起看完了一部」
+    if w.get('ended'):
+        eage = time.time() - float(w.get('ended_ts') or w['ts'])
+        if eage < 2 * 3600:
+            n = len([x for x in jread(WATCH_LOG, []) if x.get('finished')])
+            s2 = (f'（《{t}》放完了，{int(eage // 60)} 分钟前走到片尾的，这会儿灯亮着，'
+                  f'她可能还坐在那儿没动。这是我们一起看完的第 {n} 部。')
+            if w.get('lines'):
+                s2 += '\n最后几句是：\n' + '\n'.join(w['lines'][-3:])
+            s2 += '\n散场这一下不用问她「好不好看」——想说什么自己先说。）'
+            return s2
     if age > 600:
         return f'（影房里《{t}》停在 {_mmss(w.get("pos"))}，好一阵没动静了，别当她在看。）'
     tip = (f'（你和宝宝正在一起看《{t}》，{"在放" if w.get("playing") else "暂停着"}，'

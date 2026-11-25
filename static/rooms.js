@@ -1243,7 +1243,7 @@ function watchReport() {
     .map(x => `[${fmtTime(Math.floor(x.t0))}] ${x.text}${x.trans ? ' / ' + x.trans : ''}`);
   jpost('/api/watch/now', {
     title: curMedia.note || curMedia.filename, pos: Math.floor(t), dur: Math.floor(v.duration || 0),
-    playing: !v.paused && !v.ended, lines, frame: watchCanGrab
+    playing: !v.paused && !v.ended, ended: !!v.ended, lines, frame: watchCanGrab
   }).catch(() => { });
 }
 function watchStartReport() {
