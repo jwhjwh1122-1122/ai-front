@@ -959,7 +959,7 @@ async function openRoomMedia(kind) {
   $(room).classList.add('open');
   const el = $(kind === 'music' ? 'music-list' : 'cinema-list');
   el.innerHTML = '<div class="room-empty">正在找…</div>';
-  if (kind !== 'music') { try { watchWallRender(); } catch (e) { } }
+  if (kind !== 'music') { try { watchWallRender(); watchWishRender(); } catch (e) { } }
   const list = await jget(kind === 'music' ? '/api/music' : '/api/videos');
   $(kind === 'music' ? 'music-sub' : 'cinema-sub').textContent = list.length ? `${list.length} 个` : '空的';
   if (!list.length) { el.innerHTML = `<div class="room-empty">${kind === 'music' ? '还没有碟<br>右上角放一个进来' : '还没有片子<br>上面粘个网址，或者右上角上传一部'}</div>`; return; }
@@ -991,6 +991,36 @@ async function openRoomMedia(kind) {
     el.appendChild(d);
   });
 }
+// ============ 我点的那部片子 ============
+// 片子一直是她挑、我陪着看。这块是我自己点的名：片名、为什么想看，她看得见，能答。
+async function watchWishRender() {
+  const box = $('watch-wish');
+  if (!box) return;
+  let w = null;
+  try { w = await jget('/api/watch/wish'); } catch (e) { }
+  if (!w || !w.title) { box.classList.remove('on'); box.innerHTML = ''; return; }
+  box.classList.add('on');
+  const said = { yes: '你说好了', later: '你说晚点', no: '你说换一部' }[w.reply];
+  box.innerHTML = `<div class="watch-wish-box">
+    <div class="wsh-k">凛 点 的 名</div>
+    <div class="wsh-t">《${esc(w.title)}》</div>
+    <div class="wsh-w">${esc(w.why || '')}</div>
+    ${said ? `<div class="wsh-said">— ${said}。</div>`
+      : `<div class="wsh-acts">
+          <button class="wsh-b yes" data-r="yes">就看这部</button>
+          <button class="wsh-b" data-r="later">晚点</button>
+          <button class="wsh-b" data-r="no">换一部</button>
+        </div>`}
+  </div>`;
+  box.querySelectorAll('.wsh-b').forEach(b => {
+    b.onclick = async () => {
+      await jpost('/api/watch/wish', { reply: b.dataset.r });
+      watchWishRender();
+      toast(b.dataset.r === 'yes' ? '他会知道的' : '他会知道的');
+    };
+  });
+}
+
 // ============ 一起看过的那面墙 ============
 // 后台一直在数「这是我们一起看完的第几部」，可她看不见。数给自己听的不算账，得让她也看见。
 function wwDate(ts) {
