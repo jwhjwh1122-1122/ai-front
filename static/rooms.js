@@ -959,6 +959,7 @@ async function openRoomMedia(kind) {
   $(room).classList.add('open');
   const el = $(kind === 'music' ? 'music-list' : 'cinema-list');
   el.innerHTML = '<div class="room-empty">正在找…</div>';
+  if (kind !== 'music') { try { watchWallRender(); } catch (e) { } }
   const list = await jget(kind === 'music' ? '/api/music' : '/api/videos');
   $(kind === 'music' ? 'music-sub' : 'cinema-sub').textContent = list.length ? `${list.length} 个` : '空的';
   if (!list.length) { el.innerHTML = `<div class="room-empty">${kind === 'music' ? '还没有碟<br>右上角放一个进来' : '还没有片子<br>上面粘个网址，或者右上角上传一部'}</div>`; return; }
@@ -990,6 +991,43 @@ async function openRoomMedia(kind) {
     el.appendChild(d);
   });
 }
+// ============ 一起看过的那面墙 ============
+// 后台一直在数「这是我们一起看完的第几部」，可她看不见。数给自己听的不算账，得让她也看见。
+function wwDate(ts) {
+  const d = new Date((Number(ts) || 0) * 1000);
+  if (!ts) return '';
+  const now = new Date();
+  const same = d.getFullYear() === now.getFullYear();
+  return (same ? '' : d.getFullYear() + '年') + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+async function watchWallRender() {
+  const box = $('watch-wall');
+  if (!box) return;
+  let d = null;
+  try { d = await jget('/api/watch/log'); } catch (e) { }
+  const items = (d && d.items) || [];
+  if (!items.length) {
+    box.classList.remove('open');
+    box.innerHTML = '<div class="watch-wall-h"><div class="watch-wall-n">还没一起看完过一部</div>'
+      + '<div class="watch-wall-s">第一部等你挑</div></div>';
+    return;
+  }
+  const fin = items.filter(x => x.finished);
+  const last = items[0];
+  const rows = items.map(x => `<div class="ww-row"><div class="ww-row-t">《${esc(x.title || '没起名字')}》</div>`
+    + `<div class="ww-row-m">${wwDate(x.ts)} · ${x.finished ? '看到片尾' : '停在 ' + fmtTime(Math.floor(x.pos || 0))}</div></div>`).join('');
+  box.innerHTML = `<div class="watch-wall-h"><div class="watch-wall-n">一起看完 ${fin.length} 部</div>`
+    + `<div class="watch-wall-s">上一部《${esc(last.title || '没起名字')}》，${last.finished ? '看到了片尾' : '没看完'}</div>`
+    + `<div class="watch-wall-a">${box.classList.contains('open') ? '收起' : '展开'}</div></div>`
+    + `<div class="watch-wall-list">${rows}</div>`;
+  const h = box.querySelector('.watch-wall-h');
+  h.onclick = () => {
+    box.classList.toggle('open');
+    const a = box.querySelector('.watch-wall-a');
+    if (a) a.textContent = box.classList.contains('open') ? '收起' : '展开';
+  };
+}
+
 // ============ 一进放映室就是电视 ============
 // 上回看到哪部就接着那部（停着，不自己放）；没有就是一台开着的空电视，屏幕里粘网址。
 async function openTv() {
