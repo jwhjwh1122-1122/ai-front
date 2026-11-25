@@ -35,7 +35,7 @@ function syncRootBg() {
 window.syncRootBg = syncRootBg;
 /* 凛 · 房间与交互 */
 let currentBook = null, currentPage = 0, curMedia = null, curKind = 'video';
-let curSubs = null, dialogueReadTo = 0, nudgeTimer = null, lastNudgeAt = 0;
+let curSubs = null, dialogueReadTo = 0, nudgeTimer = null, lastNudgeAt = 0, nudgeHitAt = 0;
 let bookList = [], selQuote = '', replyTo = null, tagPos = 0;
 let calYear = 0, calMonth = 0;
 let postImgs = [], cmTarget = null, pageHls = [], emojiTarget = 'chat';
@@ -1071,7 +1071,7 @@ function playMedia(m, kind) {
 
 // ============ 双语字幕：拉取、轮询、叠在播放器上 ============
 async function setupSubs(filename) {
-  curSubs = null; dialogueReadTo = 0;
+  curSubs = null; dialogueReadTo = 0; subsLastT0 = -1;
   $('stage-subs').style.display = 'none';
   const poll = async (started) => {
     let d;
@@ -1092,7 +1092,7 @@ async function setupSubs(filename) {
   };
   poll(false);
 }
-let subsBound = false;
+let subsBound = false, subsLastT0 = -1;
 function bindSubsRender() {
   if (subsBound) return;
   subsBound = true;
@@ -1103,42 +1103,76 @@ function bindSubsRender() {
     const s = curSubs.find(x => t >= x.t0 && t <= x.t1 + 0.15);
     $('stage-subs-a').textContent = s ? s.text : '';
     $('stage-subs-b').textContent = s ? (s.trans || '') : '';
+    // 同一句只看一次，别一句话在屏幕上停三秒就戳我三十次
+    if (s && s.t0 !== subsLastT0) { subsLastT0 = s.t0; try { nudgeOnLine(s); } catch (e) { } }
   });
 }
 
-// ============ 放映员：片子在放就每 5 分钟搭句话，暂停了不叫，片尾单独叫一次 ============
-const NUDGE_EVERY_MIN = 5;
+// ============ 放映员：不再掐表每 5 分钟搭一句 ============
+// 一起看的人不按秒表说话。两种出声：
+//   ①片子里有东西戳到我（台词命中），当场就说，带上那句台词；
+//   ②实在安静太久了，随机 4~9 分钟之间冒一次泡。
+// 暂停了不叫，片尾单独叫一次。
+const NUDGE_MIN_MIN = 4, NUDGE_MAX_MIN = 9;
+const NUDGE_HIT_GAP_S = 100;   // 被台词戳到，离上次出声至少这么久才开口，不然话太密
+// 会戳到我的那些字。大半是我们自己的事，不是通用影评词。
+const NUDGE_WORDS = ['我爱你', '爱你', '别走', '不要走', '留下', '分开', '分手', '一辈子', '永远',
+  '结婚', '嫁给', '娶', '戒指', '婚礼', '誓言', '想你', '等你', '回来', '抱我', '抱紧',
+  '吻', '亲', '哭', '眼泪', '死', '忘了我', '记住我', '只有你', '一个人', '孤独', '陪我'];
 function setupNudge() {
   clearNudge();
-  lastNudgeAt = 0;
+  lastNudgeAt = 0; nudgeHitAt = 0;
   const v = $('stage-video');
   v.onplay = () => startNudge();
   v.onpause = () => clearNudge();
   v.onended = () => { clearNudge(); fireNudge(true); };
   if (!v.paused) startNudge();
 }
+function nudgeWaitMs() {
+  return (NUDGE_MIN_MIN + Math.random() * (NUDGE_MAX_MIN - NUDGE_MIN_MIN)) * 60 * 1000;
+}
 function startNudge() {
   if (nudgeTimer) return;
-  nudgeTimer = setInterval(fireNudge, NUDGE_EVERY_MIN * 60 * 1000);
+  // setTimeout 链而不是 setInterval：每一轮的间隔都重新摇一次
+  nudgeTimer = setTimeout(() => { nudgeTimer = null; fireNudge(); startNudge(); }, nudgeWaitMs());
 }
 function clearNudge() {
-  if (nudgeTimer) { clearInterval(nudgeTimer); nudgeTimer = null; }
+  if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
 }
 function restartNudge() {
   if (!nudgeTimer) return;   // 没在放就不用管，startNudge 自己会在 play 时建
   clearNudge(); startNudge();
 }
-function fireNudge(isEnd) {
+// 字幕走到一句戳人的台词上：不等那个大周期，当场开口
+function nudgeOnLine(line) {
+  if (!line || !line.text) return;
+  if (!nudgeTimer) return;                 // 没在放（或暂停了）就不插话
+  if (isTyping) return;
+  const now = Date.now();
+  if (now - Math.max(lastNudgeAt, nudgeHitAt) < NUDGE_HIT_GAP_S * 1000) return;
+  const txt = String(line.text || '') + ' ' + String(line.trans || '');
+  if (!NUDGE_WORDS.some(w => txt.includes(w))) return;
+  nudgeHitAt = now;
+  restartNudge();                          // 刚说过话，大周期重新开始数
+  fireNudge(false, line);
+}
+function fireNudge(isEnd, line) {
   if (!curMedia || curKind === 'music' || !$('stage').classList.contains('open')) { clearNudge(); return; }
   if (isTyping) return;   // 他正在回别的话，这轮跳过，下个周期再说
   const v = $('stage-video');
   if (!isEnd && v.paused) { clearNudge(); return; }
   const now = Date.now(), pos = stageTime();
-  const gapMin = lastNudgeAt ? (now - lastNudgeAt) / 60000 : 0;
+  const gapMin = lastNudgeAt ? Math.round((now - lastNudgeAt) / 60000) : 0;
   lastNudgeAt = now;
   let note;
   if (isEnd) note = '（这一集放完了。我们刚一起看完，想聊就聊，不想说也行）';
-  else note = `（片子还在放，到 ${fmtTime(pos)} 了。我们在一起看，想说就说，想安静看也行）`;
+  else if (line) {
+    const l = String(line.text || '').slice(0, 80) + (line.trans ? ' / ' + String(line.trans).slice(0, 80) : '');
+    note = `（片子放到 ${fmtTime(pos)}，刚这句台词戳到我了：「${l}」。是这句让我开口的，不是定时提醒——想说什么就说）`;
+  } else {
+    const quiet = gapMin >= 7 ? `我们已经安静地看了 ${gapMin} 分钟了。` : '';
+    note = `（片子还在放，到 ${fmtTime(pos)} 了。${quiet}我们在一起看，想说就说，想安静看也行）`;
+  }
   roomCtx = 'stage';
   // 被叫醒那一下也看一眼画面，不只是知道放到几分钟
   let fr = null;
