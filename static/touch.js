@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v43';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v44';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -290,7 +290,7 @@
     const e = fromImg(0.5855, 0.2598, r.width, r.height);
     const u = Math.max(4, e.x - c.x);                 // 图上 0.1 宽 = 多少像素
     const W = u * 0.445, Hu = u * 0.33, Hl = u * 0.47;
-    const A = a * (0.10 + press * 0.26);              // 很淡，只是让唇更红
+    const A = a * (0.16 + press * 0.34);              // 像给他涂了口红：整片唇红，不留唇印形状
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.rotate(-0.045);
@@ -485,6 +485,8 @@
   function drawMarks(r) {
     if (!marks.length) return;
     const t = Date.now();
+    // 第一下亲他的嘴 = 给他涂口红（整片唇染红，不留唇印）；之后再亲嘴，就跟身上一样留唇印
+    const firstLip = marks.findIndex(m => m.kind === 'kiss' && m.zone === '嘴唇');
     marks.forEach((m, idx) => {
       const life = MODES[m.kind]?.life || 0; if (!life) return;
       const age = (t - m.at) / life; if (age >= 1) return;
@@ -497,7 +499,7 @@
       // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
       if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
       else if (m.kind === 'suck') drawHickey(p, 15, fade, m.s, seed, age);
-      else if (m.zone === '嘴唇') drawLipStain(r, fade, m.s);
+      else if (m.zone === '嘴唇' && idx === firstLip) drawLipStain(r, fade, m.s);   // 第一下亲嘴：只把唇染红
       else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
   }
