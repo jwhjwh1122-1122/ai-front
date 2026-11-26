@@ -209,79 +209,86 @@
   // 每块痕迹自带一个种子，形状才不会每帧都在变
   function rnd(seed) { let x = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 
-  // 唇印：上唇两瓣、下唇一瓣，中间那道缝，再刮出一道道深浅不匀的纹
+  // ---------- 唇印素材：她给的那张真唇印，抠成 8 张蒙版 ----------
+  const LIPS = [];
+  let lipsReady = 0;
+  for (let i = 0; i < 8; i++) {
+    const im = new Image();
+    im.onload = () => { lipsReady++; kick(); };
+    im.src = '/static/lip' + i + '.png?v=1';
+    LIPS.push(im);
+  }
+  // 蒙版上色用的小画布
+  let tintCv = null, tintCx = null;
+  function tinted(img, w, h, col) {
+    if (!tintCv) { tintCv = document.createElement('canvas'); tintCx = tintCv.getContext('2d'); }
+    w = Math.max(2, Math.round(w)); h = Math.max(2, Math.round(h));
+    tintCv.width = w; tintCv.height = h;
+    tintCx.clearRect(0, 0, w, h);
+    tintCx.globalCompositeOperation = 'source-over';
+    tintCx.drawImage(img, 0, 0, w, h);
+    tintCx.globalCompositeOperation = 'source-in';
+    tintCx.fillStyle = col;
+    tintCx.fillRect(0, 0, w, h);
+    tintCx.globalCompositeOperation = 'source-over';
+    return tintCv;
+  }
+
+  // 唇印：直接用素材，随机挑一张、随机转个角度，颜色按深浅调
   function drawLip(p, R, a, rot, seed) {
+    const idx = Math.floor(rnd(seed + 2.3) * LIPS.length) % LIPS.length;
+    const img = LIPS[idx];
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const w = R * 2.5, h = w * (img.naturalHeight / img.naturalWidth);
+    const k = rnd(seed + 7.7);
+    const col = `rgb(${Math.round(188 - k * 26)},${Math.round(44 + k * 24)},${Math.round(62 + k * 14)})`;
+    const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    ctx.scale(R, R);
-    const lobes = [
-      // 上唇
-      { d: () => { ctx.moveTo(-1, 0); ctx.bezierCurveTo(-0.86, -0.52, -0.42, -0.66, -0.06, -0.14);
-                   ctx.bezierCurveTo(0.34, -0.72, 0.8, -0.56, 1, -0.02);
-                   ctx.bezierCurveTo(0.6, -0.18, -0.5, -0.2, -1, 0); }, a: 1 },
-      // 下唇（照她给的那张，往右下挪一点点）
-      { d: () => { ctx.moveTo(-0.92, 0.1); ctx.bezierCurveTo(-0.4, 0.26, 0.6, 0.22, 1.02, 0.08);
-                   ctx.bezierCurveTo(0.84, 0.66, 0.3, 0.9, -0.2, 0.78);
-                   ctx.bezierCurveTo(-0.58, 0.68, -0.84, 0.42, -0.92, 0.1); }, a: 0.88 },
-    ];
-    lobes.forEach((L, li) => {
-      ctx.save();
-      ctx.beginPath(); L.d(); ctx.closePath();
-      ctx.clip();
-      // 底色：一边深一边淡
-      const g = ctx.createLinearGradient(-1, 0, 1, 0.3);
-      const A = a * L.a;
-      g.addColorStop(0, `rgba(150,16,34,${A})`);
-      g.addColorStop(0.45, `rgba(176,26,46,${A * 0.9})`);
-      g.addColorStop(1, `rgba(190,52,70,${A * 0.45})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(-1.2, -1.2, 2.4, 2.4);
-      // 刮纹：一道道竖纹，把颜色挖掉一点，深浅不一
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineCap = 'butt';
-      for (let i = 0; i < 46; i++) {
-        const u = -1.05 + (i / 45) * 2.1;
-        const k = rnd(seed + li * 17 + i);
-        ctx.strokeStyle = `rgba(0,0,0,${0.18 + k * 0.5})`;
-        ctx.lineWidth = 0.012 + k * 0.03;
-        ctx.beginPath();
-        ctx.moveTo(u + (k - 0.5) * 0.04, -1.2);
-        ctx.lineTo(u - (k - 0.5) * 0.06, 1.2);
-        ctx.stroke();
-      }
-      ctx.restore();
-    });
+    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    ctx.drawImage(t, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
 
-  // 牙印：一圈小牙咬出来的那种环
+  // 牙印：上下两排牙，中间留着没咬到的那两侧
   function drawBite(p, R, a, rot, seed) {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    ctx.lineCap = 'round';
-    const rx = R * 1.15, ry = R * 0.95, n = 14;
-    for (let i = 0; i < n; i++) {
-      const th = (i / n) * 6.2832;
-      const k = rnd(seed + i * 3.3);
-      if (k < 0.12) continue;                       // 有几颗没咬到
-      const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
-      const len = R * (0.2 + k * 0.22);
-      const ux = -Math.cos(th), uy = -Math.sin(th); // 朝圆心
-      ctx.strokeStyle = `rgba(176,38,62,${a * (0.5 + k * 0.5)})`;
-      ctx.lineWidth = R * (0.1 + k * 0.08);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + ux * len, cy + uy * len);
-      ctx.stroke();
-    }
-    // 圈里面那层淤红
-    const g = ctx.createRadialGradient(0, 0, 1, 0, 0, R * 1.1);
-    g.addColorStop(0, `rgba(196,70,96,${a * 0.16})`);
-    g.addColorStop(1, 'rgba(196,70,96,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.2832); ctx.fill();
+    const rx = R * 1.25, ry = R * 1.05;
+    // 先铺一层淤红，牙圈里面那块闷着的红
+    const bg = ctx.createRadialGradient(0, 0, 1, 0, 0, rx * 1.15);
+    bg.addColorStop(0, `rgba(190,74,92,${a * 0.2})`);
+    bg.addColorStop(0.7, `rgba(190,74,92,${a * 0.12})`);
+    bg.addColorStop(1, 'rgba(190,74,92,0)');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx * 1.15, ry * 1.15, 0, 0, 6.2832); ctx.fill();
+    // 两排牙：上面一排 6 颗、下面一排 6 颗，两侧空着
+    [-1, 1].forEach((dir, row) => {
+      const n = 6;
+      for (let i = 0; i < n; i++) {
+        const k = rnd(seed + row * 31.3 + i * 5.1);
+        if (k < 0.1) continue;                                  // 这颗没咬上
+        const u = (i + 0.5) / n;                                // 0..1 沿着这排排开
+        const th = (-0.78 + u * 1.56);                          // 只占中间那段弧
+        const cx = Math.sin(th) * rx * 1.02;
+        const cy = dir * Math.cos(th) * ry;
+        const tw = R * (0.3 + k * 0.1);                         // 牙宽
+        const tl = R * (0.26 + k * 0.2);                        // 咬进去的深浅
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.sin(th) * -dir * 0.5);
+        const g = ctx.createLinearGradient(0, -dir * tl / 2, 0, dir * tl / 2);
+        g.addColorStop(0, `rgba(168,32,54,${a * (0.5 + k * 0.45)})`);
+        g.addColorStop(1, `rgba(196,86,104,${a * 0.18})`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, tw / 2, tl / 2, 0, 0, 6.2832);
+        ctx.fill();
+        ctx.restore();
+      }
+    });
     ctx.restore();
   }
 
@@ -325,7 +332,7 @@
       const R = 9 * m.s;
       if (m.kind === 'bite') drawBite(p, R, 0.72 * fade, rot, seed);
       else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed);
-      else drawLip(p, R * 1.25, 0.62 * fade, rot, seed);
+      else drawLip(p, R * 1.25, 0.78 * fade, rot, seed);
     });
   }
 
