@@ -547,7 +547,7 @@
     layer = document.createElement('div');
     layer.id = 'touch-layer';
     layer.innerHTML = `
-      <img id="touch-body" src="/static/lin-body.webp?v=2" alt="">
+      <img id="touch-body" src="/static/lin-body-v3.webp?v=1" alt="">
       <canvas id="touch-cv"></canvas>
       <div class="touch-top">
         <div class="touch-badge fold" id="touch-badge">还没碰到他</div>
