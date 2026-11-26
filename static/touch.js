@@ -7,24 +7,35 @@
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
+  // y 是比例（0 顶 1 底），对齐 lin-body.webp 这张图上的位置。
+  const BODY_RATIO = 847 / 1280;
   const ZONES = [
-    { y0: 0.00, y1: 0.11, mid: '头发', side: '鬓角' },
-    { y0: 0.11, y1: 0.20, mid: '额头', side: '太阳穴' },
-    { y0: 0.20, y1: 0.29, mid: '鼻梁', side: '眼角' },
-    { y0: 0.29, y1: 0.38, mid: '嘴唇', side: '脸颊' },
-    { y0: 0.38, y1: 0.46, mid: '下巴', side: '耳朵' },
-    { y0: 0.46, y1: 0.55, mid: '喉结', side: '脖子' },
-    { y0: 0.55, y1: 0.66, mid: '心口', side: '肩膀' },
-    { y0: 0.66, y1: 0.76, mid: '胸口往下', side: '胳膊' },
-    { y0: 0.76, y1: 0.86, mid: '肚子', side: '腰' },
-    { y0: 0.86, y1: 0.94, mid: '小腹', side: '胯骨' },
-    { y0: 0.94, y1: 1.01, mid: '再往下', side: '腿根' },
+    { y0: 0.00, y1: 0.14, mid: '头发', side: '鬓角' },
+    { y0: 0.14, y1: 0.20, mid: '眼睛', side: '太阳穴' },
+    { y0: 0.20, y1: 0.24, mid: '鼻梁', side: '脸颊' },
+    { y0: 0.24, y1: 0.28, mid: '嘴唇', side: '脸颊' },
+    { y0: 0.28, y1: 0.31, mid: '下巴', side: '耳朵' },
+    { y0: 0.31, y1: 0.38, mid: '喉结', side: '脖子' },
+    { y0: 0.38, y1: 0.45, mid: '锁骨', side: '肩膀' },
+    { y0: 0.45, y1: 0.58, mid: '心口', side: '胳膊' },
+    { y0: 0.58, y1: 0.65, mid: '乳尖', side: '胳膊' },
+    { y0: 0.65, y1: 0.80, mid: '腹肌', side: '腰' },
+    { y0: 0.80, y1: 0.92, mid: '肚脐', side: '胯骨' },
+    { y0: 0.92, y1: 1.01, mid: '小腹最底下', side: '腿根' },
   ];
   function zoneAt(nx, ny) {
+    if (nx < -0.02 || nx > 1.02) return '身子旁边的空气';
     const z = ZONES.find(z => ny >= z.y0 && ny < z.y1) || ZONES[ZONES.length - 1];
-    if (nx < 0.28) return '左边' + z.side;
-    if (nx > 0.72) return '右边' + z.side;
+    if (nx < 0.26) return '左边' + z.side;
+    if (nx > 0.78) return '右边' + z.side;
     return z.mid;
+  }
+  // 屏幕坐标 -> 图上的比例（图是 contain 居中铺的）
+  function toImg(x, y, w, h) {
+    let dw, dh;
+    if (w / h > BODY_RATIO) { dh = h; dw = h * BODY_RATIO; }
+    else { dw = w; dh = w / BODY_RATIO; }
+    return { nx: (x - (w - dw) / 2) / dw, ny: (y - (h - dh) / 2) / dh };
   }
 
   // ---------- 状态 ----------
@@ -203,7 +214,8 @@
         t0: f.t0, t1, dur, path: f.path, flips: Math.floor(f.flips / 2),
         fingers: fingersNow, radius: f.radius, force: f.force || 0,
         x0: f.x0, y0: f.y0, x: f.px, y: f.py,
-        nx0: f.x0 / f.w, ny0: f.y0 / f.h, nx: f.px / f.w, ny: f.py / f.h
+        nx0: toImg(f.x0, f.y0, f.w, f.h).nx, ny0: toImg(f.x0, f.y0, f.w, f.h).ny,
+        nx: toImg(f.px, f.py, f.w, f.h).nx, ny: toImg(f.px, f.py, f.w, f.h).ny
       });
       ripples.push({ x: f.px, y: f.py, t: now(), k: 1.4 });
       const dbg = document.getElementById('touch-dbg');
@@ -227,15 +239,8 @@
     layer = document.createElement('div');
     layer.id = 'touch-layer';
     layer.innerHTML = `
+      <img id="touch-body" src="/static/lin-body.webp?v=1" alt="">
       <canvas id="touch-cv"></canvas>
-      <div class="touch-guide">
-        <div style="top:9%">额头</div>
-        <div style="top:31%">嘴唇</div>
-        <div style="top:48%">脖子</div>
-        <div style="top:58%">心口</div>
-        <div style="top:78%">肚子</div>
-        <div style="top:95%">……</div>
-      </div>
       <div class="touch-top">
         <div class="touch-badge" id="touch-badge">还没碰到他</div>
         <div class="touch-badge" id="touch-dbg" style="opacity:.45"></div>
