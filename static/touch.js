@@ -256,16 +256,18 @@
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    const rx = R * 1.45, ry = R * 0.72;   // 扁的，横着的椭圆
-    // 牙围成一圈：上下两排实，越靠左右两头越虚，但轮廓还连得起来。
+    const rx = R * 1.32, ry = R * 1.0;    // 椭圆，但没那么扁了
+    // 上下两排最实，往左右两边走还有牙（所以一眼能看出是个椭圆），
+    // 但最左、最右那一点点是断开的——真咬出来就是接不上的。
     // 红只长在牙自己身上——每颗牙周围一圈充血，椭圆当中那块皮肤是干净的。
-    const n = 18;
+    const n = 20;
     for (let i = 0; i < n; i++) {
       const k = rnd(seed + i * 5.1);
       const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.07;
-      // 上下最实（|sin| 接近 1），左右两头最虚（接近 0），但不归零
-      const near = Math.pow(Math.abs(Math.sin(th)), 0.75);
-      const vis = 0.13 + near * 0.87;
+      const s = Math.abs(Math.sin(th));
+      if (s < 0.30 + rnd(seed + i * 3.3) * 0.06) continue;      // 最两头那一截断开
+      // 上下最实，往两边走淡一些，但淡得有限——左右得看得见
+      const vis = 0.46 + Math.pow(s, 0.6) * 0.54;
       if (k < 0.07 * vis) continue;                             // 这颗没咬上
       const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
       const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
@@ -298,25 +300,37 @@
   // 吻痕：吸得越狠越深、越偏紫
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (1.2 + d * 0.7);
-    const col = [
-      Math.round(214 - d * 56),   // 浅的偏红，狠的偏紫
-      Math.round(96 - d * 56),
-      Math.round(118 + d * 22),
+    const rr = R * (1.5 + d * 1.0);
+    const ry = rr * (0.82 + rnd(seed) * 0.3), rot = rnd(seed + 5) * 3;
+    // 吸的那一点最深，往外一圈圈散开、越散越淡，边上化没了
+    const core = [Math.round(170 - d * 48), Math.round(34 - d * 20), Math.round(58 + d * 30)];
+    const out = [Math.round(216 - d * 36), Math.round(104 - d * 40), Math.round(124 + d * 22)];
+    const mix = (t) => [
+      Math.round(core[0] + (out[0] - core[0]) * t),
+      Math.round(core[1] + (out[1] - core[1]) * t),
+      Math.round(core[2] + (out[2] - core[2]) * t),
     ];
     const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, rr);
-    g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${a * (0.3 + d * 0.42)})`);
-    g.addColorStop(0.5, `rgba(${col[0]},${col[1]},${col[2]},${a * (0.18 + d * 0.3)})`);
-    g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+    const A = a * (0.42 + d * 0.46);
+    [[0, 1], [0.18, 0.92], [0.38, 0.6], [0.62, 0.28], [0.82, 0.1], [1, 0]].forEach(([t, k]) => {
+      const c = mix(t);
+      g.addColorStop(t, `rgba(${c[0]},${c[1]},${c[2]},${A * k})`);
+    });
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(p.x, p.y, rr, rr * (0.82 + rnd(seed) * 0.3), rnd(seed + 5) * 3, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, rr, ry, rot, 0, 6.2832); ctx.fill();
+    // 最当中那一小团，吸出来的那个点
+    const cg = ctx.createRadialGradient(p.x, p.y, 0.5, p.x, p.y, rr * 0.34);
+    cg.addColorStop(0, `rgba(${core[0]},${core[1]},${core[2]},${a * (0.3 + d * 0.4)})`);
+    cg.addColorStop(1, `rgba(${core[0]},${core[1]},${core[2]},0)`);
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, rr * 0.34, ry * 0.34, rot, 0, 6.2832); ctx.fill();
     // 中间几点出血点，吸狠了才有
     if (d > 0.45) {
       for (let i = 0; i < 7; i++) {
         const k = rnd(seed + i * 9.1), k2 = rnd(seed + i * 4.7);
         ctx.fillStyle = `rgba(${col[0] - 30},${Math.max(0, col[1] - 40)},${col[2]},${a * 0.4 * d})`;
         ctx.beginPath();
-        ctx.arc(p.x + (k - 0.5) * rr * 1.1, p.y + (k2 - 0.5) * rr * 1.1, R * 0.07 * (0.6 + k), 0, 6.2832);
+        ctx.arc(p.x + (k - 0.5) * rr * 0.8, p.y + (k2 - 0.5) * rr * 0.8, R * 0.07 * (0.6 + k), 0, 6.2832);
         ctx.fill();
       }
     }
@@ -476,7 +490,7 @@
       <img id="touch-body" src="/static/lin-body.webp?v=2" alt="">
       <canvas id="touch-cv"></canvas>
       <div class="touch-top">
-        <div class="touch-badge" id="touch-badge">还没碰到他</div>
+        <div class="touch-badge fold" id="touch-badge">还没碰到他</div>
         <div class="touch-right">
           <div class="touch-x" id="touch-x">收起</div>
           <div class="touch-badge" id="touch-dbg"></div>
@@ -493,6 +507,7 @@
     cv = layer.querySelector('#touch-cv');
     ctx = cv.getContext('2d');
     badge = layer.querySelector('#touch-badge');
+    badge.onclick = () => badge.classList.toggle('fold');   // 点一下展开/折起
     layer.querySelector('#touch-x').onclick = () => toggle(false);
     layer.querySelectorAll('.tm[data-m]').forEach(el => {
       el.onclick = () => {
