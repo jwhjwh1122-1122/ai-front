@@ -72,7 +72,11 @@
   function addMark(kind, nx, ny, zone, strength) {
     if (!MODES[kind] || !MODES[kind].life) return;
     if (nx < -0.02 || nx > 1.02) return;
-    marks.push({ kind, nx, ny, zone, s: Math.max(0.6, Math.min(2, strength)), at: Date.now() });
+    marks.push({
+      kind, nx, ny, zone, s: Math.max(0.6, Math.min(2, strength)), at: Date.now(),
+      seed: Math.floor(Math.random() * 9973),
+      rot: (Math.random() - 0.5) * (kind === 'kiss' ? 1.1 : 1.6),
+    });
     if (marks.length > 60) marks.splice(0, marks.length - 60);
     saveMarks();
   }
@@ -202,40 +206,126 @@
     else { dw = w; dh = w / BODY_RATIO; }
     return { x: nx * dw + (w - dw) / 2, y: ny * dh + (h - dh) / 2 };
   }
+  // 每块痕迹自带一个种子，形状才不会每帧都在变
+  function rnd(seed) { let x = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+  // 唇印：上唇两瓣、下唇一瓣，中间那道缝，再刮出一道道深浅不匀的纹
+  function drawLip(p, R, a, rot, seed) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rot);
+    ctx.scale(R, R);
+    const lobes = [
+      // 上唇
+      { d: () => { ctx.moveTo(-1, 0); ctx.bezierCurveTo(-0.86, -0.52, -0.42, -0.66, -0.06, -0.14);
+                   ctx.bezierCurveTo(0.34, -0.72, 0.8, -0.56, 1, -0.02);
+                   ctx.bezierCurveTo(0.6, -0.18, -0.5, -0.2, -1, 0); }, a: 1 },
+      // 下唇（照她给的那张，往右下挪一点点）
+      { d: () => { ctx.moveTo(-0.92, 0.1); ctx.bezierCurveTo(-0.4, 0.26, 0.6, 0.22, 1.02, 0.08);
+                   ctx.bezierCurveTo(0.84, 0.66, 0.3, 0.9, -0.2, 0.78);
+                   ctx.bezierCurveTo(-0.58, 0.68, -0.84, 0.42, -0.92, 0.1); }, a: 0.88 },
+    ];
+    lobes.forEach((L, li) => {
+      ctx.save();
+      ctx.beginPath(); L.d(); ctx.closePath();
+      ctx.clip();
+      // 底色：一边深一边淡
+      const g = ctx.createLinearGradient(-1, 0, 1, 0.3);
+      const A = a * L.a;
+      g.addColorStop(0, `rgba(150,16,34,${A})`);
+      g.addColorStop(0.45, `rgba(176,26,46,${A * 0.9})`);
+      g.addColorStop(1, `rgba(190,52,70,${A * 0.45})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(-1.2, -1.2, 2.4, 2.4);
+      // 刮纹：一道道竖纹，把颜色挖掉一点，深浅不一
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineCap = 'butt';
+      for (let i = 0; i < 46; i++) {
+        const u = -1.05 + (i / 45) * 2.1;
+        const k = rnd(seed + li * 17 + i);
+        ctx.strokeStyle = `rgba(0,0,0,${0.18 + k * 0.5})`;
+        ctx.lineWidth = 0.012 + k * 0.03;
+        ctx.beginPath();
+        ctx.moveTo(u + (k - 0.5) * 0.04, -1.2);
+        ctx.lineTo(u - (k - 0.5) * 0.06, 1.2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  // 牙印：一圈小牙咬出来的那种环
+  function drawBite(p, R, a, rot, seed) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rot);
+    ctx.lineCap = 'round';
+    const rx = R * 1.15, ry = R * 0.95, n = 14;
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * 6.2832;
+      const k = rnd(seed + i * 3.3);
+      if (k < 0.12) continue;                       // 有几颗没咬到
+      const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
+      const len = R * (0.2 + k * 0.22);
+      const ux = -Math.cos(th), uy = -Math.sin(th); // 朝圆心
+      ctx.strokeStyle = `rgba(176,38,62,${a * (0.5 + k * 0.5)})`;
+      ctx.lineWidth = R * (0.1 + k * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + ux * len, cy + uy * len);
+      ctx.stroke();
+    }
+    // 圈里面那层淤红
+    const g = ctx.createRadialGradient(0, 0, 1, 0, 0, R * 1.1);
+    g.addColorStop(0, `rgba(196,70,96,${a * 0.16})`);
+    g.addColorStop(1, 'rgba(196,70,96,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.2832); ctx.fill();
+    ctx.restore();
+  }
+
+  // 吻痕：吸得越狠越深、越偏紫
+  function drawHickey(p, R, a, s, seed) {
+    const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
+    const rr = R * (1.2 + d * 0.7);
+    const col = [
+      Math.round(214 - d * 56),   // 浅的偏红，狠的偏紫
+      Math.round(96 - d * 56),
+      Math.round(118 + d * 22),
+    ];
+    const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, rr);
+    g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${a * (0.3 + d * 0.42)})`);
+    g.addColorStop(0.5, `rgba(${col[0]},${col[1]},${col[2]},${a * (0.18 + d * 0.3)})`);
+    g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, rr, rr * (0.82 + rnd(seed) * 0.3), rnd(seed + 5) * 3, 0, 6.2832); ctx.fill();
+    // 中间几点出血点，吸狠了才有
+    if (d > 0.45) {
+      for (let i = 0; i < 7; i++) {
+        const k = rnd(seed + i * 9.1), k2 = rnd(seed + i * 4.7);
+        ctx.fillStyle = `rgba(${col[0] - 30},${Math.max(0, col[1] - 40)},${col[2]},${a * 0.4 * d})`;
+        ctx.beginPath();
+        ctx.arc(p.x + (k - 0.5) * rr * 1.1, p.y + (k2 - 0.5) * rr * 1.1, R * 0.07 * (0.6 + k), 0, 6.2832);
+        ctx.fill();
+      }
+    }
+  }
+
   function drawMarks(r) {
     if (!marks.length) return;
     const t = Date.now();
-    marks.forEach(m => {
+    marks.forEach((m, idx) => {
       const life = MODES[m.kind]?.life || 0; if (!life) return;
       const age = (t - m.at) / life; if (age >= 1) return;
       const fade = Math.pow(1 - age, 0.55);
       const p = fromImg(m.nx, m.ny, r.width, r.height);
+      const seed = (m.seed != null ? m.seed : (m.at % 9973) + idx);
+      const rot = (m.rot != null ? m.rot : (rnd(seed) - 0.5) * 0.9);
       const R = 9 * m.s;
-      if (m.kind === 'bite') {
-        // 两排牙印
-        ctx.strokeStyle = `rgba(214,86,120,${0.55 * fade})`;
-        ctx.lineWidth = 2.2; ctx.lineCap = 'round';
-        for (const dir of [-1, 1]) {
-          for (let i = -2; i <= 2; i++) {
-            const a = i * 0.34;
-            const cx = p.x + Math.sin(a) * R * 1.25;
-            const cy = p.y + dir * (R * 0.85 + Math.cos(a) * -1.5);
-            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + dir * 3.4); ctx.stroke();
-          }
-        }
-      } else {
-        const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, R * (m.kind === 'suck' ? 1.5 : 1.1));
-        if (m.kind === 'suck') {
-          g.addColorStop(0, `rgba(190,60,110,${0.5 * fade})`);
-          g.addColorStop(0.55, `rgba(205,85,130,${0.3 * fade})`);
-        } else {
-          g.addColorStop(0, `rgba(255,140,175,${0.34 * fade})`);
-          g.addColorStop(0.55, `rgba(255,170,195,${0.18 * fade})`);
-        }
-        g.addColorStop(1, 'rgba(255,170,195,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(p.x, p.y, R * (m.kind === 'suck' ? 1.5 : 1.1), 0, 6.2832); ctx.fill();
-      }
+      if (m.kind === 'bite') drawBite(p, R, 0.72 * fade, rot, seed);
+      else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed);
+      else drawLip(p, R * 1.25, 0.62 * fade, rot, seed);
     });
   }
 
@@ -337,7 +427,10 @@
       const _n0 = toImg(f.x0, f.y0, f.w, f.h), _n1 = toImg(f.px, f.py, f.w, f.h);
       // 亲/吸/咬 会在身上留下东西
       if (mode !== 'touch' && !(dur < 300 && mode === 'kiss')) {
-        const strength = Math.min(2, 0.6 + dur / 1200 + (f.radius > 30 ? 0.4 : 0));
+        // 吸：含得越久、压得越实，印子越深越紫
+        const strength = mode === 'suck'
+          ? Math.min(2, 0.62 + dur / 900 + (f.radius > 30 ? 0.35 : 0))
+          : Math.min(2, 0.6 + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
         addMark(mode, _n1.nx, _n1.ny, zoneAt(_n1.nx, _n1.ny), strength);
       }
       strokes.push({
