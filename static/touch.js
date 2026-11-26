@@ -308,45 +308,35 @@
     ctx.restore();
   }
 
-  // 草莓印：真的就是皮肤上几颗小的、发闷的红点，边上糊进肉里，
-  // 没有中心、没有分层、也不深——吸得狠只是点多一点、颜色闷一点。
+  // 草莓印：就是一支喷枪，一个颜色，叠出来的。
+  // 不定形状、不分层、不换色——只是颗粒密的地方叠得多，看着就深。
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    // 一次吸出来的不是一大团，是一小撮散着的点
-    const n = 2 + Math.round(d * 3);
-    const spread = R * (1.0 + d * 0.9);
-    for (let i = 0; i < n; i++) {
-      const k = rnd(seed + i * 3.7), k2 = rnd(seed + i * 6.1), k3 = rnd(seed + i * 9.4);
-      const ang = k * 6.2832;
-      const off = (i === 0 ? 0 : Math.pow(k2, 0.65) * spread);
-      const bx = p.x + Math.cos(ang) * off, by = p.y + Math.sin(ang) * off * 0.9;
-      // 点本身很小，略微不圆
-      const br = R * (0.34 + k3 * 0.34) * (1 + d * 0.3);
-      const rx = br * (0.85 + k * 0.3), ry = br * (0.85 + k2 * 0.3);
-      // 闷闷的红棕，吸得狠往紫灰走，但始终不重
-      const col = [
-        Math.round(188 - d * 26 - k3 * 14),
-        Math.round(116 - d * 26 - k * 12),
-        Math.round(112 - d * 10),
-      ];
-      const A = a * (0.17 + d * 0.16) * (0.65 + k3 * 0.6);
-      // 软边：一层层很淡地叠出来，不留任何一圈边界
-      const layers = 5;
-      for (let L = layers; L >= 1; L--) {
-        const f = L / layers;                        // 外→内
-        const al = A * (1 - f) * 0.55 + A * (f < 0.25 ? 0.18 : 0);
-        ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${(A * Math.pow(1 - f, 1.6) * 0.9 + al * 0).toFixed(4)})`;
-        ctx.beginPath();
-        ctx.ellipse(bx, by, rx * (0.35 + f * 0.95), ry * (0.35 + f * 0.95), k2 * 3, 0, 6.2832);
-        ctx.fill();
-      }
-      // 再罩一层更虚的，把边彻底糊掉
-      const g = ctx.createRadialGradient(bx, by, rx * 0.2, bx, by, rx * 2.1);
-      g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${A * 0.22})`);
-      g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
-      ctx.fillStyle = g;
+    const rr = R * (1.05 + d * 0.6);
+    const COL = '150,42,44';                                // 从头到尾一个颜色
+    const A = a * (0.055 + d * 0.035);                      // 一颗颗粒的透明度，很低
+    const dots = Math.round(150 + d * 220);
+    // 喷的时候手是晃的：几个落点轮着来，边缘自然就不规整
+    const cores = 2 + Math.round(rnd(seed) * 2);
+    const cx = [], cy = [];
+    for (let j = 0; j < cores; j++) {
+      const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9);
+      const ang = k * 6.2832, off = (j === 0 ? 0 : Math.pow(k2, 0.6) * rr * 0.5);
+      cx.push(p.x + Math.cos(ang) * off);
+      cy.push(p.y + Math.sin(ang) * off * 0.9);
+    }
+    ctx.fillStyle = `rgba(${COL},${A.toFixed(4)})`;
+    for (let i = 0; i < dots; i++) {
+      const j = i % cores;
+      const u1 = Math.max(1e-4, rnd(seed + i * 1.37));
+      const u2 = rnd(seed + i * 2.71);
+      // 正态散布：中间密、往外稀，没有边
+      const g = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
+      const g2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+      const dx = g * rr * 0.34, dy = g2 * rr * 0.32;
+      const k3 = rnd(seed + i * 4.13);
       ctx.beginPath();
-      ctx.ellipse(bx, by, rx * 2.1, ry * 1.9, k * 3, 0, 6.2832);
+      ctx.arc(cx[j] + dx, cy[j] + dy, R * (0.025 + k3 * 0.05), 0, 6.2832);
       ctx.fill();
     }
   }
