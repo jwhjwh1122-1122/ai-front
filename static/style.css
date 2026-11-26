@@ -1327,7 +1327,10 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 body:not([class*="theme-"]) .bubble.ai,
 body:not([class*="theme-"]) .bubble.user,
 body:not([class*="theme-"]) .voice-bubble,
-body:not([class*="theme-"]) .call-b{
+body:not([class*="theme-"]) .call-b,
+body:not([class*="theme-"]) .thinking-wrap,
+body:not([class*="theme-"]) .tool-result-block,
+body:not([class*="theme-"]) .cc-tool{
   background:rgba(255,255,255,.54);
   border-color:rgba(170,170,195,.39);
 }
