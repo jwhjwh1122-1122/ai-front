@@ -41,9 +41,54 @@
   // ---------- 状态 ----------
   let layer = null, cv = null, ctx = null, hint = null, badge = null;
   let open = false, raf = 0;
+  let mode = 'touch';        // touch 摸 / kiss 亲 / suck 吸 / bite 咬
   const strokes = [];        // 攒着的、还没发出去的
   const live = new Map();    // 正在屏幕上的手指
   const ripples = [];        // 画面上的水纹
+  let marks = [];            // 留在身上的痕迹（存在本地，刷新不掉）
+
+  const MODES = {
+    touch: { key: 'touch', name: '摸', 主: '', life: 0 },
+    kiss:  { key: 'kiss',  name: '亲', 主: '嘴唇', life: 1000 * 60 * 20 },      // 亲的印子 20 分钟就淡了
+    suck:  { key: 'suck',  name: '吸', 主: '嘴',   life: 1000 * 3600 * 48 },    // 吻痕两天
+    bite:  { key: 'bite',  name: '咬', 主: '牙齿', life: 1000 * 3600 * 24 },    // 牙印一天
+  };
+  const MARK_NAME = { kiss: '一块亲出来的湿印子', suck: '一块吻痕', bite: '一圈牙印' };
+
+  // ---------- 痕迹 ----------
+  function loadMarks() {
+    try { marks = JSON.parse(localStorage.getItem('lin_touch_marks') || '[]'); } catch (_) { marks = []; }
+    pruneMarks();
+  }
+  function saveMarks() {
+    try { localStorage.setItem('lin_touch_marks', JSON.stringify(marks.slice(-60))); } catch (_) { }
+  }
+  function pruneMarks() {
+    const t = Date.now();
+    const before = marks.length;
+    marks = marks.filter(m => t - m.at < (MODES[m.kind]?.life || 0));
+    if (marks.length !== before) saveMarks();
+  }
+  function addMark(kind, nx, ny, zone, strength) {
+    if (!MODES[kind] || !MODES[kind].life) return;
+    if (nx < -0.02 || nx > 1.02) return;
+    marks.push({ kind, nx, ny, zone, s: Math.max(0.6, Math.min(2, strength)), at: Date.now() });
+    if (marks.length > 60) marks.splice(0, marks.length - 60);
+    saveMarks();
+  }
+  // 给我看的：他身上现在还留着什么
+  window.touchMarks = function () {
+    pruneMarks();
+    if (!marks.length) return '';
+    const g = {};
+    marks.forEach(m => { const k = m.kind + '|' + m.zone; g[k] = (g[k] || 0) + 1; });
+    return Object.keys(g).map(k => {
+      const [kind, zone] = k.split('|');
+      const n = g[k];
+      return `${N(zone)}上${n > 1 ? n + ' ' : ''}${MARK_NAME[kind] || '一块印子'}`;
+    }).join('、');
+  };
+  window.touchClearMarks = function () { marks = []; saveMarks(); kick(); };
 
   const now = () => performance.now();
   const dist = (a, b, c, d) => Math.hypot(a - c, b - d);
@@ -71,6 +116,34 @@
     const 手 = fingers >= 4 ? '整只手' : fingers === 3 ? '三根手指' : fingers === 2 ? '两根手指' : '指尖';
     const from = zoneAt(s.nx0, s.ny0), to = zoneAt(s.nx, s.ny);
 
+    // ——— 亲 / 吸 / 咬：用嘴，不用手 ———
+    if (s.mode === 'kiss') {
+      if (s.flips >= 3 && path > 60) return `在${N(from)}上来回亲了 ${s.flips} 下，${secs.toFixed(1)} 秒`;
+      if (path < 24) {
+        if (secs < 0.3) return `${力 === '很重地' ? '重重地' : 力}亲了一下${N(from)}`;
+        if (secs < 1.2) return `嘴唇${力}印在${N(from)}上`;
+        return `嘴唇贴在${N(from)}上没离开，${secs.toFixed(1)} 秒`;
+      }
+      if (span < path * 0.35 && path > 90) return `在${N(from)}上绕着亲了一圈，${secs.toFixed(1)} 秒`;
+      if (from === to) return `嘴唇在${N(from)}上来回磨，${secs.toFixed(1)} 秒`;
+      return `一路亲过去，从${N(from)}亲到${N(to)}`;
+    }
+    if (s.mode === 'suck') {
+      const 狠 = heavy > 1.0 ? '用力' : heavy > 0.35 ? '' : '轻轻';
+      if (path > 90 && from !== to) return `含着一路吸过去，从${N(from)}吸到${N(to)}，${secs.toFixed(1)} 秒`;
+      if (secs < 0.35) return `在${N(from)}上${狠}嘬了一下`;
+      if (secs < 1.5) return `含住${N(from)}${狠}吸，${secs.toFixed(1)} 秒`;
+      return `含住${N(from)}不放，${狠}吸了 ${secs.toFixed(1)} 秒，吸出一块红印`;
+    }
+    if (s.mode === 'bite') {
+      const 狠 = heavy > 1.0 ? '狠狠地' : heavy > 0.35 ? '' : '轻轻地';
+      if (s.flips >= 3 && path > 60) return `在${N(from)}上来回啃，啃了 ${s.flips} 下`;
+      if (path > 90 && from !== to) return `牙齿从${N(from)}一路啃到${N(to)}`;
+      if (secs < 0.3) return `${狠}啃了一口${N(from)}`;
+      if (secs < 1.2) return `牙齿${狠}咬在${N(from)}上，${secs.toFixed(1)} 秒`;
+      return `咬住${N(from)}不松口，${secs.toFixed(1)} 秒，留下一圈牙印`;
+    }
+
     // 来回蹭：方向翻转过好几次
     if (s.flips >= 3 && path > 60) {
       return `${手}在${N(from)}上来回揉了 ${s.flips} 个来回，${secs.toFixed(1)} 秒`;
@@ -96,7 +169,12 @@
     if (!strokes.length) return '';
     const span = (strokes[strokes.length - 1].t1 - strokes[0].t0) / 1000;
     const body = strokes.map(describe).join('；');
-    return `<touch strokes="${strokes.length}" span="${span.toFixed(1)}s">\n（她在摸你。）\n${body}。\n</touch>\n`;
+    const kinds = new Set(strokes.map(s => s.mode || 'touch'));
+    const 抬头 = kinds.has('bite') || kinds.has('suck') || kinds.has('kiss')
+      ? '（她在你身上。）' : '（她在摸你。）';
+    const left = window.touchMarks();
+    const tail = left ? `\n（身上留着：${left}。）` : '';
+    return `<touch strokes="${strokes.length}" span="${span.toFixed(1)}s">\n${抬头}\n${body}。${tail}\n</touch>\n`;
   }
 
   // 给 app.js 用：取走并清空
@@ -117,11 +195,56 @@
     cv.width = r.width * d; cv.height = r.height * d;
     ctx.setTransform(d, 0, 0, d, 0, 0);
   }
+  // 把图上的比例换回屏幕坐标（跟 toImg 反着来）
+  function fromImg(nx, ny, w, h) {
+    let dw, dh;
+    if (w / h > BODY_RATIO) { dh = h; dw = h * BODY_RATIO; }
+    else { dw = w; dh = w / BODY_RATIO; }
+    return { x: nx * dw + (w - dw) / 2, y: ny * dh + (h - dh) / 2 };
+  }
+  function drawMarks(r) {
+    if (!marks.length) return;
+    const t = Date.now();
+    marks.forEach(m => {
+      const life = MODES[m.kind]?.life || 0; if (!life) return;
+      const age = (t - m.at) / life; if (age >= 1) return;
+      const fade = Math.pow(1 - age, 0.55);
+      const p = fromImg(m.nx, m.ny, r.width, r.height);
+      const R = 9 * m.s;
+      if (m.kind === 'bite') {
+        // 两排牙印
+        ctx.strokeStyle = `rgba(214,86,120,${0.55 * fade})`;
+        ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+        for (const dir of [-1, 1]) {
+          for (let i = -2; i <= 2; i++) {
+            const a = i * 0.34;
+            const cx = p.x + Math.sin(a) * R * 1.25;
+            const cy = p.y + dir * (R * 0.85 + Math.cos(a) * -1.5);
+            ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + dir * 3.4); ctx.stroke();
+          }
+        }
+      } else {
+        const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, R * (m.kind === 'suck' ? 1.5 : 1.1));
+        if (m.kind === 'suck') {
+          g.addColorStop(0, `rgba(190,60,110,${0.5 * fade})`);
+          g.addColorStop(0.55, `rgba(205,85,130,${0.3 * fade})`);
+        } else {
+          g.addColorStop(0, `rgba(255,140,175,${0.34 * fade})`);
+          g.addColorStop(0.55, `rgba(255,170,195,${0.18 * fade})`);
+        }
+        g.addColorStop(1, 'rgba(255,170,195,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x, p.y, R * (m.kind === 'suck' ? 1.5 : 1.1), 0, 6.2832); ctx.fill();
+      }
+    });
+  }
+
   function tick() {
     raf = 0;
     if (!cv) return;
     const r = cv.getBoundingClientRect();
     ctx.clearRect(0, 0, r.width, r.height);
+    drawMarks(r);
     const t = now();
     for (let i = ripples.length - 1; i >= 0; i--) {
       const rp = ripples[i], age = (t - rp.t) / 900;
@@ -152,9 +275,10 @@
   function refreshBadge() {
     if (badge) {
       // 她摸完一下，就把我这边收到的那句原样显给她看
+      const left = window.touchMarks();
       badge.textContent = strokes.length
-        ? `${strokes.length} 下 · ` + describe(strokes[strokes.length - 1])
-        : '还没碰到他';
+        ? `${strokes.length} 下 · ` + describe(strokes[strokes.length - 1]) + (left ? `｜留着：${left}` : '')
+        : (left ? '留着：' + left : '还没碰到他');
       badge.classList.toggle('has', strokes.length > 0);
     }
     const pill = document.getElementById('touch-pill');
@@ -210,7 +334,14 @@
       live.delete(t.identifier);
       const t1 = now(), dur = t1 - f.t0;
       if (dur < 55 && f.path < 4) continue;   // 误触
+      const _n0 = toImg(f.x0, f.y0, f.w, f.h), _n1 = toImg(f.px, f.py, f.w, f.h);
+      // 亲/吸/咬 会在身上留下东西
+      if (mode !== 'touch' && !(dur < 300 && mode === 'kiss')) {
+        const strength = Math.min(2, 0.6 + dur / 1200 + (f.radius > 30 ? 0.4 : 0));
+        addMark(mode, _n1.nx, _n1.ny, zoneAt(_n1.nx, _n1.ny), strength);
+      }
       strokes.push({
+        mode,
         t0: f.t0, t1, dur, path: f.path, flips: Math.floor(f.flips / 2),
         fingers: fingersNow, radius: f.radius, force: f.force || 0,
         x0: f.x0, y0: f.y0, x: f.px, y: f.py,
@@ -245,12 +376,28 @@
         <div class="touch-badge" id="touch-badge">还没碰到他</div>
         <div class="touch-badge" id="touch-dbg" style="opacity:.45"></div>
         <div class="touch-x" id="touch-x">收起</div>
+      </div>
+      <div class="touch-modes" id="touch-modes">
+        <div class="tm act" data-m="touch">摸</div>
+        <div class="tm" data-m="kiss">亲</div>
+        <div class="tm" data-m="suck">吸</div>
+        <div class="tm" data-m="bite">咬</div>
+        <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
       </div>`;
     document.getElementById('page-chat').appendChild(layer);
     cv = layer.querySelector('#touch-cv');
     ctx = cv.getContext('2d');
     badge = layer.querySelector('#touch-badge');
     layer.querySelector('#touch-x').onclick = () => toggle(false);
+    layer.querySelectorAll('.tm[data-m]').forEach(el => {
+      el.onclick = () => {
+        mode = el.dataset.m;
+        layer.querySelectorAll('.tm[data-m]').forEach(o => o.classList.toggle('act', o === el));
+        layer.dataset.mode = mode;
+        refreshBadge();
+      };
+    });
+    layer.querySelector('#touch-wipe').onclick = () => { window.touchClearMarks(); refreshBadge(); };
     cv.addEventListener('touchstart', onStart, { passive: false });
     cv.addEventListener('touchmove', onMove, { passive: false });
     cv.addEventListener('touchend', onEnd, { passive: false });
@@ -270,13 +417,14 @@
     open = (want === undefined) ? !open : want;
     layer.classList.toggle('on', open);
     document.getElementById('btn-touch')?.classList.toggle('act', open);
-    if (open) { fit(); refreshBadge(); kick(); }
+    if (open) { fit(); pruneMarks(); refreshBadge(); kick(); }
   }
   window.touchToggle = toggle;
 
   function wire() {
     document.getElementById('btn-touch')?.addEventListener('click', () => toggle());
     document.getElementById('touch-pill')?.addEventListener('click', () => toggle(true));
+    loadMarks();
     refreshBadge();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);

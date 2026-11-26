@@ -1319,6 +1319,18 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 .touch-x{pointer-events:auto;font-size:12px;color:rgba(255,205,215,.7);
   background:rgba(0,0,0,.3);padding:4px 12px;border-radius:999px}
 #btn-touch.act svg{stroke:#ff8fb0}
+/* 摸 / 亲 / 吸 / 咬 */
+.touch-modes{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;
+  gap:7px;padding:0 12px;flex-wrap:wrap}
+.touch-modes .tm{pointer-events:auto;font-size:13px;line-height:1;padding:8px 15px;border-radius:999px;
+  background:rgba(0,0,0,.32);color:rgba(255,205,215,.72);border:1px solid rgba(255,160,190,.18);
+  user-select:none;-webkit-user-select:none}
+.touch-modes .tm.act{background:rgba(255,120,160,.30);color:#fff0f4;border-color:rgba(255,150,185,.55)}
+.touch-modes .tm.wipe{font-size:11px;padding:8px 12px;opacity:.6}
+body:not([class*="theme-"]) .touch-modes .tm{background:rgba(255,255,255,.7);color:#7a6672;
+  border-color:rgba(190,150,175,.28)}
+body:not([class*="theme-"]) .touch-modes .tm.act{background:rgba(255,150,185,.34);color:#8e3f63;
+  border-color:rgba(214,120,160,.55)}
 #touch-pill{display:none;align-items:center;gap:6px;margin:0 14px 4px;padding:5px 11px;
   border-radius:999px;background:rgba(255,120,160,.14);color:#ffbccd;font-size:12px;
   width:fit-content}
