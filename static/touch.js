@@ -243,18 +243,20 @@
   }
 
   // 唇印：直接用素材，随机挑一张、随机转个角度，颜色按深浅调
-  function drawLip(p, R, a, rot, seed) {
+  function drawLip(p, R, a, rot, seed, st) {
+    // 亲多久决定它有多实：碰一下是很浅的一层，贴着不放才印出完整的一个。
+    const press = Math.min(1, Math.max(0, ((st == null ? 1 : st) - 0.3) / 1.2));
     const idx = Math.floor(rnd(seed + 2.3) * LIPS.length) % LIPS.length;
     const img = LIPS[idx];
     if (!img || !img.complete || !img.naturalWidth) return;
-    const w = R * 2.5, h = w * (img.naturalHeight / img.naturalWidth);
+    const w = R * 2.5 * (0.94 + rnd(seed + 4.1) * 0.12), h = w * (img.naturalHeight / img.naturalWidth);
     const k = rnd(seed + 7.7);
     const col = `rgb(${Math.round(188 - k * 26)},${Math.round(44 + k * 24)},${Math.round(62 + k * 14)})`;
     const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    ctx.globalAlpha = Math.max(0, Math.min(1, a * (0.18 + press * 0.72)));
     ctx.drawImage(t, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
@@ -267,7 +269,8 @@
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    const rx = R * 1.32, ry = R * 1.0;    // 椭圆，但没那么扁了
+    // 大小不跟力道走——嘴就那么大。咬得狠只是张得开一点、牙更密、更深。
+    const rx = R * 1.34, ry = R * (0.70 + bite * 0.42);
     // 上下两排最实，往左右两边走还有牙（所以一眼能看出是个椭圆），
     // 但最左、最右那一点点是断开的——真咬出来就是接不上的。
     // 每颗牙是一块方方的压痕，宽窄不一、歪歪扭扭，不是一条线。
@@ -276,14 +279,16 @@
       const k = rnd(seed + i * 5.1), k2 = rnd(seed + i * 8.3);
       const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.07;
       const s = Math.abs(Math.sin(th));
-      if (s < 0.30 + rnd(seed + i * 3.3) * 0.06) continue;      // 最两头那一截断开
+      // 咬得轻，两头断得多、漏的牙也多；咬得狠，几乎整圈都印上
+      if (s < (0.40 - bite * 0.16) + rnd(seed + i * 3.3) * 0.06) continue;
       const vis = 0.52 + Math.pow(s, 0.6) * 0.48;
-      if (k < 0.06 * vis) continue;                             // 这颗没咬上
+      if (k < (0.20 - bite * 0.15) * vis) continue;             // 这颗没咬上
       const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
       const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
       // 牙本身：沿着圈的那一边宽（0.30~0.50R），压进去的那一边有厚度（0.15~0.23R）
+      // 牙不是一根线——压下去有厚度，粗细大概像写出来的「一」那么粗
       const tw = R * (0.30 + k * 0.20) * (0.72 + vis * 0.28);
-      const tl = R * (0.15 + k2 * 0.08) * (0.72 + vis * 0.28);
+      const tl = R * (0.30 + k2 * 0.14) * (0.78 + vis * 0.22);
       // 每颗牙吃进去多少不一样：有的清楚，有的几乎看不出来
       const bias = Math.pow(rnd(seed + i * 11.9), 1.7);
       const A = a * vis * deep * (0.28 + bias * 1.05);
@@ -349,9 +354,11 @@
       const seed = (m.seed != null ? m.seed : (m.at % 9973) + idx);
       const rot = (m.rot != null ? m.rot : (rnd(seed) - 0.5) * 0.9);
       const R = 9 * m.s;
-      if (m.kind === 'bite') drawBite(p, R, 0.72 * fade, rot, seed, m.s);
+      // 牙印、唇印都不跟着力道变大小——嘴就那么大。
+      // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
+      if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
       else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed);
-      else drawLip(p, R * 1.25, 0.78 * fade, rot, seed);
+      else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
   }
 
@@ -459,7 +466,9 @@
         // 吸：含得越久、压得越实，印子越深越紫
         const strength = mode === 'suck'
           ? Math.min(2, 0.62 + dur / 900 + (f.radius > 30 ? 0.35 : 0))
-          : Math.min(2, (mode === 'kiss' ? 1.05 : 0.6) + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
+          : (mode === 'kiss'
+            ? Math.min(2, 0.3 + dur / 900 + (f.radius > 30 ? 0.25 : 0))
+            : Math.min(2, 0.6 + dur / 1400 + (f.radius > 30 ? 0.3 : 0)));
         addMark(mode, _n1.nx, _n1.ny, zoneAt(_n1.nx, _n1.ny), strength);
       }
       strokes.push({
