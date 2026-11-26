@@ -387,15 +387,14 @@
     let n = 0; const rnd2 = () => rnd(seed + (++n) * 1.7);
     const core = mixc([158, 34, 66], [118, 70, 104], ag);
     const rim = mixc([196, 72, 96], [160, 110, 130], ag);
-    // 轻的那一下要小、要收得紧——不然就是一片虚的大晕，像被打了一拳
-    const sz = R * (0.72 + d * 0.62) * (0.88 + rnd2() * 0.26);
+    const sz = R * (1.0 + d * 0.5) * (0.85 + rnd2() * 0.35);
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rnd2() * Math.PI);
     ctx.scale(1, 0.72 + rnd2() * 0.22);
     const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, sz);
-    grad.addColorStop(0, rgba_(core, (0.56 + d * 0.1) * a));
-    grad.addColorStop(0.38 + d * 0.14, rgba_(rim, (0.34 + d * 0.1) * a));
+    grad.addColorStop(0, rgba_(core, 0.62 * a));
+    grad.addColorStop(0.5, rgba_(rim, 0.42 * a));
     grad.addColorStop(1, rgba_(rim, 0));
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(0, 0, sz, 0, 6.2832); ctx.fill();
@@ -452,7 +451,7 @@
       // 牙印、唇印都不跟着力道变大小——嘴就那么大。
       // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
       if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
-      else if (m.kind === 'suck') drawHickey(p, 11, fade, m.s, seed, age);
+      else if (m.kind === 'suck') drawHickey(p, 15, fade, m.s, seed, age);
       else if (m.zone === '嘴唇') drawLipStain(r, fade, m.s);
       else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
