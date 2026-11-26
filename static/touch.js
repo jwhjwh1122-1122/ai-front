@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v38';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v39';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -455,6 +455,23 @@
         -w / 2 + (rnd(seed + 11.3 + i) - 0.5) * o,
         -h / 2 + (rnd(seed + 13.7 + i) - 0.5) * o,
         w * (1 - i * 0.07), h * (1 - i * 0.07));
+    }
+    // 核心：同一块缩小了再叠几遍，中间就实了——外面那层晕还留着。
+    // 不画圆、不画渐变，形状还是她画的那块，只是叠密。
+    const cw = w * (0.34 + rnd(seed + 17.1) * 0.12);
+    const ch = cw * (h / w);
+    const cd = `rgb(${Math.round(150 - d * 30 - ag * 36)},${Math.round(40 - d * 16 + ag * 10)},${Math.round(52 - d * 18 + ag * 48)})`;
+    const tc = tinted(img, cw * 2, ch * 2, cd);
+    const cx = (rnd(seed + 19.7) - 0.5) * w * 0.18;
+    const cy = (rnd(seed + 23.3) - 0.5) * h * 0.18;
+    const cpass = 2 + Math.round(d * 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, a * (0.42 + d * 0.5)));
+    for (let i = 0; i < cpass; i++) {
+      const o = i === 0 ? 0 : cw * 0.1;
+      ctx.drawImage(tc,
+        cx - cw / 2 + (rnd(seed + 27.9 + i) - 0.5) * o,
+        cy - ch / 2 + (rnd(seed + 31.1 + i) - 0.5) * o,
+        cw * (1 - i * 0.05), ch * (1 - i * 0.05));
     }
     ctx.restore();
   }
