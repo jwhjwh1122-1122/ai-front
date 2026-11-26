@@ -1320,10 +1320,12 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 #touch-badge.fold{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
   overflow:hidden;max-width:46vw}
 #touch-badge::after{content:'';display:block}
-/* 力度 / 面积：竖着一条，贴着右边，窄窄的 */
-#touch-dbg{flex:none;opacity:.8;writing-mode:vertical-rl;text-orientation:upright;
-  letter-spacing:.02em;font-size:11px;line-height:1.1;max-height:30vh;
-  padding:6px 2px;white-space:nowrap;background:transparent;align-self:flex-end}
+/* 力度 / 面积：竖着一条，排在「摸亲吸咬」左边那块空地上 */
+#touch-dbg{flex:none;opacity:.8;writing-mode:vertical-rl;text-orientation:mixed;
+  letter-spacing:.04em;font-size:11px;line-height:1.1;max-height:34vh;
+  padding:2px 2px;white-space:nowrap;background:transparent;align-self:flex-start}
+/* 力度面积 + 按钮 并排 */
+.touch-rrow{display:flex;flex-direction:row;align-items:flex-start;gap:9px}
 .touch-badge.has{color:rgba(255,205,215,.85);background:transparent}
 /* 收起：跟「摸 / 亲」长一样 */
 .touch-right .tm.touch-x{pointer-events:auto;font-size:13px;line-height:1;padding:8px 15px;

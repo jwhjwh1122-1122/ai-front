@@ -314,36 +314,49 @@
     ctx.restore();
   }
 
-  // 草莓印：就是一支喷枪，一个颜色，叠出来的。
-  // 不定形状、不分层、不换色——只是颗粒密的地方叠得多，看着就深。
+  // 草莓印：就是实的一块，中间深，往外一路淡下去，没有边。
+  // 一个颜色，只有透明度在变——跟她自己画的那张一样。
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (0.78 + d * 0.45);
+    const rr = R * (0.85 + d * 0.5);
     const COL = '150,42,44';                                // 从头到尾一个颜色
-    const A = a * (0.075 + d * 0.05);                      // 一颗颗粒的透明度，很低
-    const dots = Math.round(240 + d * 320);
-    // 喷的时候手是晃的：几个落点轮着来，边缘自然就不规整
-    const cores = 1 + Math.round(rnd(seed) * 1.4);
-    const cx = [], cy = [];
-    for (let j = 0; j < cores; j++) {
-      const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9);
-      const ang = k * 6.2832, off = (j === 0 ? 0 : Math.pow(k2, 0.6) * rr * 0.5);
-      cx.push(p.x + Math.cos(ang) * off);
-      cy.push(p.y + Math.sin(ang) * off * 0.9);
+    const A = a * (0.30 + d * 0.22);                        // 中心有多实
+    // 几团软边的晕叠在一起：位置各偏一点、大小各不同，边就不规整了
+    const blobs = 3 + Math.round(rnd(seed) * 2);
+    for (let j = 0; j < blobs; j++) {
+      const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9), k3 = rnd(seed + j * 3.1);
+      const ang = k * 6.2832;
+      const off = (j === 0 ? 0 : Math.pow(k2, 0.7) * rr * 0.42);
+      const bx = p.x + Math.cos(ang) * off;
+      const by = p.y + Math.sin(ang) * off * 0.9;
+      const br = rr * (j === 0 ? 1 : 0.5 + k3 * 0.5);
+      const aa = A * (j === 0 ? 1 : 0.42 + k3 * 0.3);
+      const g = ctx.createRadialGradient(bx, by, br * 0.06, bx, by, br);
+      g.addColorStop(0, `rgba(${COL},${aa.toFixed(4)})`);
+      g.addColorStop(0.45, `rgba(${COL},${(aa * 0.52).toFixed(4)})`);
+      g.addColorStop(0.78, `rgba(${COL},${(aa * 0.16).toFixed(4)})`);
+      g.addColorStop(1, `rgba(${COL},0)`);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate((rnd(seed + j * 11.7) - 0.5) * 1.6);
+      ctx.scale(1, 0.82 + rnd(seed + j * 6.6) * 0.3);       // 不是正圆
+      ctx.translate(-bx, -by);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, 6.2832); ctx.fill();
+      ctx.restore();
     }
-    ctx.fillStyle = `rgba(${COL},${A.toFixed(4)})`;
-    for (let i = 0; i < dots; i++) {
-      const j = i % cores;
-      const u1 = Math.max(1e-4, rnd(seed + i * 1.37));
-      const u2 = rnd(seed + i * 2.71);
-      // 正态散布：中间密、往外稀，没有边
-      const g = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
-      const g2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
-      const dx = g * rr * 0.34, dy = g2 * rr * 0.32;
-      const k3 = rnd(seed + i * 4.13);
-      ctx.beginPath();
-      ctx.arc(cx[j] + dx, cy[j] + dy, R * (0.025 + k3 * 0.05), 0, 6.2832);
-      ctx.fill();
+    // 中间那几个出血点，只在狠的时候才有，很小
+    if (d > 0.35) {
+      const n = Math.round(3 + d * 7);
+      ctx.fillStyle = `rgba(128,30,38,${(a * 0.34).toFixed(3)})`;
+      for (let i = 0; i < n; i++) {
+        const u1 = Math.max(1e-4, rnd(seed + i * 1.37)), u2 = rnd(seed + i * 2.71);
+        const gx = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
+        const gy = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+        ctx.beginPath();
+        ctx.arc(p.x + gx * rr * 0.26, p.y + gy * rr * 0.24, R * (0.02 + rnd(seed + i * 4.13) * 0.025), 0, 6.2832);
+        ctx.fill();
+      }
     }
   }
 
@@ -461,7 +474,7 @@
       const f = live.get(t.identifier); if (!f) continue;
       live.delete(t.identifier);
       const t1 = now(), dur = t1 - f.t0;
-      if (dur < 55 && f.path < 4) continue;   // 误触
+      if (dur < 18 && f.path < 2) continue;   // 误触（亲一下很快，别把她那一下吃掉）
       const _n0 = toImg(f.x0, f.y0, f.w, f.h), _n1 = toImg(f.px, f.py, f.w, f.h);
       // 亲/吸/咬 会在身上留下东西
       if (mode !== 'touch') {
@@ -507,13 +520,15 @@
         <div class="touch-badge fold" id="touch-badge">还没碰到他</div>
         <div class="touch-right">
           <div class="tm touch-x" id="touch-x">收起</div>
-          <div class="touch-badge" id="touch-dbg"></div>
-          <div class="touch-modes" id="touch-modes">
-            <div class="tm act" data-m="touch">摸</div>
-            <div class="tm" data-m="kiss">亲</div>
-            <div class="tm" data-m="suck">吸</div>
-            <div class="tm" data-m="bite">咬</div>
-            <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
+          <div class="touch-rrow">
+            <div class="touch-badge" id="touch-dbg"></div>
+            <div class="touch-modes" id="touch-modes">
+              <div class="tm act" data-m="touch">摸</div>
+              <div class="tm" data-m="kiss">亲</div>
+              <div class="tm" data-m="suck">吸</div>
+              <div class="tm" data-m="bite">咬</div>
+              <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
+            </div>
           </div>
         </div>
       </div>`;
