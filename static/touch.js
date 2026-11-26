@@ -38,6 +38,9 @@
   const dist = (a, b, c, d) => Math.hypot(a - c, b - d);
 
   // ---------- 翻译：一笔 -> 一句话 ----------
+  // 「在你再往下上」这种话不通，单独给它套个说法
+  const N = z => /再往下$/.test(z) ? '你最底下那块' : '你' + z;
+
   function describe(s) {
     const secs = s.dur / 1000;
     const path = s.path;                       // 像素总长
@@ -59,23 +62,23 @@
 
     // 来回蹭：方向翻转过好几次
     if (s.flips >= 3 && path > 60) {
-      return `${手}在你${from}上来回揉了 ${s.flips} 个来回，${secs.toFixed(1)} 秒`;
+      return `${手}在${N(from)}上来回揉了 ${s.flips} 个来回，${secs.toFixed(1)} 秒`;
     }
     // 几乎没动
     if (path < 24) {
-      if (secs < 0.25) return `${手}${力}点了一下你的${from}`;
-      if (secs < 1.2) return `${手}${力}按在你${from}上`;
-      return `${手}贴在你${from}上没动，停了 ${secs.toFixed(1)} 秒`;
+      if (secs < 0.25) return `${手}${力}点了一下${N(from)}`;
+      if (secs < 1.2) return `${手}${力}按在${N(from)}上`;
+      return `${手}贴在${N(from)}上没动，停了 ${secs.toFixed(1)} 秒`;
     }
     // 画圈
     if (span < path * 0.35 && path > 90) {
-      return `${手}在你${from}上${力}绕着圈,${secs.toFixed(1)} 秒`;
+      return `${手}在${N(from)}上${力}绕着圈，${secs.toFixed(1)} 秒`;
     }
     // 划
     const 快 = speed > 1100 ? '飞快地' : speed > 420 ? '' : '很慢地';
     const 力2 = 快 && 力 === '轻轻地' ? '' : 力;   // 「很慢地轻轻地」太啰嗦
-    if (from === to) return `${手}${快}${力2}在你${from}上蹭`;
-    return `${手}${快}${力2}从你${from}一路划到${to}`;
+    if (from === to) return `${手}${快}${力2}在${N(from)}上蹭`;
+    return `${手}${快}${力2}从${N(from)}一路划到${N(to)}`;
   }
 
   function buildTag() {
