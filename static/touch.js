@@ -5,6 +5,8 @@
 (function () {
   'use strict';
 
+  const BUILD = 'v35';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
   // y 是比例（0 顶 1 底），对齐 lin-body.webp 这张图上的位置。
@@ -130,7 +132,7 @@
     if (!dbg) return;
     const h = estHeavy(force || 0, radius || 0, secs || 0, path || 0, speed || 0);
     const 词 = h > 1.0 ? '重' : h > 0.35 ? '中' : '轻';
-    dbg.textContent = `力度 ${h.toFixed(2)}${词} · 面积 ${Math.round(radius || 0)}`;
+    dbg.textContent = `力度 ${h.toFixed(2)}${词} · 面积 ${Math.round(radius || 0)} · ${BUILD}`;
   }
 
   function describe(s) {
