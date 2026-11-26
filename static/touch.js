@@ -8,27 +8,41 @@
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
   // y 是比例（0 顶 1 底），对齐 lin-body.webp 这张图上的位置。
-  const BODY_RATIO = 846 / 1280;
-  const ZONES = [
-    { y0: 0.00, y1: 0.14, mid: '头发', side: '鬓角' },
-    { y0: 0.14, y1: 0.20, mid: '眼睛', side: '太阳穴' },
-    { y0: 0.20, y1: 0.24, mid: '鼻梁', side: '脸颊' },
-    { y0: 0.24, y1: 0.28, mid: '嘴唇', side: '脸颊' },
-    { y0: 0.28, y1: 0.31, mid: '下巴', side: '耳朵' },
-    { y0: 0.31, y1: 0.38, mid: '喉结', side: '脖子' },
-    { y0: 0.38, y1: 0.45, mid: '锁骨', side: '肩膀' },
-    { y0: 0.45, y1: 0.58, mid: '心口', side: '胳膊' },
-    { y0: 0.58, y1: 0.65, mid: '乳尖', side: '胳膊' },
-    { y0: 0.65, y1: 0.80, mid: '腹肌', side: '腰' },
-    { y0: 0.80, y1: 0.92, mid: '肚脐', side: '胯骨' },
-    { y0: 0.92, y1: 1.01, mid: '小腹最底下', side: '腿根' },
+  const BODY_RATIO = 853 / 1280;
+  // 先按「这一块具体长在哪儿」对位——照着 lin-body-v3 这张图上量的。
+  // 顺序就是优先级：小的、要紧的在前面。
+  const SPOTS = [
+    { n: '耳朵', x: 0.655, y: 0.168, rx: 0.038, ry: 0.048, side: 1 },
+    { n: '眼睛', x: 0.425, y: 0.170, rx: 0.058, ry: 0.030 },
+    { n: '眼睛', x: 0.535, y: 0.168, rx: 0.058, ry: 0.030 },
+    { n: '鼻梁', x: 0.478, y: 0.219, rx: 0.040, ry: 0.036 },
+    { n: '嘴唇', x: 0.506, y: 0.257, rx: 0.052, ry: 0.026 },
+    { n: '下巴', x: 0.498, y: 0.289, rx: 0.058, ry: 0.024 },
+    { n: '脸颊', x: 0.462, y: 0.228, rx: 0.110, ry: 0.070 },
+    { n: '喉结', x: 0.552, y: 0.337, rx: 0.048, ry: 0.030 },
+    { n: '脖子', x: 0.548, y: 0.322, rx: 0.090, ry: 0.058 },
+    { n: '锁骨', x: 0.512, y: 0.386, rx: 0.210, ry: 0.028 },
+    { n: '乳尖', x: 0.378, y: 0.610, rx: 0.052, ry: 0.036 },
+    { n: '乳尖', x: 0.787, y: 0.618, rx: 0.052, ry: 0.036 },
+    { n: '肚脐', x: 0.586, y: 0.890, rx: 0.046, ry: 0.030 },
   ];
+  // 身子的正中线：脸比身子偏左一点
+  const midAt = ny => ny < 0.30 ? 0.500 : 0.565;
   function zoneAt(nx, ny) {
-    if (nx < -0.02 || nx > 1.02) return '身子旁边的空气';
-    const z = ZONES.find(z => ny >= z.y0 && ny < z.y1) || ZONES[ZONES.length - 1];
-    if (nx < 0.26) return '左边' + z.side;
-    if (nx > 0.78) return '右边' + z.side;
-    return z.mid;
+    if (nx < -0.02 || nx > 1.02 || ny < -0.03 || ny > 1.05) return '身子旁边的空气';
+    for (const s of SPOTS) {
+      const a = (nx - s.x) / s.rx, b = (ny - s.y) / s.ry;
+      if (a * a + b * b <= 1) return s.side ? (nx < midAt(ny) ? '左边' : '右边') + s.n : s.n;
+    }
+    const d = nx - midAt(ny), ad = Math.abs(d), L = d < 0 ? '左边' : '右边';
+    if (ny < 0.13) return '头发';
+    if (ny < 0.30) return ad > 0.12 ? (ny < 0.20 ? L + '鬓角' : L + '脸颊') : '头发';
+    if (ny < 0.37) return ad > 0.10 ? L + '脖子' : '喉结';
+    if (ny < 0.43) return ad > 0.24 ? L + '肩膀' : '锁骨';
+    if (ny < 0.63) return ad > 0.26 ? L + '胳膊' : '心口';
+    if (ny < 0.86) return ad > 0.30 ? L + '胳膊' : ad > 0.23 ? L + '腰' : '腹肌';
+    if (ny < 0.95) return ad > 0.22 ? L + '胯骨' : '小腹';
+    return ad > 0.20 ? L + '腿根' : '小腹最底下';
   }
   // 屏幕坐标 -> 图上的比例（图是 contain 居中铺的）
   function toImg(x, y, w, h) {
@@ -101,6 +115,24 @@
   // 「在你再往下上」这种话不通，单独给它套个说法
   const N = z => /再往下$/.test(z) ? '你最底下那块' : '你' + z;
 
+  // 力度：iPhone 的网页读不到压力（force 永远是 0），
+  // 所以用接触面积 + 按住多久 + 划得多狠凑一个数出来。
+  function estHeavy(force, radius, secs, path, speed) {
+    let h = 0;
+    if (force > 0) h += (force - 0.3) * 2.2;          // 真读到压力了就用真的
+    if (radius > 0) h += (radius - 22) / 18;          // 指尖轻触 ~20，压实了会变大
+    if (path < 24 && secs > 0.7) h += secs * 0.5;     // 按住不动
+    if (speed > 900) h += 0.5;                        // 划得又快又狠
+    return h;
+  }
+  function showDbg(force, radius, secs, path, speed) {
+    const dbg = document.getElementById('touch-dbg');
+    if (!dbg) return;
+    const h = estHeavy(force || 0, radius || 0, secs || 0, path || 0, speed || 0);
+    const 词 = h > 1.0 ? '重' : h > 0.35 ? '中' : '轻';
+    dbg.textContent = `力度 ${h.toFixed(2)}${词} · 面积 ${Math.round(radius || 0)}`;
+  }
+
   function describe(s) {
     const secs = s.dur / 1000;
     const path = s.path;                       // 像素总长
@@ -110,11 +142,7 @@
 
     // 力度：没有压力传感器，用别的凑
     // 接触面积大（手指压扁了）、或者按着不动很久 = 重
-    let heavy = 0;
-    if (s.force > 0) heavy += (s.force - 0.3) * 2.2;      // 真读到压力了就用真的
-    if (s.radius > 0) heavy += (s.radius - 22) / 18;      // iOS 上指尖轻触 ~20，压实了会变大
-    if (path < 24 && secs > 0.7) heavy += secs * 0.5;     // 按住不动
-    if (speed > 900) heavy += 0.5;                        // 划得又快又狠
+    const heavy = estHeavy(s.force, s.radius, secs, path, speed);
     const 力 = heavy > 1.0 ? '很重地' : heavy > 0.35 ? '' : '轻轻地';
 
     const 手 = fingers >= 4 ? '整只手' : fingers === 3 ? '三根手指' : fingers === 2 ? '两根手指' : '指尖';
@@ -240,6 +268,27 @@
     tintCx.fillRect(0, 0, w, h);
     tintCx.globalCompositeOperation = 'source-over';
     return tintCv;
+  }
+
+  // 亲在嘴唇上：不该盖一个唇印上去——是把他的唇染红。
+  // 一层透明的红，顺着唇形洇开，亲得越久越红。
+  function drawLipStain(r, a, st) {
+    const press = Math.min(1, Math.max(0, ((st == null ? 1 : st) - 0.3) / 1.2));
+    const c = fromImg(0.506, 0.258, r.width, r.height);
+    const e = fromImg(0.606, 0.258, r.width, r.height);
+    const u = Math.max(4, e.x - c.x);              // 图上 0.1 宽 = 多少像素
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(-0.06);
+    const R = u * 0.62;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    const A = a * (0.14 + press * 0.42);
+    g.addColorStop(0, `rgba(196,58,82,${(A).toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(198,70,92,${(A * 0.72).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(200,90,110,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0, 0, R, R * 0.44, 0, 0, 6.2832); ctx.fill();
+    ctx.restore();
   }
 
   // 唇印：直接用素材，随机挑一张、随机转个角度，颜色按深浅调
@@ -404,6 +453,7 @@
       // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
       if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
       else if (m.kind === 'suck') drawHickey(p, 11, fade, m.s, seed, age);
+      else if (m.zone === '嘴唇') drawLipStain(r, fade, m.s);
       else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
   }
@@ -461,6 +511,17 @@
     }
   }
 
+  // 自己擦：手指走到哪儿，哪儿的痕迹就没了
+  function eraseAt(x, y, r) {
+    const before = marks.length;
+    const R = 34;
+    marks = marks.filter(m => {
+      const p = fromImg(m.nx, m.ny, r.width, r.height);
+      return dist(p.x, p.y, x, y) > R;
+    });
+    if (marks.length !== before) { saveMarks(); refreshBadge(); kick(); }
+  }
+
   // ---------- 手指 ----------
   function onStart(e) {
     e.preventDefault();
@@ -474,6 +535,8 @@
         pts: [{ x, y }], w: r.width, h: r.height
       });
       ripples.push({ x, y, t: now(), k: 1 });
+      showDbg(t.force || t.webkitForce || 0, Math.max(t.radiusX || 0, t.radiusY || 0) * 2, 0, 0, 0);
+      if (mode === 'erase') eraseAt(x, y, r);
     }
     kick();
   }
@@ -495,15 +558,20 @@
       f.pts.push({ x, y });
       if (f.pts.length > 160) f.pts.shift();
       if (f.path % 40 < 6) ripples.push({ x, y, t: now(), k: 0.6 });
+      const sec = (now() - f.t0) / 1000;
+      showDbg(f.force, f.radius, sec, f.path, sec > 0.05 ? f.path / sec : 0);
+      if (mode === 'erase') eraseAt(x, y, r);
     }
     kick();
   }
   function onEnd(e) {
     e.preventDefault();
     const fingersNow = live.size;
+    const r0 = cv.getBoundingClientRect();
     for (const t of e.changedTouches) {
       const f = live.get(t.identifier); if (!f) continue;
       live.delete(t.identifier);
+      if (mode === 'erase') { eraseAt(f.px, f.py, r0); continue; }   // 擦的时候不记成一笔
       const t1 = now(), dur = t1 - f.t0;
       if (dur < 18 && f.path < 2) continue;   // 误触（亲一下很快，别把她那一下吃掉）
       const _n0 = toImg(f.x0, f.y0, f.w, f.h), _n1 = toImg(f.px, f.py, f.w, f.h);
@@ -526,8 +594,7 @@
         nx: toImg(f.px, f.py, f.w, f.h).nx, ny: toImg(f.px, f.py, f.w, f.h).ny
       });
       ripples.push({ x: f.px, y: f.py, t: now(), k: 1.4 });
-      const dbg = document.getElementById('touch-dbg');
-      if (dbg) dbg.textContent = `力度 ${(f.force || 0).toFixed(2)} · 面积 ${Math.round(f.radius)}`;
+      showDbg(f.force, f.radius, dur / 1000, f.path, dur > 50 ? f.path / (dur / 1000) : 0);
       try { navigator.vibrate && navigator.vibrate(12); } catch (_) { }
     }
     // 同一只手几根手指一起落下的，合并成一笔（最后抬起的那根说了算）
@@ -560,7 +627,8 @@
               <div class="tm" data-m="kiss">亲</div>
               <div class="tm" data-m="suck">吸</div>
               <div class="tm" data-m="bite">咬</div>
-              <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
+              <div class="tm wipe" data-m="erase">擦一块</div>
+              <div class="tm wipe" id="touch-wipe">全擦掉</div>
             </div>
           </div>
         </div>

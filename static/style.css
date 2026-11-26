@@ -1349,9 +1349,12 @@ body:not([class*="theme-"]) .touch-modes .tm{background:rgba(255,255,255,.7);col
   border-color:rgba(190,150,175,.28)}
 body:not([class*="theme-"]) .touch-modes .tm.act{background:rgba(255,150,185,.34);color:#8e3f63;
   border-color:rgba(214,120,160,.55)}
+/* 「摸了他 X 下」：跟气泡一个底、一道边，不是粉条 */
 #touch-pill{display:none;align-items:center;gap:6px;margin:0 14px 4px;padding:5px 11px;
-  border-radius:999px;background:rgba(255,120,160,.14);color:#ffbccd;font-size:12px;
-  width:fit-content}
+  border-radius:999px;background:var(--bubble-ai);border:1.5px solid var(--bubble-border-ai);
+  color:var(--ink,#6b5a66);font-size:12px;width:fit-content}
+body:not([class*="theme-"]) #touch-pill{background:rgba(255,255,255,.54);
+  border-color:rgba(170,170,195,.39);color:#6b5a66}
 
 /* 雨雾（默认主题）：气泡透明度跟房间卡片一个数，不是玻璃，就是透一点 */
 body:not([class*="theme-"]) .bubble.ai,
