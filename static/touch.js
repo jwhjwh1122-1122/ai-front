@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v42';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v43';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -442,7 +442,9 @@
     const h = w * (img.naturalHeight / img.naturalWidth);
     // 颜色固定成她要的那个淡的——不管轻重都是同一个色，深浅只靠透明度和叠几遍拉开。
     // 只有放久了才往紫里偏一点点（那是褪色，不是力道）。
-    const col = `rgb(${Math.round(168 - ag * 34)},${Math.round(82 + ag * 8)},${Math.round(88 + ag * 48)})`;
+    // 同一个色，重的只是整体压暗一点（三个通道同比例），色调不变。
+    const k = 1 - d * jit * 0.20;
+    const col = `rgb(${Math.round((168 - ag * 34) * k)},${Math.round((82 + ag * 8) * k)},${Math.round((88 + ag * 48) * k)})`;
     const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
