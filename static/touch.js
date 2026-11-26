@@ -327,38 +327,49 @@
     ctx.restore();
   }
 
-  // 草莓印：一个径向渐变的椭圆——中间深红，往边上散开变透明，
-  // 再撒十几个很小的出血点。放久了颜色往紫里偏，也越来越淡。
+  // 草莓印：没有形状。就是一支喷枪，密密地喷出来的一块，
+  // 边是毛的、糊进皮肤里的，中间叠得多所以深。久了往紫里偏、也淡。
   function drawHickey(p, R, a, s, seed, age) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
     const ag = Math.min(1, Math.max(0, age || 0));
-    const rr = R * (1.05 + d * 0.65) * (0.9 + rnd(seed + 2.2) * 0.25);
-    // 新鲜的是红的，放久了往紫里走
+    const rr = R * (1.0 + d * 0.6) * (0.9 + rnd(seed + 2.2) * 0.25);
     const cr = Math.round(158 - ag * 46), cg = Math.round(44 + ag * 2), cb = Math.round(48 + ag * 54);
-    const COL = `${cr},${cg},${cb}`;
-    const A = a * (0.34 + d * 0.26);
-    const rot = (rnd(seed + 11.7) - 0.5) * 3.2;
-    const sq = 0.74 + rnd(seed + 6.6) * 0.34;               // 是个椭圆，不是正圆
+    const A = a * (0.055 + d * 0.035);                      // 一颗颗粒很淡，靠叠
+    // 喷的时候手是晃的：两三个落点轮着来，边自然就不规整，也就没有形状
+    const cores = 2 + Math.round(rnd(seed) * 1.6);
+    const cx = [], cy = [], cs = [];
+    for (let k = 0; k < cores; k++) {
+      const u = rnd(seed + k * 5.3), v = rnd(seed + k * 8.9), w = rnd(seed + k * 3.7);
+      const ang = u * 6.2832, off = (k === 0 ? 0 : Math.pow(v, 0.65) * rr * 0.55);
+      cx.push(Math.cos(ang) * off); cy.push(Math.sin(ang) * off * 0.85);
+      cs.push(0.62 + w * 0.5);
+    }
+    const dots = Math.round(420 + d * 420);
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(rot);
-    ctx.scale(1, sq);
-    const g = ctx.createRadialGradient(0, 0, rr * 0.05, 0, 0, rr);
-    g.addColorStop(0, `rgba(${COL},${A.toFixed(4)})`);
-    g.addColorStop(0.38, `rgba(${COL},${(A * 0.68).toFixed(4)})`);
-    g.addColorStop(0.72, `rgba(${COL},${(A * 0.26).toFixed(4)})`);
-    g.addColorStop(1, `rgba(${COL},0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(0, 0, rr, 0, 6.2832); ctx.fill();
-    // 出血点：十几个很细的小红点，撒在中间那片里
-    const n = Math.round(9 + d * 9);
-    ctx.fillStyle = `rgba(${Math.round(128 - ag * 34)},26,${Math.round(40 + ag * 46)},${(a * (0.30 + d * 0.22)).toFixed(3)})`;
-    for (let i = 0; i < n; i++) {
-      const u1 = Math.max(1e-4, rnd(seed + i * 1.37)), u2 = rnd(seed + i * 2.71);
-      const gx = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
-      const gy = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+    ctx.rotate((rnd(seed + 11.7) - 0.5) * 3.2);
+    ctx.scale(1, 0.78 + rnd(seed + 6.6) * 0.34);
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${A.toFixed(4)})`;
+    for (let n = 0; n < dots; n++) {
+      const k = n % cores;
+      const u1 = Math.max(1e-4, rnd(seed + n * 1.37)), u2 = rnd(seed + n * 2.71);
+      const g1 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
+      const g2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+      const sc = cs[k] * rr * 0.40;
       ctx.beginPath();
-      ctx.arc(gx * rr * 0.30, gy * rr * 0.28, R * (0.018 + rnd(seed + i * 4.13) * 0.022), 0, 6.2832);
+      ctx.arc(cx[k] + g1 * sc, cy[k] + g2 * sc * 0.92,
+        rr * (0.045 + rnd(seed + n * 4.13) * 0.065), 0, 6.2832);
+      ctx.fill();
+    }
+    // 中间那十几个细的出血点
+    const nb = Math.round(8 + d * 10);
+    ctx.fillStyle = `rgba(${Math.round(126 - ag * 32)},24,${Math.round(40 + ag * 46)},${(a * (0.22 + d * 0.2)).toFixed(3)})`;
+    for (let n = 0; n < nb; n++) {
+      const u1 = Math.max(1e-4, rnd(seed + n * 7.11)), u2 = rnd(seed + n * 9.23);
+      const g1 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
+      const g2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+      ctx.beginPath();
+      ctx.arc(g1 * rr * 0.3, g2 * rr * 0.28, rr * (0.02 + rnd(seed + n * 4.9) * 0.025), 0, 6.2832);
       ctx.fill();
     }
     ctx.restore();
