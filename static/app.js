@@ -1940,7 +1940,9 @@ async function sendMsg(fromCtx) {
   const inp = fromCtx ? document.querySelector(`.split-input[data-ctx="${fromCtx}"]`) : $('input');
   const text = inp.value.trim(), hasImg = !fromCtx && pendingChatImgs.length > 0;
   const hasFile = !fromCtx && pendingChatFiles.length > 0;
-  if (!text && !hasImg && !hasFile) return;
+  // 她攒在触感层里的那几下，跟这句话一起过来
+  const touchN = (!fromCtx && window.touchPending) ? window.touchPending() : 0;
+  if (!text && !hasImg && !hasFile && !touchN) return;
   if (isTyping) { toast(typingConvId === currentConvId ? '等他说完这句' : '他正在另一个窗口里回着，等会儿再发'); return; }
   if (hasImg && pendingChatImgs.some(im => im.uploading)) { toast('图片还在上传，稍等一下'); return; }
   if (hasFile && pendingChatFiles.some(f => f.uploading)) { toast('文件还在读，稍等一下'); return; }
@@ -1970,10 +1972,12 @@ async function sendMsg(fromCtx) {
   }) : [];
   const fileMeta = hasFile ? pendingChatFiles.map(f => ({ name: f.name, chars: f.chars, url: f.url || '', path: f.path || '' })) : null;
   // 一个字没打、只丢文件过来：也给他留一句话打头，不然重开页面时第一段 text 会变成整篇文件
-  const lead = text || (hasFile ? `（给你一个文件：${pendingChatFiles.map(f => f.name).join('、')}）` : '');
+  const lead = text || (hasFile ? `（给你一个文件：${pendingChatFiles.map(f => f.name).join('、')}）` : (touchN ? `（摸了你 ${touchN} 下）` : ''));
+  const touchTag = touchN ? (window.touchTake() || '') : '';
+  const sendLead = touchTag + lead;
   let content = (hasImg || hasFile)
-    ? [...(lead ? [{ type: 'text', text: lead }] : []), ...fileParts, ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
-    : text;
+    ? [...(sendLead ? [{ type: 'text', text: sendLead }] : []), ...fileParts, ...imgUrls.map(u => ({ type: 'image_url', image_url: { url: u } }))]
+    : sendLead;
   // 她在影房里开口：顺手截这一刻的画面带给我（截不到就算了）
   let autoFrame = false;
   // 带图带文件那条路不截画面，但进度照样得报——不然我眼前那行还停在上一次
