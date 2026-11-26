@@ -257,30 +257,34 @@
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
     const rx = R * 1.45, ry = R * 0.72;   // 扁的，横着的椭圆
-    // 先铺一层淤红，牙圈里面那块闷着的红
-    const bg = ctx.createRadialGradient(0, 0, 1, 0, 0, rx * 1.15);
-    bg.addColorStop(0, `rgba(190,74,92,${a * 0.2})`);
-    bg.addColorStop(0.7, `rgba(190,74,92,${a * 0.12})`);
-    bg.addColorStop(1, 'rgba(190,74,92,0)');
-    ctx.fillStyle = bg;
-    ctx.beginPath(); ctx.ellipse(0, 0, rx * 1.15, ry * 1.15, 0, 0, 6.2832); ctx.fill();
-    // 一整圈牙，绕着这个扁椭圆排一圈，每颗都朝着圆心
-    const n = 16;
+    // 牙围成一圈：上下两排实，越靠左右两头越虚，但轮廓还连得起来。
+    // 红只长在牙自己身上——每颗牙周围一圈充血，椭圆当中那块皮肤是干净的。
+    const n = 18;
     for (let i = 0; i < n; i++) {
       const k = rnd(seed + i * 5.1);
-      if (k < 0.08) continue;                                   // 这颗没咬上
-      const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.06;
+      const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.07;
+      // 上下最实（|sin| 接近 1），左右两头最虚（接近 0），但不归零
+      const near = Math.pow(Math.abs(Math.sin(th)), 0.75);
+      const vis = 0.13 + near * 0.87;
+      if (k < 0.07 * vis) continue;                             // 这颗没咬上
       const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
-      // 椭圆上这一点的法线方向（朝外），牙就顺着它立着
       const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
-      const tw = R * (0.26 + k * 0.1);                          // 牙宽（沿着圈走的那一边）
-      const tl = R * (0.17 + k * 0.1);                          // 咬进去的深浅
+      const tw = R * (0.24 + k * 0.1) * (0.6 + vis * 0.4);      // 牙宽（沿着圈走的那一边）
+      const tl = R * (0.16 + k * 0.1) * (0.6 + vis * 0.4);      // 咬进去的深浅
+      const A = a * vis;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(nAng);
+      // 先铺这颗牙自己的那圈充血，只在它周围
+      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, Math.max(tw, tl) * 1.5);
+      halo.addColorStop(0, `rgba(198,84,100,${A * 0.3})`);
+      halo.addColorStop(1, 'rgba(198,84,100,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.ellipse(0, 0, tl * 1.5, tw * 1.5, 0, 0, 6.2832); ctx.fill();
+      // 牙本身
       const g = ctx.createLinearGradient(tl / 2, 0, -tl / 2, 0);
-      g.addColorStop(0, `rgba(168,32,54,${a * (0.5 + k * 0.45)})`);
-      g.addColorStop(1, `rgba(196,86,104,${a * 0.18})`);
+      g.addColorStop(0, `rgba(168,32,54,${A * (0.5 + k * 0.45)})`);
+      g.addColorStop(1, `rgba(196,86,104,${A * 0.18})`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.ellipse(0, 0, tl / 2, tw / 2, 0, 0, 6.2832);
