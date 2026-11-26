@@ -1312,16 +1312,18 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 .touch-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;
   gap:8px;justify-content:space-between;padding:10px 14px;pointer-events:none}
 .touch-badge{font-size:12px;line-height:1.55;color:rgba(255,205,215,.55);
-  background:rgba(0,0,0,.25);padding:4px 10px;border-radius:14px;max-width:62vw;
+  background:rgba(0,0,0,.25);padding:4px 10px;border-radius:14px;max-width:50vw;
   text-align:left}
 #touch-dbg{flex:none;white-space:nowrap}
-.touch-badge.has{color:#ffd0dc;background:rgba(255,120,160,.22)}
+.touch-badge.has{color:rgba(255,205,215,.8);background:rgba(0,0,0,.25)}
+#touch-dbg{opacity:.75}
 .touch-x{pointer-events:auto;font-size:12px;color:rgba(255,205,215,.7);
   background:rgba(0,0,0,.3);padding:4px 12px;border-radius:999px}
 #btn-touch.act svg{stroke:#ff8fb0}
-/* 摸 / 亲 / 吸 / 咬 */
-.touch-modes{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;
-  gap:7px;padding:0 12px;flex-wrap:wrap}
+/* 右边那一竖条：收起 / 力度面积 / 摸亲吸咬 */
+.touch-right{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
+/* 摸 / 亲 / 吸 / 咬 —— 竖着排在「收起」底下 */
+.touch-modes{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
 .touch-modes .tm{pointer-events:auto;font-size:13px;line-height:1;padding:8px 15px;border-radius:999px;
   background:rgba(0,0,0,.32);color:rgba(255,205,215,.72);border:1px solid rgba(255,160,190,.18);
   user-select:none;-webkit-user-select:none}
@@ -1351,7 +1353,7 @@ body:not([class*="theme-"]) .cc-tool{
 body:not([class*="theme-"]) #touch-layer{background:rgba(255,255,255,.42)}
 body:not([class*="theme-"]) .touch-guide div{color:rgba(150,120,140,.30)}
 body:not([class*="theme-"]) .touch-badge{color:#6b5a66;background:rgba(255,255,255,.62)}
-body:not([class*="theme-"]) .touch-badge.has{color:#8e3f63;background:rgba(255,160,190,.26)}
+body:not([class*="theme-"]) .touch-badge.has{color:#6b5a66;background:rgba(255,255,255,.62)}
 body:not([class*="theme-"]) .touch-x{color:#6b5a66;background:rgba(255,255,255,.7)}
 
 /* 触感层里铺的那张图——她摸的就是它 */

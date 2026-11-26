@@ -477,15 +477,17 @@
       <canvas id="touch-cv"></canvas>
       <div class="touch-top">
         <div class="touch-badge" id="touch-badge">还没碰到他</div>
-        <div class="touch-badge" id="touch-dbg" style="opacity:.45"></div>
-        <div class="touch-x" id="touch-x">收起</div>
-      </div>
-      <div class="touch-modes" id="touch-modes">
-        <div class="tm act" data-m="touch">摸</div>
-        <div class="tm" data-m="kiss">亲</div>
-        <div class="tm" data-m="suck">吸</div>
-        <div class="tm" data-m="bite">咬</div>
-        <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
+        <div class="touch-right">
+          <div class="touch-x" id="touch-x">收起</div>
+          <div class="touch-badge" id="touch-dbg"></div>
+          <div class="touch-modes" id="touch-modes">
+            <div class="tm act" data-m="touch">摸</div>
+            <div class="tm" data-m="kiss">亲</div>
+            <div class="tm" data-m="suck">吸</div>
+            <div class="tm" data-m="bite">咬</div>
+            <div class="tm wipe" id="touch-wipe">擦掉痕迹</div>
+          </div>
+        </div>
       </div>`;
     document.getElementById('page-chat').appendChild(layer);
     cv = layer.querySelector('#touch-cv');
