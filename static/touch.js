@@ -458,11 +458,11 @@
       if (dur < 55 && f.path < 4) continue;   // 误触
       const _n0 = toImg(f.x0, f.y0, f.w, f.h), _n1 = toImg(f.px, f.py, f.w, f.h);
       // 亲/吸/咬 会在身上留下东西
-      if (mode !== 'touch' && !(dur < 300 && mode === 'kiss')) {
+      if (mode !== 'touch') {
         // 吸：含得越久、压得越实，印子越深越紫
         const strength = mode === 'suck'
           ? Math.min(2, 0.62 + dur / 900 + (f.radius > 30 ? 0.35 : 0))
-          : Math.min(2, 0.6 + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
+          : Math.min(2, (mode === 'kiss' ? 0.42 : 0.6) + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
         addMark(mode, _n1.nx, _n1.ny, zoneAt(_n1.nx, _n1.ny), strength);
       }
       strokes.push({
