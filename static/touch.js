@@ -252,7 +252,10 @@
   }
 
   // 牙印：一圈牙，上下实、两头虚；红只长在每颗牙周围，当中那块皮肤干净。
-  function drawBite(p, R, a, rot, seed) {
+  function drawBite(p, R, a, rot, seed, st) {
+    // 这一口咬得多狠：0 轻 1 狠。整口有深浅，每颗牙还各有各的深浅。
+    const bite = Math.min(1, Math.max(0, ((st == null ? 1 : st) - 0.6) / 1.4));
+    const deep = 0.42 + bite * 0.72;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
@@ -273,14 +276,16 @@
       // 牙本身：沿着圈的那一边宽（0.30~0.50R），压进去的那一边有厚度（0.15~0.23R）
       const tw = R * (0.30 + k * 0.20) * (0.72 + vis * 0.28);
       const tl = R * (0.15 + k2 * 0.08) * (0.72 + vis * 0.28);
-      const A = a * vis;
+      // 每颗牙吃进去多少不一样：有的清楚，有的几乎看不出来
+      const bias = Math.pow(rnd(seed + i * 11.9), 1.7);
+      const A = a * vis * deep * (0.28 + bias * 1.05);
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(nAng + (k2 - 0.5) * 0.3);                      // 每颗歪一点
       // 这颗牙周围的充血
       const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, Math.max(tw, tl) * 1.3);
-      halo.addColorStop(0, `rgba(198,84,100,${A * 0.26})`);
-      halo.addColorStop(1, 'rgba(198,84,100,0)');
+      halo.addColorStop(0, `rgba(150,42,44,${(A * 0.2).toFixed(4)})`);
+      halo.addColorStop(1, 'rgba(150,42,44,0)');
       ctx.fillStyle = halo;
       ctx.beginPath(); ctx.ellipse(0, 0, tl * 1.8, tw * 1.1, 0, 0, 6.2832); ctx.fill();
       // 方的那一块：外缘宽、内缘略窄的圆角梯形，四角半径不一样
@@ -297,10 +302,11 @@
       ctx.lineTo(xo - r1, wo);
       ctx.quadraticCurveTo(xo, wo, xo, wo - r1);
       ctx.closePath();
+      // 一个颜色，只有透明度在变
       const g = ctx.createLinearGradient(xo, 0, xi, 0);
-      g.addColorStop(0, `rgba(162,26,48,${A * (0.55 + k * 0.4)})`);
-      g.addColorStop(0.55, `rgba(178,44,66,${A * (0.4 + k * 0.3)})`);
-      g.addColorStop(1, `rgba(198,90,106,${A * 0.2})`);
+      g.addColorStop(0, `rgba(150,42,44,${(A * 0.95).toFixed(4)})`);
+      g.addColorStop(0.6, `rgba(150,42,44,${(A * 0.6).toFixed(4)})`);
+      g.addColorStop(1, `rgba(150,42,44,${(A * 0.18).toFixed(4)})`);
       ctx.fillStyle = g;
       ctx.fill();
       ctx.restore();
