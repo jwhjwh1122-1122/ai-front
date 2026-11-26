@@ -358,7 +358,7 @@
       const seed = (m.seed != null ? m.seed : (m.at % 9973) + idx);
       const rot = (m.rot != null ? m.rot : (rnd(seed) - 0.5) * 0.9);
       const R = 9 * m.s;
-      if (m.kind === 'bite') drawBite(p, R, 0.72 * fade, rot, seed);
+      if (m.kind === 'bite') drawBite(p, R, 0.72 * fade, rot, seed, m.s);
       else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed);
       else drawLip(p, R * 1.25, 0.78 * fade, rot, seed);
     });
