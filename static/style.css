@@ -1305,7 +1305,7 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
   display:none;z-index:40;background:rgba(18,10,16,.55);backdrop-filter:blur(2px);
   -webkit-backdrop-filter:blur(2px);overflow:hidden}
 #touch-layer.on{display:block}
-#touch-cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#touch-cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;mix-blend-mode:multiply}
 .touch-guide{position:absolute;inset:0;pointer-events:none}
 .touch-guide div{position:absolute;left:0;right:0;text-align:center;
   font-size:12px;letter-spacing:.3em;color:rgba(255,190,205,.22)}

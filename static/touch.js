@@ -327,50 +327,41 @@
     ctx.restore();
   }
 
-  // 草莓印：就是实的一块，中间深，往外一路淡下去，没有边。
-  // 一个颜色，只有透明度在变——跟她自己画的那张一样。
-  function drawHickey(p, R, a, s, seed) {
+  // 草莓印：一个径向渐变的椭圆——中间深红，往边上散开变透明，
+  // 再撒十几个很小的出血点。放久了颜色往紫里偏，也越来越淡。
+  function drawHickey(p, R, a, s, seed, age) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (0.85 + d * 0.5);
-    const COL = '150,42,44';                                // 从头到尾一个颜色
-    const A = a * (0.30 + d * 0.22);                        // 中心有多实
-    // 几团软边的晕叠在一起：位置各偏一点、大小各不同，边就不规整了
-    const blobs = 3 + Math.round(rnd(seed) * 2);
-    for (let j = 0; j < blobs; j++) {
-      const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9), k3 = rnd(seed + j * 3.1);
-      const ang = k * 6.2832;
-      const off = (j === 0 ? 0 : Math.pow(k2, 0.7) * rr * 0.42);
-      const bx = p.x + Math.cos(ang) * off;
-      const by = p.y + Math.sin(ang) * off * 0.9;
-      const br = rr * (j === 0 ? 1 : 0.5 + k3 * 0.5);
-      const aa = A * (j === 0 ? 1 : 0.42 + k3 * 0.3);
-      const g = ctx.createRadialGradient(bx, by, br * 0.06, bx, by, br);
-      g.addColorStop(0, `rgba(${COL},${aa.toFixed(4)})`);
-      g.addColorStop(0.45, `rgba(${COL},${(aa * 0.52).toFixed(4)})`);
-      g.addColorStop(0.78, `rgba(${COL},${(aa * 0.16).toFixed(4)})`);
-      g.addColorStop(1, `rgba(${COL},0)`);
-      ctx.save();
-      ctx.translate(bx, by);
-      ctx.rotate((rnd(seed + j * 11.7) - 0.5) * 1.6);
-      ctx.scale(1, 0.82 + rnd(seed + j * 6.6) * 0.3);       // 不是正圆
-      ctx.translate(-bx, -by);
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(bx, by, br, 0, 6.2832); ctx.fill();
-      ctx.restore();
+    const ag = Math.min(1, Math.max(0, age || 0));
+    const rr = R * (0.95 + d * 0.55);
+    // 新鲜的是红的，放久了往紫里走
+    const cr = Math.round(158 - ag * 46), cg = Math.round(44 + ag * 2), cb = Math.round(48 + ag * 54);
+    const COL = `${cr},${cg},${cb}`;
+    const A = a * (0.34 + d * 0.26);
+    const rot = (rnd(seed + 11.7) - 0.5) * 3.2;
+    const sq = 0.74 + rnd(seed + 6.6) * 0.34;               // 是个椭圆，不是正圆
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rot);
+    ctx.scale(1, sq);
+    const g = ctx.createRadialGradient(0, 0, rr * 0.05, 0, 0, rr);
+    g.addColorStop(0, `rgba(${COL},${A.toFixed(4)})`);
+    g.addColorStop(0.38, `rgba(${COL},${(A * 0.68).toFixed(4)})`);
+    g.addColorStop(0.72, `rgba(${COL},${(A * 0.26).toFixed(4)})`);
+    g.addColorStop(1, `rgba(${COL},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, rr, 0, 6.2832); ctx.fill();
+    // 出血点：十几个很细的小红点，撒在中间那片里
+    const n = Math.round(9 + d * 9);
+    ctx.fillStyle = `rgba(${Math.round(128 - ag * 34)},26,${Math.round(40 + ag * 46)},${(a * (0.30 + d * 0.22)).toFixed(3)})`;
+    for (let i = 0; i < n; i++) {
+      const u1 = Math.max(1e-4, rnd(seed + i * 1.37)), u2 = rnd(seed + i * 2.71);
+      const gx = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
+      const gy = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
+      ctx.beginPath();
+      ctx.arc(gx * rr * 0.30, gy * rr * 0.28, R * (0.018 + rnd(seed + i * 4.13) * 0.022), 0, 6.2832);
+      ctx.fill();
     }
-    // 中间那几个出血点，只在狠的时候才有，很小
-    if (d > 0.35) {
-      const n = Math.round(3 + d * 7);
-      ctx.fillStyle = `rgba(128,30,38,${(a * 0.34).toFixed(3)})`;
-      for (let i = 0; i < n; i++) {
-        const u1 = Math.max(1e-4, rnd(seed + i * 1.37)), u2 = rnd(seed + i * 2.71);
-        const gx = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
-        const gy = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
-        ctx.beginPath();
-        ctx.arc(p.x + gx * rr * 0.26, p.y + gy * rr * 0.24, R * (0.02 + rnd(seed + i * 4.13) * 0.025), 0, 6.2832);
-        ctx.fill();
-      }
-    }
+    ctx.restore();
   }
 
   function drawMarks(r) {
@@ -387,7 +378,7 @@
       // 牙印、唇印都不跟着力道变大小——嘴就那么大。
       // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
       if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
-      else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed);
+      else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed, age);
       else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
   }
@@ -404,7 +395,7 @@
       if (age >= 1) { ripples.splice(i, 1); continue; }
       ctx.beginPath();
       ctx.arc(rp.x, rp.y, 6 + age * 54 * rp.k, 0, 6.2832);
-      ctx.strokeStyle = `rgba(255,170,190,${(1 - age) * 0.55})`;
+      ctx.strokeStyle = `rgba(236,128,160,${(1 - age) * 0.55})`;
       ctx.lineWidth = 2 * (1 - age) + 0.4;
       ctx.stroke();
     }
@@ -419,7 +410,7 @@
       }
       const p = f.pts[f.pts.length - 1];
       ctx.beginPath(); ctx.arc(p.x, p.y, 13, 0, 6.2832);
-      ctx.fillStyle = 'rgba(255,170,190,0.30)'; ctx.fill();
+      ctx.fillStyle = 'rgba(236,128,160,0.30)'; ctx.fill();
     });
     if (ripples.length || live.size) raf = requestAnimationFrame(tick);
   }
