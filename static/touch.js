@@ -215,7 +215,7 @@
   for (let i = 0; i < 8; i++) {
     const im = new Image();
     im.onload = () => { lipsReady++; kick(); };
-    im.src = '/static/lip' + i + '.png?v=1';
+    im.src = '/static/lip' + i + '.png?v=2';
     LIPS.push(im);
   }
   // 蒙版上色用的小画布
@@ -256,7 +256,7 @@
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    const rx = R * 1.25, ry = R * 1.05;
+    const rx = R * 1.45, ry = R * 0.72;   // 扁的，横着的椭圆
     // 先铺一层淤红，牙圈里面那块闷着的红
     const bg = ctx.createRadialGradient(0, 0, 1, 0, 0, rx * 1.15);
     bg.addColorStop(0, `rgba(190,74,92,${a * 0.2})`);
@@ -274,8 +274,8 @@
         const th = (-0.78 + u * 1.56);                          // 只占中间那段弧
         const cx = Math.sin(th) * rx * 1.02;
         const cy = dir * Math.cos(th) * ry;
-        const tw = R * (0.3 + k * 0.1);                         // 牙宽
-        const tl = R * (0.26 + k * 0.2);                        // 咬进去的深浅
+        const tw = R * (0.34 + k * 0.12);                       // 牙宽（横着的，宽一点）
+        const tl = R * (0.16 + k * 0.1);                        // 咬进去的深浅（扁）
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(Math.sin(th) * -dir * 0.5);
