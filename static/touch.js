@@ -259,38 +259,49 @@
     const rx = R * 1.32, ry = R * 1.0;    // 椭圆，但没那么扁了
     // 上下两排最实，往左右两边走还有牙（所以一眼能看出是个椭圆），
     // 但最左、最右那一点点是断开的——真咬出来就是接不上的。
-    // 红只长在牙自己身上——每颗牙周围一圈充血，椭圆当中那块皮肤是干净的。
+    // 每颗牙是一块方方的压痕，宽窄不一、歪歪扭扭，不是一条线。
     const n = 20;
     for (let i = 0; i < n; i++) {
-      const k = rnd(seed + i * 5.1);
+      const k = rnd(seed + i * 5.1), k2 = rnd(seed + i * 8.3);
       const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.07;
       const s = Math.abs(Math.sin(th));
       if (s < 0.30 + rnd(seed + i * 3.3) * 0.06) continue;      // 最两头那一截断开
-      // 上下最实，往两边走淡一些，但淡得有限——左右得看得见
-      const vis = 0.46 + Math.pow(s, 0.6) * 0.54;
-      if (k < 0.07 * vis) continue;                             // 这颗没咬上
+      const vis = 0.52 + Math.pow(s, 0.6) * 0.48;
+      if (k < 0.06 * vis) continue;                             // 这颗没咬上
       const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
       const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
-      // 每颗牙是扁的：沿着圈走的那一边长，往里压的那一边薄。不是小红豆。
-      const tw = R * (0.34 + k * 0.12) * (0.6 + vis * 0.4);     // 牙宽（沿圈，长）
-      const tl = R * (0.085 + k * 0.04) * (0.6 + vis * 0.4);    // 压进去的厚度（薄）
+      // 牙本身：沿着圈的那一边宽（0.30~0.50R），压进去的那一边有厚度（0.15~0.23R）
+      const tw = R * (0.30 + k * 0.20) * (0.72 + vis * 0.28);
+      const tl = R * (0.15 + k2 * 0.08) * (0.72 + vis * 0.28);
       const A = a * vis;
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(nAng);
-      // 先铺这颗牙自己的那圈充血，只在它周围
-      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, Math.max(tw, tl) * 1.5);
-      halo.addColorStop(0, `rgba(198,84,100,${A * 0.3})`);
+      ctx.rotate(nAng + (k2 - 0.5) * 0.3);                      // 每颗歪一点
+      // 这颗牙周围的充血
+      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, Math.max(tw, tl) * 1.3);
+      halo.addColorStop(0, `rgba(198,84,100,${A * 0.26})`);
       halo.addColorStop(1, 'rgba(198,84,100,0)');
       ctx.fillStyle = halo;
-      ctx.beginPath(); ctx.ellipse(0, 0, tl * 2.6, tw * 1.25, 0, 0, 6.2832); ctx.fill();
-      // 牙本身
-      const g = ctx.createLinearGradient(tl / 2, 0, -tl / 2, 0);
-      g.addColorStop(0, `rgba(168,32,54,${A * (0.5 + k * 0.45)})`);
-      g.addColorStop(1, `rgba(196,86,104,${A * 0.18})`);
-      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(0, 0, tl * 1.8, tw * 1.1, 0, 0, 6.2832); ctx.fill();
+      // 方的那一块：外缘宽、内缘略窄的圆角梯形，四角半径不一样
+      const xo = tl / 2, xi = -tl / 2;
+      const wo = tw / 2, wi = tw / 2 * (0.82 + k2 * 0.16);
+      const r1 = tl * (0.3 + k * 0.25), r2 = tl * (0.2 + k2 * 0.3);
       ctx.beginPath();
-      ctx.ellipse(0, 0, tl / 2, tw / 2, 0, 0, 6.2832);
+      ctx.moveTo(xo, -wo + r1);
+      ctx.quadraticCurveTo(xo, -wo, xo - r1, -wo);
+      ctx.lineTo(xi + r2, -wi);
+      ctx.quadraticCurveTo(xi, -wi, xi, -wi + r2);
+      ctx.lineTo(xi, wi - r2);
+      ctx.quadraticCurveTo(xi, wi, xi + r2, wi);
+      ctx.lineTo(xo - r1, wo);
+      ctx.quadraticCurveTo(xo, wo, xo, wo - r1);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(xo, 0, xi, 0);
+      g.addColorStop(0, `rgba(162,26,48,${A * (0.55 + k * 0.4)})`);
+      g.addColorStop(0.55, `rgba(178,44,66,${A * (0.4 + k * 0.3)})`);
+      g.addColorStop(1, `rgba(198,90,106,${A * 0.2})`);
+      ctx.fillStyle = g;
       ctx.fill();
       ctx.restore();
     }
@@ -390,9 +401,12 @@
     if (badge) {
       // 她摸完一下，就把我这边收到的那句原样显给她看
       const left = window.touchMarks();
-      badge.textContent = strokes.length
+      // 折起来只留「几下」，点一下才把整句摊开
+      badge.dataset.full = strokes.length
         ? `${strokes.length} 下 · ` + describe(strokes[strokes.length - 1]) + (left ? `｜留着：${left}` : '')
         : (left ? '留着：' + left : '还没碰到他');
+      badge.dataset.short = strokes.length ? `${strokes.length} 下` : (left ? '留着痕迹' : '还没碰到他');
+      badge.textContent = badge.classList.contains('fold') ? badge.dataset.short : badge.dataset.full;
       badge.classList.toggle('has', strokes.length > 0);
     }
     const pill = document.getElementById('touch-pill');
@@ -492,7 +506,7 @@
       <div class="touch-top">
         <div class="touch-badge fold" id="touch-badge">还没碰到他</div>
         <div class="touch-right">
-          <div class="touch-x" id="touch-x">收起</div>
+          <div class="tm touch-x" id="touch-x">收起</div>
           <div class="touch-badge" id="touch-dbg"></div>
           <div class="touch-modes" id="touch-modes">
             <div class="tm act" data-m="touch">摸</div>
@@ -507,7 +521,11 @@
     cv = layer.querySelector('#touch-cv');
     ctx = cv.getContext('2d');
     badge = layer.querySelector('#touch-badge');
-    badge.onclick = () => badge.classList.toggle('fold');   // 点一下展开/折起
+    badge.onclick = () => {                                  // 点一下展开/折起
+      badge.classList.toggle('fold');
+      badge.textContent = badge.classList.contains('fold')
+        ? (badge.dataset.short || '') : (badge.dataset.full || '');
+    };
     layer.querySelector('#touch-x').onclick = () => toggle(false);
     layer.querySelectorAll('.tm[data-m]').forEach(el => {
       el.onclick = () => {
@@ -537,8 +555,22 @@
     open = (want === undefined) ? !open : want;
     layer.classList.toggle('on', open);
     document.getElementById('btn-touch')?.classList.toggle('act', open);
-    if (open) { fit(); pruneMarks(); refreshBadge(); kick(); }
+    if (open) { fit(); layoutTop(); pruneMarks(); refreshBadge(); kick(); }
   }
+  // 图是 contain 铺的，两边/上下会空出来——把字尽量塞进空白里，别压在他身上
+  function layoutTop() {
+    if (!layer) return;
+    const img = layer.querySelector('#touch-body');
+    const r = layer.getBoundingClientRect();
+    if (!img || !img.naturalWidth || !r.width) return;
+    const ar = img.naturalWidth / img.naturalHeight;
+    const w = Math.min(r.width, r.height * ar);
+    const gut = Math.max(0, (r.width - w) / 2);
+    layer.style.setProperty('--gut', Math.round(gut) + 'px');
+    layer.style.setProperty('--sidew', Math.round(Math.max(gut, 0)) + 'px');
+  }
+  window.addEventListener('resize', layoutTop);
+
   window.touchToggle = toggle;
 
   function wire() {
