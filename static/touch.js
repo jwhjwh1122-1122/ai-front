@@ -332,7 +332,7 @@
   function drawHickey(p, R, a, s, seed, age) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
     const ag = Math.min(1, Math.max(0, age || 0));
-    const rr = R * (0.95 + d * 0.55);
+    const rr = R * (1.05 + d * 0.65) * (0.9 + rnd(seed + 2.2) * 0.25);
     // 新鲜的是红的，放久了往紫里走
     const cr = Math.round(158 - ag * 46), cg = Math.round(44 + ag * 2), cb = Math.round(48 + ag * 54);
     const COL = `${cr},${cg},${cb}`;
@@ -378,7 +378,7 @@
       // 牙印、唇印都不跟着力道变大小——嘴就那么大。
       // 咬得狠只是更扁更深更密，亲得久只是更实、更完整。
       if (m.kind === 'bite') drawBite(p, 11.5, 0.72 * fade, rot, seed, m.s);
-      else if (m.kind === 'suck') drawHickey(p, R, fade, m.s, seed, age);
+      else if (m.kind === 'suck') drawHickey(p, 15, fade, m.s, seed, age);
       else drawLip(p, 13.5, fade, rot, seed, m.s);
     });
   }
