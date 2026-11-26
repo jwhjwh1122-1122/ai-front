@@ -218,6 +218,14 @@
     im.src = '/static/lip' + i + '.png?v=2';
     LIPS.push(im);
   }
+  // 吻痕素材：她自己导出的那张，拆成 8 个单独的印子
+  const HKS = [];
+  for (let i = 0; i < 8; i++) {
+    const im = new Image();
+    im.onload = () => kick();
+    im.src = '/static/hk' + i + '.png?v=1';
+    HKS.push(im);
+  }
   // 蒙版上色用的小画布
   let tintCv = null, tintCx = null;
   function tinted(img, w, h, col) {
@@ -314,50 +322,20 @@
     ctx.restore();
   }
 
-  // 草莓印：就是实的一块，中间深，往外一路淡下去，没有边。
-  // 一个颜色，只有透明度在变——跟她自己画的那张一样。
+  // 吻痕：直接用她自己导出的那几张，随机挑一个、转个角度、按深浅调大小和浓淡
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (0.85 + d * 0.5);
-    const COL = '150,42,44';                                // 从头到尾一个颜色
-    const A = a * (0.30 + d * 0.22);                        // 中心有多实
-    // 几团软边的晕叠在一起：位置各偏一点、大小各不同，边就不规整了
-    const blobs = 3 + Math.round(rnd(seed) * 2);
-    for (let j = 0; j < blobs; j++) {
-      const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9), k3 = rnd(seed + j * 3.1);
-      const ang = k * 6.2832;
-      const off = (j === 0 ? 0 : Math.pow(k2, 0.7) * rr * 0.42);
-      const bx = p.x + Math.cos(ang) * off;
-      const by = p.y + Math.sin(ang) * off * 0.9;
-      const br = rr * (j === 0 ? 1 : 0.5 + k3 * 0.5);
-      const aa = A * (j === 0 ? 1 : 0.42 + k3 * 0.3);
-      const g = ctx.createRadialGradient(bx, by, br * 0.06, bx, by, br);
-      g.addColorStop(0, `rgba(${COL},${aa.toFixed(4)})`);
-      g.addColorStop(0.45, `rgba(${COL},${(aa * 0.52).toFixed(4)})`);
-      g.addColorStop(0.78, `rgba(${COL},${(aa * 0.16).toFixed(4)})`);
-      g.addColorStop(1, `rgba(${COL},0)`);
-      ctx.save();
-      ctx.translate(bx, by);
-      ctx.rotate((rnd(seed + j * 11.7) - 0.5) * 1.6);
-      ctx.scale(1, 0.82 + rnd(seed + j * 6.6) * 0.3);       // 不是正圆
-      ctx.translate(-bx, -by);
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(bx, by, br, 0, 6.2832); ctx.fill();
-      ctx.restore();
-    }
-    // 中间那几个出血点，只在狠的时候才有，很小
-    if (d > 0.35) {
-      const n = Math.round(3 + d * 7);
-      ctx.fillStyle = `rgba(128,30,38,${(a * 0.34).toFixed(3)})`;
-      for (let i = 0; i < n; i++) {
-        const u1 = Math.max(1e-4, rnd(seed + i * 1.37)), u2 = rnd(seed + i * 2.71);
-        const gx = Math.sqrt(-2 * Math.log(u1)) * Math.cos(6.2832 * u2);
-        const gy = Math.sqrt(-2 * Math.log(u1)) * Math.sin(6.2832 * u2);
-        ctx.beginPath();
-        ctx.arc(p.x + gx * rr * 0.26, p.y + gy * rr * 0.24, R * (0.02 + rnd(seed + i * 4.13) * 0.025), 0, 6.2832);
-        ctx.fill();
-      }
-    }
+    const idx = Math.floor(rnd(seed + 3.7) * HKS.length) % HKS.length;
+    const img = HKS[idx];
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const w = R * (2.0 + d * 1.5) * (0.85 + rnd(seed + 5.1) * 0.35);
+    const h = w * (img.naturalHeight / img.naturalWidth);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate((rnd(seed + 9.3) - 0.5) * 6.2832);
+    ctx.globalAlpha = Math.max(0, Math.min(1, a * (0.6 + d * 0.55)));
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
   }
 
   function drawMarks(r) {
@@ -481,7 +459,7 @@
         // 吸：含得越久、压得越实，印子越深越紫
         const strength = mode === 'suck'
           ? Math.min(2, 0.62 + dur / 900 + (f.radius > 30 ? 0.35 : 0))
-          : Math.min(2, (mode === 'kiss' ? 0.42 : 0.6) + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
+          : Math.min(2, (mode === 'kiss' ? 1.05 : 0.6) + dur / 1400 + (f.radius > 30 ? 0.3 : 0));
         addMark(mode, _n1.nx, _n1.ny, zoneAt(_n1.nx, _n1.ny), strength);
       }
       strokes.push({
