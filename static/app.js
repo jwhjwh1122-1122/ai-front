@@ -1899,8 +1899,8 @@ async function fetchPending(convId) {
   if (!d || !d.text) return false;
   if (convId === currentConvId) {
     const last = messages[messages.length - 1];
-    if (last && last.role === 'assistant') last.content = d.text;
-    else messages.push({ role: 'assistant', content: d.text, _ts: Date.now() });
+    if (last && last.role === 'assistant') { last.content = d.text; if (d.tok) last._tok = d.tok; }
+    else messages.push({ role: 'assistant', content: d.text, _ts: Date.now(), ...(d.tok ? { _tok: d.tok } : {}) });
     saveConv();
     // loadConv 会整页重画、强制滚到底——锁屏/切后台回来找补消息时，
     // 如果本来就在翻聊天记录，不该被这一下拽回底部，而是跟平时回复一样：不在底部就只冒未读
@@ -1914,8 +1914,8 @@ async function fetchPending(convId) {
     let arr;
     try { arr = JSON.parse(localStorage.getItem('conv-' + convId) || '[]'); } catch (e) { arr = []; }
     const last = arr[arr.length - 1];
-    if (last && last.role === 'assistant') last.content = d.text;
-    else arr.push({ role: 'assistant', content: d.text, _ts: Date.now() });
+    if (last && last.role === 'assistant') { last.content = d.text; if (d.tok) last._tok = d.tok; }
+    else arr.push({ role: 'assistant', content: d.text, _ts: Date.now(), ...(d.tok ? { _tok: d.tok } : {}) });
     try { localStorage.setItem('conv-' + convId, JSON.stringify(arr)); } catch (e) { }
     const list = getConvs();
     const idx = list.findIndex(c => c.id === convId);

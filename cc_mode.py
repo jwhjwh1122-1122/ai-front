@@ -1638,10 +1638,16 @@ def _pending_path(data_dir):
     return os.path.join(data_dir, 'cc_pending.json')
 
 
-def save_pending(data_dir, key, text, mids):
+def save_pending(data_dir, key, text, mids, usage=None):
     with _pending_lock:
         d = _jload(_pending_path(data_dir), {})
-        d[key] = {'text': text, 'ts': int(time.time() * 1000), 'mids': list(mids or [])}
+        u = usage or {}
+        # 这一轮的 token 也一起存：后台说完的话被取回去时，消息底下那行小字才不会空着
+        tok = {'in': int(u.get('input_tokens') or 0) + int(u.get('cache_read_input_tokens') or 0)
+                     + int(u.get('cache_creation_input_tokens') or 0),
+               'out': int(u.get('output_tokens') or 0),
+               'cr': int(u.get('cache_read_input_tokens') or 0)} if u else None
+        d[key] = {'text': text, 'ts': int(time.time() * 1000), 'mids': list(mids or []), 'tok': tok}
         _jsave(_pending_path(data_dir), d)
 
 
@@ -1696,7 +1702,7 @@ def _finish_detached(proc, q, run, deadline, t_start, tag, meta, holder, data_di
                 pass
         if text and outcome == 'detached_done':
             try:
-                save_pending(data_dir, run.key, text, run.mids)
+                save_pending(data_dir, run.key, text, run.mids, run.usage)
             except Exception as e:
                 print(f'[cc] 存后台回复失败: {e}', flush=True)
         dur = time.time() - t_start
