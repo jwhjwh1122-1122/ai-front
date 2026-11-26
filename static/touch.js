@@ -277,14 +277,19 @@
         const L = Math.hypot(ux, uy);
         pts.push({ x: Math.cos(th) * rx, y: Math.sin(th) * ry, nx: ux / L, ny: uy / L });
       }
+      // 带子边上不是一条光溜的椭圆线，自己晃一点（跟角度走，所以接缝处对得上）
+      const jit = th => 1 + 0.16 * Math.sin(th * 7 + seed) + 0.1 * Math.sin(th * 13 + seed * 1.7);
       ctx.beginPath();
       pts.forEach((q, j) => {
-        const x = q.x + q.nx * d / 2, y = q.y + q.ny * d / 2;
+        const th = t0 + (t1 - t0) * (j / SEG);
+        const dd = d * jit(th);
+        const x = q.x + q.nx * dd / 2, y = q.y + q.ny * dd / 2;
         j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       });
       for (let j = pts.length - 1; j >= 0; j--) {
-        const q = pts[j];
-        ctx.lineTo(q.x - q.nx * d / 2, q.y - q.ny * d / 2);
+        const q = pts[j], th = t0 + (t1 - t0) * (j / SEG);
+        const dd = d * jit(th + 1.3);
+        ctx.lineTo(q.x - q.nx * dd / 2, q.y - q.ny * dd / 2);
       }
       ctx.closePath();
       // 外深内浅：牙尖压下去的那一边颜色重
@@ -298,6 +303,13 @@
       g.addColorStop(1, `rgba(196,92,110,${A * 0.3})`);
       ctx.fillStyle = g;
       ctx.fill();
+      // 这一节牙尖最吃力的那一点，颜色再压暗一层——带子里一节一节的感觉就是这么出来的
+      const mid = pts[Math.floor(SEG / 2)];
+      const dab = ctx.createRadialGradient(mid.x, mid.y, 1, mid.x, mid.y, d * 0.85);
+      dab.addColorStop(0, `rgba(154,26,50,${A * 0.4})`);
+      dab.addColorStop(1, 'rgba(154,26,50,0)');
+      ctx.fillStyle = dab;
+      ctx.beginPath(); ctx.arc(mid.x, mid.y, d * 0.85, 0, 6.2832); ctx.fill();
     }
     // 牙压过的那一条带子周围渗出来的红：沿着带子走，中间不红
     ctx.save();
