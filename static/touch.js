@@ -312,12 +312,12 @@
   // 不定形状、不分层、不换色——只是颗粒密的地方叠得多，看着就深。
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (1.05 + d * 0.6);
+    const rr = R * (0.78 + d * 0.45);
     const COL = '150,42,44';                                // 从头到尾一个颜色
-    const A = a * (0.055 + d * 0.035);                      // 一颗颗粒的透明度，很低
-    const dots = Math.round(150 + d * 220);
+    const A = a * (0.075 + d * 0.05);                      // 一颗颗粒的透明度，很低
+    const dots = Math.round(240 + d * 320);
     // 喷的时候手是晃的：几个落点轮着来，边缘自然就不规整
-    const cores = 2 + Math.round(rnd(seed) * 2);
+    const cores = 1 + Math.round(rnd(seed) * 1.4);
     const cx = [], cy = [];
     for (let j = 0; j < cores; j++) {
       const k = rnd(seed + j * 5.3), k2 = rnd(seed + j * 8.9);
