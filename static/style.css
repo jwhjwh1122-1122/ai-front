@@ -1334,3 +1334,10 @@ body:not([class*="theme-"]) .cc-tool{
   background:rgba(255,255,255,.54);
   border-color:rgba(170,170,195,.39);
 }
+
+/* 雨雾是浅色的，触感层别盖一块黑布上去 */
+body:not([class*="theme-"]) #touch-layer{background:rgba(255,255,255,.42)}
+body:not([class*="theme-"]) .touch-guide div{color:rgba(150,120,140,.30)}
+body:not([class*="theme-"]) .touch-badge{color:#6b5a66;background:rgba(255,255,255,.62)}
+body:not([class*="theme-"]) .touch-badge.has{color:#8e3f63;background:rgba(255,160,190,.26)}
+body:not([class*="theme-"]) .touch-x{color:#6b5a66;background:rgba(255,255,255,.7)}
