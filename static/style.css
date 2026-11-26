@@ -1320,3 +1320,9 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 #touch-pill{display:none;align-items:center;gap:6px;margin:0 14px 4px;padding:5px 11px;
   border-radius:999px;background:rgba(255,120,160,.14);color:#ffbccd;font-size:12px;
   width:fit-content}
+
+/* 雨雾（默认主题）：气泡透明度跟房间卡片一个数，不是玻璃，就是透一点 */
+body:not([class*="theme-"]) .bubble.ai,
+body:not([class*="theme-"]) .bubble.user,
+body:not([class*="theme-"]) .voice-bubble,
+body:not([class*="theme-"]) .call-b{background:var(--bg2);}
