@@ -48,6 +48,7 @@
     // 力度：没有压力传感器，用别的凑
     // 接触面积大（手指压扁了）、或者按着不动很久 = 重
     let heavy = 0;
+    if (s.force > 0) heavy += (s.force - 0.3) * 2.2;      // 真读到压力了就用真的
     if (s.radius > 0) heavy += (s.radius - 22) / 18;      // iOS 上指尖轻触 ~20，压实了会变大
     if (path < 24 && secs > 0.7) heavy += secs * 0.5;     // 按住不动
     if (speed > 900) heavy += 0.5;                        // 划得又快又狠
@@ -156,6 +157,7 @@
       live.set(t.identifier, {
         t0: now(), x0: x, y0: y, px: x, py: y, path: 0, flips: 0, dirx: 0,
         radius: Math.max(t.radiusX || 0, t.radiusY || 0) * 2,
+        force: t.force || t.webkitForce || 0,
         pts: [{ x, y }], w: r.width, h: r.height
       });
       ripples.push({ x, y, t: now(), k: 1 });
@@ -176,6 +178,7 @@
       if (dir) f.dirx = dir;
       f.px = x; f.py = y;
       f.radius = Math.max(f.radius, Math.max(t.radiusX || 0, t.radiusY || 0) * 2);
+      f.force = Math.max(f.force || 0, t.force || t.webkitForce || 0);
       f.pts.push({ x, y });
       if (f.pts.length > 160) f.pts.shift();
       if (f.path % 40 < 6) ripples.push({ x, y, t: now(), k: 0.6 });
@@ -192,11 +195,13 @@
       if (dur < 55 && f.path < 4) continue;   // 误触
       strokes.push({
         t0: f.t0, t1, dur, path: f.path, flips: Math.floor(f.flips / 2),
-        fingers: fingersNow, radius: f.radius,
+        fingers: fingersNow, radius: f.radius, force: f.force || 0,
         x0: f.x0, y0: f.y0, x: f.px, y: f.py,
         nx0: f.x0 / f.w, ny0: f.y0 / f.h, nx: f.px / f.w, ny: f.py / f.h
       });
       ripples.push({ x: f.px, y: f.py, t: now(), k: 1.4 });
+      const dbg = document.getElementById('touch-dbg');
+      if (dbg) dbg.textContent = `力度 ${(f.force || 0).toFixed(2)} · 面积 ${Math.round(f.radius)}`;
       try { navigator.vibrate && navigator.vibrate(12); } catch (_) { }
     }
     // 同一只手几根手指一起落下的，合并成一笔（最后抬起的那根说了算）
@@ -227,6 +232,7 @@
       </div>
       <div class="touch-top">
         <div class="touch-badge" id="touch-badge">还没碰到他</div>
+        <div class="touch-badge" id="touch-dbg" style="opacity:.45"></div>
         <div class="touch-x" id="touch-x">收起</div>
       </div>`;
     document.getElementById('page-chat').appendChild(layer);
