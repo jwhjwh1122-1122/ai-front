@@ -8,7 +8,7 @@
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
   // y 是比例（0 顶 1 底），对齐 lin-body.webp 这张图上的位置。
-  const BODY_RATIO = 847 / 1280;
+  const BODY_RATIO = 846 / 1280;
   const ZONES = [
     { y0: 0.00, y1: 0.14, mid: '头发', side: '鬓角' },
     { y0: 0.14, y1: 0.20, mid: '眼睛', side: '太阳穴' },
@@ -239,7 +239,7 @@
     layer = document.createElement('div');
     layer.id = 'touch-layer';
     layer.innerHTML = `
-      <img id="touch-body" src="/static/lin-body.webp?v=1" alt="">
+      <img id="touch-body" src="/static/lin-body.webp?v=2" alt="">
       <canvas id="touch-cv"></canvas>
       <div class="touch-top">
         <div class="touch-badge" id="touch-badge">还没碰到他</div>
