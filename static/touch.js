@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v37';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v38';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -438,7 +438,7 @@
     const w = R * (1.78 + d * 0.95) * (0.85 + rnd(seed + 5.1) * 0.36);   // 她说整体晕得有点大，收了一点
     const h = w * (img.naturalHeight / img.naturalWidth);
     // 新鲜是红的，放久了往紫里偏
-    const col = `rgb(${Math.round(158 - ag * 46)},${Math.round(44 + ag * 2)},${Math.round(48 + ag * 54)})`;
+    const col = `rgb(${Math.round(176 - d * 36 - ag * 40)},${Math.round(72 - d * 30 + ag * 6)},${Math.round(84 - d * 34 + ag * 52)})`;
     const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -446,8 +446,16 @@
     ctx.scale(rnd(seed + 1.9) < 0.5 ? -1 : 1, 1);               // 随机翻面
     ctx.transform(1, (rnd(seed + 4.4) - 0.5) * 0.4, (rnd(seed + 6.1) - 0.5) * 0.4, 1, 0, 0); // 扭一点
     ctx.scale(1, 0.8 + rnd(seed + 7.3) * 0.45);                 // 拉扁一点
-    ctx.globalAlpha = Math.max(0, Math.min(1, a * (0.5 + d * 0.6)));
-    ctx.drawImage(t, -w / 2, -h / 2, w, h);
+    // 含得越久越深：同一块叠好几遍（正片叠底会越叠越浓），颜色也往深里走
+    const pass = 1 + Math.round(d * 2.4);                       // 轻 1 遍，狠 4 遍
+    ctx.globalAlpha = Math.max(0, Math.min(1, a * (0.34 + d * 0.66)));
+    for (let i = 0; i < pass; i++) {
+      const o = i === 0 ? 0 : w * 0.06;
+      ctx.drawImage(t,
+        -w / 2 + (rnd(seed + 11.3 + i) - 0.5) * o,
+        -h / 2 + (rnd(seed + 13.7 + i) - 0.5) * o,
+        w * (1 - i * 0.07), h * (1 - i * 0.07));
+    }
     ctx.restore();
   }
 
@@ -592,7 +600,7 @@
       if (mode !== 'touch') {
         // 吸：含得越久、压得越实，印子越深越紫
         const strength = mode === 'suck'
-          ? Math.min(2, 0.62 + dur / 900 + (f.radius > 30 ? 0.35 : 0))
+          ? Math.min(2, 0.52 + dur / 620 + (f.radius > 30 ? 0.35 : 0))
           : (mode === 'kiss'
             ? Math.min(2, 0.3 + dur / 900 + (f.radius > 30 ? 0.25 : 0))
             : Math.min(2, 0.6 + dur / 1400 + (f.radius > 30 ? 0.3 : 0)));
