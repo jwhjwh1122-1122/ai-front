@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v35';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v36';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -272,24 +272,36 @@
     return tintCv;
   }
 
-  // 亲在嘴唇上：不该盖一个唇印上去——是把他的唇染红。
-  // 一层透明的红，顺着唇形洇开，亲得越久越红。
+  // 亲在嘴唇上：不是盖一个印子上去，也不是糊一块颜色——
+  // 是把他自己的唇染红。顺着唇形，低透明度，压在多重正片下面，
+  // 唇上的高光和纹路照样透出来，只是整片唇变深、变红。
+  function lipPath(W, Hu, Hl) {
+    ctx.beginPath();
+    ctx.moveTo(-W, 0);
+    ctx.bezierCurveTo(-W * 0.62, -Hu * 0.95, -W * 0.28, -Hu * 1.0, -W * 0.10, -Hu * 0.55);
+    ctx.quadraticCurveTo(0, -Hu * 0.2, W * 0.10, -Hu * 0.55);          // 唇珠中间那个小凹
+    ctx.bezierCurveTo(W * 0.28, -Hu * 1.0, W * 0.62, -Hu * 0.95, W, 0);
+    ctx.bezierCurveTo(W * 0.66, Hl * 1.25, -W * 0.66, Hl * 1.25, -W, 0);
+    ctx.closePath();
+  }
   function drawLipStain(r, a, st) {
     const press = Math.min(1, Math.max(0, ((st == null ? 1 : st) - 0.3) / 1.2));
-    const c = fromImg(0.506, 0.258, r.width, r.height);
-    const e = fromImg(0.606, 0.258, r.width, r.height);
-    const u = Math.max(4, e.x - c.x);              // 图上 0.1 宽 = 多少像素
+    const c = fromImg(0.4855, 0.2598, r.width, r.height);
+    const e = fromImg(0.5855, 0.2598, r.width, r.height);
+    const u = Math.max(4, e.x - c.x);                 // 图上 0.1 宽 = 多少像素
+    const W = u * 0.445, Hu = u * 0.33, Hl = u * 0.47;
+    const A = a * (0.10 + press * 0.26);              // 很淡，只是让唇更红
     ctx.save();
     ctx.translate(c.x, c.y);
-    ctx.rotate(-0.06);
-    const R = u * 0.62;
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
-    const A = a * (0.14 + press * 0.42);
-    g.addColorStop(0, `rgba(196,58,82,${(A).toFixed(3)})`);
-    g.addColorStop(0.55, `rgba(198,70,92,${(A * 0.72).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(200,90,110,0)');
+    ctx.rotate(-0.045);
+    try { ctx.filter = 'blur(' + (u * 0.035).toFixed(2) + 'px)'; } catch (_) { }
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, W);
+    g.addColorStop(0, `rgba(198,64,84,${A.toFixed(3)})`);
+    g.addColorStop(0.7, `rgba(196,70,88,${(A * 0.85).toFixed(3)})`);
+    g.addColorStop(1, `rgba(198,96,112,${(A * 0.5).toFixed(3)})`);
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(0, 0, R, R * 0.44, 0, 0, 6.2832); ctx.fill();
+    lipPath(W, Hu, Hl); ctx.fill();
+    lipPath(W * 0.82, Hu * 0.8, Hl * 0.82); ctx.fill();   // 中间再叠一层，更红一点
     ctx.restore();
   }
 
