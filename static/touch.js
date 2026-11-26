@@ -251,80 +251,47 @@
     ctx.restore();
   }
 
-  // 牙印：一条压下去的带子绕成扁椭圆。带子是连着的，上面才隐约看得出一节一节的牙。
-  // 左右两头虚掉（牙弓到那儿本来就接不上），当中那块皮肤干净，不泛红。
+  // 牙印：一圈牙，上下实、两头虚；红只长在每颗牙周围，当中那块皮肤干净。
   function drawBite(p, R, a, rot, seed) {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(rot);
-    const rx = R * 1.45, ry = R * 0.72;
-    const n = 16;                      // 一圈分成多少节牙
-    const SEG = 5;                     // 每节牙用几段采样，拼成弧形
-    const base = R * 0.2;              // 带子的厚度
+    const rx = R * 1.45, ry = R * 0.72;   // 扁的，横着的椭圆
+    // 牙围成一圈：上下两排实，越靠左右两头越虚，但轮廓还连得起来。
+    // 红只长在牙自己身上——每颗牙周围一圈充血，椭圆当中那块皮肤是干净的。
+    const n = 18;
     for (let i = 0; i < n; i++) {
       const k = rnd(seed + i * 5.1);
-      const t0 = i / n * 6.2832, t1 = (i + 1) / n * 6.2832;
-      const tm = (t0 + t1) / 2;
-      // 上下最实，越往左右两头越虚（不归零，轮廓还连得起来）
-      const vis = 0.1 + Math.pow(Math.abs(Math.sin(tm)), 0.8) * 0.9;
-      const d = base * (0.75 + k * 0.6) * (0.55 + vis * 0.45);   // 这一节压得多深
-      const A = a * vis * (0.55 + k * 0.45);
-      // 相邻两节首尾相接：带子是连着的，缝只是颜色深浅差出来的那条线
-      const pts = [];
-      for (let j = 0; j <= SEG; j++) {
-        const th = t0 + (t1 - t0) * (j / SEG);
-        const ux = Math.cos(th) / rx, uy = Math.sin(th) / ry;
-        const L = Math.hypot(ux, uy);
-        pts.push({ x: Math.cos(th) * rx, y: Math.sin(th) * ry, nx: ux / L, ny: uy / L });
-      }
-      // 带子边上不是一条光溜的椭圆线，自己晃一点（跟角度走，所以接缝处对得上）
-      const jit = th => 1 + 0.16 * Math.sin(th * 7 + seed) + 0.1 * Math.sin(th * 13 + seed * 1.7);
-      ctx.beginPath();
-      pts.forEach((q, j) => {
-        const th = t0 + (t1 - t0) * (j / SEG);
-        const dd = d * jit(th);
-        const x = q.x + q.nx * dd / 2, y = q.y + q.ny * dd / 2;
-        j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      });
-      for (let j = pts.length - 1; j >= 0; j--) {
-        const q = pts[j], th = t0 + (t1 - t0) * (j / SEG);
-        const dd = d * jit(th + 1.3);
-        ctx.lineTo(q.x - q.nx * dd / 2, q.y - q.ny * dd / 2);
-      }
-      ctx.closePath();
-      // 外深内浅：牙尖压下去的那一边颜色重
-      const g = ctx.createLinearGradient(
-        pts[Math.floor(SEG / 2)].x + pts[Math.floor(SEG / 2)].nx * d,
-        pts[Math.floor(SEG / 2)].y + pts[Math.floor(SEG / 2)].ny * d,
-        pts[Math.floor(SEG / 2)].x - pts[Math.floor(SEG / 2)].nx * d,
-        pts[Math.floor(SEG / 2)].y - pts[Math.floor(SEG / 2)].ny * d);
-      g.addColorStop(0, `rgba(190,78,96,${A * 0.35})`);
-      g.addColorStop(0.45, `rgba(172,40,62,${A * 0.95})`);
-      g.addColorStop(1, `rgba(196,92,110,${A * 0.3})`);
-      ctx.fillStyle = g;
-      ctx.fill();
-      // 这一节牙尖最吃力的那一点，颜色再压暗一层——带子里一节一节的感觉就是这么出来的
-      const mid = pts[Math.floor(SEG / 2)];
-      const dab = ctx.createRadialGradient(mid.x, mid.y, 1, mid.x, mid.y, d * 0.85);
-      dab.addColorStop(0, `rgba(154,26,50,${A * 0.4})`);
-      dab.addColorStop(1, 'rgba(154,26,50,0)');
-      ctx.fillStyle = dab;
-      ctx.beginPath(); ctx.arc(mid.x, mid.y, d * 0.85, 0, 6.2832); ctx.fill();
-    }
-    // 牙压过的那一条带子周围渗出来的红：沿着带子走，中间不红
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (let i = 0; i < n * 2; i++) {
-      const tm = (i + 0.5) / (n * 2) * 6.2832;
-      const vis = 0.1 + Math.pow(Math.abs(Math.sin(tm)), 0.8) * 0.9;
-      const x = Math.cos(tm) * rx, y = Math.sin(tm) * ry;
-      const halo = ctx.createRadialGradient(x, y, 1, x, y, R * 0.42);
-      halo.addColorStop(0, `rgba(200,96,112,${a * vis * 0.22})`);
-      halo.addColorStop(1, 'rgba(200,96,112,0)');
+      const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.07;
+      // 上下最实（|sin| 接近 1），左右两头最虚（接近 0），但不归零
+      const near = Math.pow(Math.abs(Math.sin(th)), 0.75);
+      const vis = 0.13 + near * 0.87;
+      if (k < 0.07 * vis) continue;                             // 这颗没咬上
+      const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
+      const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
+      // 每颗牙是扁的：沿着圈走的那一边长，往里压的那一边薄。不是小红豆。
+      const tw = R * (0.34 + k * 0.12) * (0.6 + vis * 0.4);     // 牙宽（沿圈，长）
+      const tl = R * (0.085 + k * 0.04) * (0.6 + vis * 0.4);    // 压进去的厚度（薄）
+      const A = a * vis;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(nAng);
+      // 先铺这颗牙自己的那圈充血，只在它周围
+      const halo = ctx.createRadialGradient(0, 0, 1, 0, 0, Math.max(tw, tl) * 1.5);
+      halo.addColorStop(0, `rgba(198,84,100,${A * 0.3})`);
+      halo.addColorStop(1, 'rgba(198,84,100,0)');
       ctx.fillStyle = halo;
-      ctx.beginPath(); ctx.arc(x, y, R * 0.42, 0, 6.2832); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 0, tl * 2.6, tw * 1.25, 0, 0, 6.2832); ctx.fill();
+      // 牙本身
+      const g = ctx.createLinearGradient(tl / 2, 0, -tl / 2, 0);
+      g.addColorStop(0, `rgba(168,32,54,${A * (0.5 + k * 0.45)})`);
+      g.addColorStop(1, `rgba(196,86,104,${A * 0.18})`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, tl / 2, tw / 2, 0, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
     ctx.restore();
   }
 
