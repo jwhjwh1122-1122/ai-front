@@ -308,47 +308,46 @@
     ctx.restore();
   }
 
-  // 吻痕：吸得越狠越深、越偏紫
+  // 草莓印：真的就是皮肤上几颗小的、发闷的红点，边上糊进肉里，
+  // 没有中心、没有分层、也不深——吸得狠只是点多一点、颜色闷一点。
   function drawHickey(p, R, a, s, seed) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
-    const rr = R * (1.4 + d * 0.9);
-    // 真的草莓印：淡的、边上糊掉的、形状不规整的一团，
-    // 不是一个圆，也没有一圈一圈的分层——是好几团虚的叠在一起叠出来的。
-    const col = [
-      Math.round(212 - d * 36),
-      Math.round(126 - d * 56),
-      Math.round(134 - d * 4),
-    ];
-    const blobs = 7;
-    for (let i = 0; i < blobs; i++) {
+    // 一次吸出来的不是一大团，是一小撮散着的点
+    const n = 2 + Math.round(d * 3);
+    const spread = R * (1.0 + d * 0.9);
+    for (let i = 0; i < n; i++) {
       const k = rnd(seed + i * 3.7), k2 = rnd(seed + i * 6.1), k3 = rnd(seed + i * 9.4);
-      // 一团团散开，中心附近密一点，边上零落
       const ang = k * 6.2832;
-      const off = Math.pow(k2, 0.7) * rr * 0.62;
-      const br = rr * (0.42 + k3 * 0.5);
-      const bx = p.x + Math.cos(ang) * off, by = p.y + Math.sin(ang) * off * 0.85;
-      const A = a * (0.055 + d * 0.11) * (0.7 + k3 * 0.6);
-      const g = ctx.createRadialGradient(bx, by, br * 0.1, bx, by, br);
-      g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${A})`);
-      g.addColorStop(0.55, `rgba(${col[0]},${col[1]},${col[2]},${A * 0.55})`);
+      const off = (i === 0 ? 0 : Math.pow(k2, 0.65) * spread);
+      const bx = p.x + Math.cos(ang) * off, by = p.y + Math.sin(ang) * off * 0.9;
+      // 点本身很小，略微不圆
+      const br = R * (0.34 + k3 * 0.34) * (1 + d * 0.3);
+      const rx = br * (0.85 + k * 0.3), ry = br * (0.85 + k2 * 0.3);
+      // 闷闷的红棕，吸得狠往紫灰走，但始终不重
+      const col = [
+        Math.round(188 - d * 26 - k3 * 14),
+        Math.round(116 - d * 26 - k * 12),
+        Math.round(112 - d * 10),
+      ];
+      const A = a * (0.17 + d * 0.16) * (0.65 + k3 * 0.6);
+      // 软边：一层层很淡地叠出来，不留任何一圈边界
+      const layers = 5;
+      for (let L = layers; L >= 1; L--) {
+        const f = L / layers;                        // 外→内
+        const al = A * (1 - f) * 0.55 + A * (f < 0.25 ? 0.18 : 0);
+        ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${(A * Math.pow(1 - f, 1.6) * 0.9 + al * 0).toFixed(4)})`;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, rx * (0.35 + f * 0.95), ry * (0.35 + f * 0.95), k2 * 3, 0, 6.2832);
+        ctx.fill();
+      }
+      // 再罩一层更虚的，把边彻底糊掉
+      const g = ctx.createRadialGradient(bx, by, rx * 0.2, bx, by, rx * 2.1);
+      g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${A * 0.22})`);
       g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.ellipse(bx, by, br, br * (0.72 + k * 0.5), k2 * 3, 0, 6.2832);
+      ctx.ellipse(bx, by, rx * 2.1, ry * 1.9, k * 3, 0, 6.2832);
       ctx.fill();
-    }
-    // 吸狠了才有的那些小点，散在这一团里，细、淡、不规则
-    if (d > 0.3) {
-      const n = Math.round(5 + d * 9);
-      for (let i = 0; i < n; i++) {
-        const k = rnd(seed + i * 9.1), k2 = rnd(seed + i * 4.7), k3 = rnd(seed + i * 2.3);
-        const ang = k * 6.2832, off = Math.pow(k2, 0.6) * rr * 0.62;
-        ctx.fillStyle = `rgba(${col[0] - 26},${Math.max(0, col[1] - 44)},${col[2] - 10},${a * (0.1 + d * 0.22) * (0.5 + k3)})`;
-        ctx.beginPath();
-        ctx.arc(p.x + Math.cos(ang) * off, p.y + Math.sin(ang) * off * 0.85,
-          R * 0.045 * (0.5 + k3 * 1.1), 0, 6.2832);
-        ctx.fill();
-      }
     }
   }
 
