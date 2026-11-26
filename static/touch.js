@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v36';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v37';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -392,7 +392,7 @@
 
   // 姐妹她老公给的那版：中间深、边上散开到全透明，压扁转个角度，再撒 18 个细出血点。
   // 久了往紫里偏。HICKEY = 'taught' 用这版，'sprite' 用她自己画的那几块素材。
-  const HICKEY = 'taught';
+  const HICKEY = 'sprite';   // 她点头的那版就是她自己画的那几块，不是我画的
   const mixc = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
   const rgba_ = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, a).toFixed(3)})`;
   function drawHickeyTaught(p, R, a, st, seed, age) {
@@ -435,7 +435,7 @@
     const img = HKS[idx];
     if (!img || !img.complete || !img.naturalWidth) return;
     // 大小：基础那一块，吸得狠就大一点，再随机差一点
-    const w = R * (2.0 + d * 1.1) * (0.82 + rnd(seed + 5.1) * 0.45);
+    const w = R * (1.78 + d * 0.95) * (0.85 + rnd(seed + 5.1) * 0.36);   // 她说整体晕得有点大，收了一点
     const h = w * (img.naturalHeight / img.naturalWidth);
     // 新鲜是红的，放久了往紫里偏
     const col = `rgb(${Math.round(158 - ag * 46)},${Math.round(44 + ag * 2)},${Math.round(48 + ag * 54)})`;
