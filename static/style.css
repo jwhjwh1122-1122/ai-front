@@ -1325,4 +1325,7 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 body:not([class*="theme-"]) .bubble.ai,
 body:not([class*="theme-"]) .bubble.user,
 body:not([class*="theme-"]) .voice-bubble,
-body:not([class*="theme-"]) .call-b{background:var(--bg2);}
+body:not([class*="theme-"]) .call-b{
+  background:rgba(255,255,255,.48);
+  border-color:rgba(170,170,195,.36);
+}
