@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v40';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v41';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -437,11 +437,13 @@
     const img = HKS[idx];
     if (!img || !img.complete || !img.naturalWidth) return;
     // 大小：基础那一块，吸得狠就大一点，再随机差一点
-    const w = R * (1.78 + d * 0.95) * (0.85 + rnd(seed + 5.1) * 0.36);   // 她说整体晕得有点大，收了一点
+    // 大小不跟力道走——嘴就那么大。只留一点点随机差（她说可以有大小区别，但不能离谱）
+    const w = R * 1.95 * (0.90 + rnd(seed + 5.1) * 0.24) * (1 + d * 0.08);
     const h = w * (img.naturalHeight / img.naturalWidth);
     // 新鲜是红的，放久了往紫里偏
     const lv = d * jit;   // 淡的偏粉，浓的往深红里沉
-    const col = `rgb(${Math.round(186 - lv * 46 - ag * 40)},${Math.round(86 - lv * 44 + ag * 6)},${Math.round(96 - lv * 46 + ag * 52)})`;
+    // 越重越往暗红沉，不往艳里走
+    const col = `rgb(${Math.round(182 - lv * 74 - ag * 40)},${Math.round(84 - lv * 54 + ag * 6)},${Math.round(94 - lv * 54 + ag * 52)})`;
     const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -463,7 +465,7 @@
     // 不画圆、不画渐变，形状还是她画的那块，只是叠密。
     const cw = w * (0.34 + rnd(seed + 17.1) * 0.12);
     const ch = cw * (h / w);
-    const cd = `rgb(${Math.round(150 - d * 30 - ag * 36)},${Math.round(40 - d * 16 + ag * 10)},${Math.round(52 - d * 18 + ag * 48)})`;
+    const cd = `rgb(${Math.round(142 - d * 56 - ag * 36)},${Math.round(36 - d * 22 + ag * 10)},${Math.round(48 - d * 24 + ag * 48)})`;
     const tc = tinted(img, cw * 2, ch * 2, cd);
     const cx = (rnd(seed + 19.7) - 0.5) * w * 0.18;
     const cy = (rnd(seed + 23.3) - 0.5) * h * 0.18;
