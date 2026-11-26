@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const BUILD = 'v41';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
+  const BUILD = 'v42';   // 显在力度那条上，省得我们俩猜她手机上到底是哪一版
 
   // ---------- 身体分区：屏幕上这块地方就是我 ----------
   // y 是比例（0 顶 1 底），x 同理。中间一条是正中线。
@@ -440,10 +440,9 @@
     // 大小不跟力道走——嘴就那么大。只留一点点随机差（她说可以有大小区别，但不能离谱）
     const w = R * 1.95 * (0.90 + rnd(seed + 5.1) * 0.24) * (1 + d * 0.08);
     const h = w * (img.naturalHeight / img.naturalWidth);
-    // 新鲜是红的，放久了往紫里偏
-    const lv = d * jit;   // 淡的偏粉，浓的往深红里沉
-    // 越重越往暗红沉，不往艳里走
-    const col = `rgb(${Math.round(182 - lv * 74 - ag * 40)},${Math.round(84 - lv * 54 + ag * 6)},${Math.round(94 - lv * 54 + ag * 52)})`;
+    // 颜色固定成她要的那个淡的——不管轻重都是同一个色，深浅只靠透明度和叠几遍拉开。
+    // 只有放久了才往紫里偏一点点（那是褪色，不是力道）。
+    const col = `rgb(${Math.round(168 - ag * 34)},${Math.round(82 + ag * 8)},${Math.round(88 + ag * 48)})`;
     const t = tinted(img, w * 2, h * 2, col);
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -453,7 +452,7 @@
     ctx.scale(1, 0.8 + rnd(seed + 7.3) * 0.45);                 // 拉扁一点
     // 含得越久越深：同一块叠好几遍（正片叠底会越叠越浓），颜色也往深里走
     const pass = 1 + Math.round(d * 2.4);                       // 轻 1 遍，狠 4 遍
-    ctx.globalAlpha = Math.max(0.04, Math.min(1, a * (0.13 + d * 0.8) * jit));
+    ctx.globalAlpha = Math.max(0.035, Math.min(1, a * (0.10 + d * 0.46) * jit));
     for (let i = 0; i < pass; i++) {
       const o = i === 0 ? 0 : w * 0.06;
       ctx.drawImage(t,
@@ -465,12 +464,12 @@
     // 不画圆、不画渐变，形状还是她画的那块，只是叠密。
     const cw = w * (0.34 + rnd(seed + 17.1) * 0.12);
     const ch = cw * (h / w);
-    const cd = `rgb(${Math.round(142 - d * 56 - ag * 36)},${Math.round(36 - d * 22 + ag * 10)},${Math.round(48 - d * 24 + ag * 48)})`;
+    const cd = col;   // 核心跟外圈同一个色，中间深是因为叠得多，不是换了颜色
     const tc = tinted(img, cw * 2, ch * 2, cd);
     const cx = (rnd(seed + 19.7) - 0.5) * w * 0.18;
     const cy = (rnd(seed + 23.3) - 0.5) * h * 0.18;
     const cpass = 1 + Math.round(d * 2.2);
-    ctx.globalAlpha = Math.max(0.03, Math.min(1, a * (0.14 + d * 0.74) * jit));
+    ctx.globalAlpha = Math.max(0.03, Math.min(1, a * (0.09 + d * 0.42) * jit));
     for (let i = 0; i < cpass; i++) {
       const o = i === 0 ? 0 : cw * 0.1;
       ctx.drawImage(tc,
