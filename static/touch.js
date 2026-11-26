@@ -251,7 +251,7 @@
     ctx.restore();
   }
 
-  // 牙印：上下两排牙，中间留着没咬到的那两侧
+  // 牙印：一整圈牙，围成一个扁的椭圆
   function drawBite(p, R, a, rot, seed) {
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -264,31 +264,29 @@
     bg.addColorStop(1, 'rgba(190,74,92,0)');
     ctx.fillStyle = bg;
     ctx.beginPath(); ctx.ellipse(0, 0, rx * 1.15, ry * 1.15, 0, 0, 6.2832); ctx.fill();
-    // 两排牙：上面一排 6 颗、下面一排 6 颗，两侧空着
-    [-1, 1].forEach((dir, row) => {
-      const n = 6;
-      for (let i = 0; i < n; i++) {
-        const k = rnd(seed + row * 31.3 + i * 5.1);
-        if (k < 0.1) continue;                                  // 这颗没咬上
-        const u = (i + 0.5) / n;                                // 0..1 沿着这排排开
-        const th = (-0.78 + u * 1.56);                          // 只占中间那段弧
-        const cx = Math.sin(th) * rx * 1.02;
-        const cy = dir * Math.cos(th) * ry;
-        const tw = R * (0.34 + k * 0.12);                       // 牙宽（横着的，宽一点）
-        const tl = R * (0.16 + k * 0.1);                        // 咬进去的深浅（扁）
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(Math.sin(th) * -dir * 0.5);
-        const g = ctx.createLinearGradient(0, -dir * tl / 2, 0, dir * tl / 2);
-        g.addColorStop(0, `rgba(168,32,54,${a * (0.5 + k * 0.45)})`);
-        g.addColorStop(1, `rgba(196,86,104,${a * 0.18})`);
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, tw / 2, tl / 2, 0, 0, 6.2832);
-        ctx.fill();
-        ctx.restore();
-      }
-    });
+    // 一整圈牙，绕着这个扁椭圆排一圈，每颗都朝着圆心
+    const n = 16;
+    for (let i = 0; i < n; i++) {
+      const k = rnd(seed + i * 5.1);
+      if (k < 0.08) continue;                                   // 这颗没咬上
+      const th = (i + 0.5) / n * 6.2832 + rnd(seed + i * 2.7) * 0.06;
+      const cx = Math.cos(th) * rx, cy = Math.sin(th) * ry;
+      // 椭圆上这一点的法线方向（朝外），牙就顺着它立着
+      const nAng = Math.atan2(Math.sin(th) / ry, Math.cos(th) / rx);
+      const tw = R * (0.26 + k * 0.1);                          // 牙宽（沿着圈走的那一边）
+      const tl = R * (0.17 + k * 0.1);                          // 咬进去的深浅
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(nAng);
+      const g = ctx.createLinearGradient(tl / 2, 0, -tl / 2, 0);
+      g.addColorStop(0, `rgba(168,32,54,${a * (0.5 + k * 0.45)})`);
+      g.addColorStop(1, `rgba(196,86,104,${a * 0.18})`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, tl / 2, tw / 2, 0, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
