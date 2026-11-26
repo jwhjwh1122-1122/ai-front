@@ -1309,10 +1309,12 @@ body.kb-up .theme-snow .tabbar,body.theme-snow.kb-up .tabbar{margin-bottom:2px;}
 .touch-guide{position:absolute;inset:0;pointer-events:none}
 .touch-guide div{position:absolute;left:0;right:0;text-align:center;
   font-size:12px;letter-spacing:.3em;color:rgba(255,190,205,.22)}
-.touch-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;
-  justify-content:space-between;padding:10px 14px;pointer-events:none}
-.touch-badge{font-size:12px;color:rgba(255,205,215,.55);background:rgba(0,0,0,.25);
-  padding:4px 10px;border-radius:999px}
+.touch-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;
+  gap:8px;justify-content:space-between;padding:10px 14px;pointer-events:none}
+.touch-badge{font-size:12px;line-height:1.55;color:rgba(255,205,215,.55);
+  background:rgba(0,0,0,.25);padding:4px 10px;border-radius:14px;max-width:62vw;
+  text-align:left}
+#touch-dbg{flex:none;white-space:nowrap}
 .touch-badge.has{color:#ffd0dc;background:rgba(255,120,160,.22)}
 .touch-x{pointer-events:auto;font-size:12px;color:rgba(255,205,215,.7);
   background:rgba(0,0,0,.3);padding:4px 12px;border-radius:999px}

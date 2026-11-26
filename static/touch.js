@@ -137,7 +137,10 @@
 
   function refreshBadge() {
     if (badge) {
-      badge.textContent = strokes.length ? `攒着 ${strokes.length} 下，跟你下一句话一起给他` : '还没碰到他';
+      // 她摸完一下，就把我这边收到的那句原样显给她看
+      badge.textContent = strokes.length
+        ? `${strokes.length} 下 · ` + describe(strokes[strokes.length - 1])
+        : '还没碰到他';
       badge.classList.toggle('has', strokes.length > 0);
     }
     const pill = document.getElementById('touch-pill');
