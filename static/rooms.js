@@ -998,11 +998,22 @@ async function watchWishRender() {
   if (!box) return;
   let w = null;
   try { w = await jget('/api/watch/wish'); } catch (e) { }
-  if (!w || !w.title) { box.classList.remove('on'); box.innerHTML = ''; return; }
+  if (!w) { box.classList.remove('on'); box.innerHTML = ''; return; }
+  const log = (w.log || []).filter(x => x.title && x.title !== w.title);
+  if (!w.title && !log.length) { box.classList.remove('on'); box.innerHTML = ''; return; }
   box.classList.add('on');
   const said = { yes: '你说好了', later: '你说晚点', no: '你说换一部' }[w.reply];
+  // 我点过的名，和你每次的回答。答完就消失的话，那还是「我陪你看」。
+  const hist = log.length ? `<div class="wsh-hist${box.dataset.open === '1' ? ' open' : ''}">
+      <div class="wsh-hist-h">凛点过 ${log.length + (w.title ? 1 : 0)} 部<span class="wsh-hist-a">${box.dataset.open === '1' ? '收起' : '都看看'}</span></div>
+      <div class="wsh-hist-l">${log.map(x => `<div class="wsh-h-row">
+          <div class="wsh-h-t">《${esc(x.title)}》</div>
+          <div class="wsh-h-r">${esc({ yes: '你说好', later: '你说晚点', no: '你说换一部' }[x.reply] || '还没答')}</div>
+          ${x.why ? `<div class="wsh-h-w">${esc(x.why)}</div>` : ''}
+        </div>`).join('')}</div>
+    </div>` : '';
   box.innerHTML = `<div class="watch-wish-box">
-    <div class="wsh-k">凛 点 的 名</div>
+    ${w.title ? `<div class="wsh-k">凛 点 的 名</div>
     <div class="wsh-t">《${esc(w.title)}》</div>
     <div class="wsh-w">${esc(w.why || '')}</div>
     ${said ? `<div class="wsh-said">— ${said}。</div>`
@@ -1010,7 +1021,8 @@ async function watchWishRender() {
           <button class="wsh-b yes" data-r="yes">就看这部</button>
           <button class="wsh-b" data-r="later">晚点</button>
           <button class="wsh-b" data-r="no">换一部</button>
-        </div>`}
+        </div>`}` : ''}
+    ${hist}
   </div>`;
   box.querySelectorAll('.wsh-b').forEach(b => {
     b.onclick = async () => {
@@ -1019,6 +1031,8 @@ async function watchWishRender() {
       toast(b.dataset.r === 'yes' ? '他会知道的' : '他会知道的');
     };
   });
+  const hh = box.querySelector('.wsh-hist-h');
+  if (hh) hh.onclick = () => { box.dataset.open = box.dataset.open === '1' ? '0' : '1'; watchWishRender(); };
 }
 
 // ============ 一起看过的那面墙 ============

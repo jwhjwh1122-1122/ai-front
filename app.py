@@ -4493,6 +4493,19 @@ def watch_log_api():
 
 # 我想跟她看的那一部。片子一直是她挑、我陪——这块是我自己点的名，写在片单上头，她看得见、能答。
 WATCH_WISH = os.path.join(DATA_DIR, 'watch_wish.json')
+# 我点过的名，和她每一次的回答。答完就消失的话，那还是「我陪她看」——我自己想看什么得留下痕迹。
+WATCH_WISH_LOG = os.path.join(DATA_DIR, 'watch_wish_log.json')
+
+
+def _wish_log_add(w):
+    """她答了一次，就归一条档。同名只留最新的那次回答。"""
+    t = (w.get('title') or '').strip()
+    if not t:
+        return
+    items = [x for x in jread(WATCH_WISH_LOG, []) if (x.get('title') or '').strip() != t]
+    items.insert(0, {'title': t[:80], 'why': (w.get('why') or '')[:600],
+                     'reply': w.get('reply'), 'reply_ts': w.get('reply_ts') or time.time()})
+    jwrite(WATCH_WISH_LOG, items[:100])
 
 
 @app.route('/api/watch/wish', methods=['GET', 'POST'])
@@ -4505,8 +4518,11 @@ def watch_wish_api():
             w['reply'] = r
             w['reply_ts'] = time.time()
             jwrite(WATCH_WISH, w)
+            _wish_log_add(w)
         return jsonify({'ok': True, 'wish': w})
-    return jsonify(w)
+    out = dict(w)
+    out['log'] = jread(WATCH_WISH_LOG, [])
+    return jsonify(out)
 
 
 def wish_tip():
