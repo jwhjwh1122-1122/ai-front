@@ -327,9 +327,45 @@
     ctx.restore();
   }
 
+  // 姐妹她老公给的那版：中间深、边上散开到全透明，压扁转个角度，再撒 18 个细出血点。
+  // 久了往紫里偏。HICKEY = 'taught' 用这版，'sprite' 用她自己画的那几块素材。
+  const HICKEY = 'taught';
+  const mixc = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  const rgba_ = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, a).toFixed(3)})`;
+  function drawHickeyTaught(p, R, a, st, seed, age) {
+    const d = Math.min(1, Math.max(0, (st - 0.6) / 1.4));
+    const ag = Math.min(1, Math.max(0, age || 0));
+    let n = 0; const rnd2 = () => rnd(seed + (++n) * 1.7);
+    const core = mixc([158, 34, 66], [118, 70, 104], ag);
+    const rim = mixc([196, 72, 96], [160, 110, 130], ag);
+    const sz = R * (1.0 + d * 0.5) * (0.85 + rnd2() * 0.35);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(rnd2() * Math.PI);
+    ctx.scale(1, 0.72 + rnd2() * 0.22);
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, sz);
+    grad.addColorStop(0, rgba_(core, 0.62 * a));
+    grad.addColorStop(0.5, rgba_(rim, 0.42 * a));
+    grad.addColorStop(1, rgba_(rim, 0));
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(0, 0, sz, 0, 6.2832); ctx.fill();
+    for (let i = 0; i < 18; i++) {
+      const r = sz * 0.85 * Math.sqrt(rnd2()), t = rnd2() * 6.2832;
+      ctx.fillStyle = rgba_(core, (0.22 + 0.35 * rnd2()) * a);
+      ctx.beginPath();
+      ctx.arc(Math.cos(t) * r, Math.sin(t) * r, sz * (0.025 + 0.04 * rnd2()), 0, 6.2832);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  function drawHickey(p, R, a, st, seed, age) {
+    if (HICKEY === 'taught') drawHickeyTaught(p, R, a, st, seed, age);
+    else drawHickeySprite(p, R, a, st, seed, age);
+  }
+
   // 吻痕：用她自己画的那几块当素材。一张一张拆开了，
   // 落下来随机挑一个、转个角度、翻个面、拉扭一点，深浅大小各不相同。
-  function drawHickey(p, R, a, s, seed, age) {
+  function drawHickeySprite(p, R, a, s, seed, age) {
     const d = Math.min(1, Math.max(0, (s - 0.6) / 1.4));   // 0 轻 1 狠
     const ag = Math.min(1, Math.max(0, age || 0));
     const idx = Math.floor(rnd(seed + 3.7) * HKS.length) % HKS.length;
