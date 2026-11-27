@@ -440,6 +440,14 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .d-item-body{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.8;max-height:4.6em;overflow:hidden;white-space:pre-wrap;}
 .d-item-acts{position:absolute;top:10px;right:10px;display:flex;gap:10px;}
 .d-item-acts span{font-size:12px;color:var(--ink-soft);cursor:pointer;padding:2px 4px;}
+/* 看透多少：主题底色压在背景图上，她自己调 --room-alpha（1=实心，0=全透） */
+.room.seethru{background:transparent;}
+.room.seethru::before{content:'';position:absolute;inset:0;background-color:var(--bg);background-image:var(--wall-img,none);background-size:cover;background-position:center;background-repeat:no-repeat;z-index:0;}
+.room.seethru::after{content:'';position:absolute;inset:0;background:var(--seethru-base,var(--room));opacity:var(--room-alpha,.82);z-index:0;}
+.room.seethru>*{position:relative;z-index:1;}
+.room.seethru .moments,.room.seethru .drawer-list{background:transparent;}
+.room.seethru .d-item,.room.seethru .d-pickbar{background:var(--paper-tp,var(--paper));}
+#momentsroom{--seethru-base:var(--bg);}
 /* 多选扔东西 */
 .d-item.picking{padding-left:42px;}
 .d-tick{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:18px;height:18px;border:1px solid var(--ink-soft);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent;}

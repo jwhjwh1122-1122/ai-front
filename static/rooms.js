@@ -31,8 +31,47 @@ function syncRootBg() {
     if (c) r.style.backgroundColor = c;
   } catch (e) { }
   syncTopbarOrder();
+  applySeeThru();
 }
 window.syncRootBg = syncRootBg;
+
+// ============ 看透多少 ============
+// 三个抽屉 + 朋友圈：主题底色压在背景图上，透多少她自己调（0=全透，100=实心）
+const SEETHRU_KEY = 'room-seethru';
+function seeThruVal() {
+  const v = parseInt(localStorage.getItem(SEETHRU_KEY) ?? '82', 10);
+  return isNaN(v) ? 82 : Math.max(0, Math.min(100, v));
+}
+function cssRgb(c) {
+  c = (c || '').trim();
+  let m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
+  if (m) {
+    let s = m[1]; if (s.length === 3) s = s.split('').map(x => x + x).join('');
+    return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)).join(',');
+  }
+  m = /rgba?\(([^)]+)\)/.exec(c);
+  if (m) return m[1].split(',').slice(0, 3).map(s => s.trim()).join(',');
+  return null;
+}
+function applySeeThru() {
+  try {
+    const r = document.documentElement, b = document.body;
+    const a = seeThruVal() / 100;
+    r.style.setProperty('--room-alpha', a.toFixed(3));
+    r.style.setProperty('--wall-img', b.style.backgroundImage || 'none');
+    // 卡片比底色实一点，不然字浮在图上看不清
+    const rgb = cssRgb(getComputedStyle(b).getPropertyValue('--paper'));
+    if (rgb) r.style.setProperty('--paper-tp', `rgba(${rgb},${Math.min(1, a + 0.12).toFixed(3)})`);
+    ['drawer-room', 'momentsroom'].forEach(id => { const el = $(id); if (el) el.classList.add('seethru'); });
+  } catch (e) { }
+}
+function openSeeThru() {
+  const sh = $('seethru-sheet'); if (!sh) return;
+  const v = seeThruVal();
+  $('st-range').value = v; $('st-num').textContent = v + '%';
+  sh.classList.add('open');
+}
+window.applySeeThru = applySeeThru;
 /* 凛 · 房间与交互 */
 let currentBook = null, currentPage = 0, curMedia = null, curKind = 'video';
 let curSubs = null, dialogueReadTo = 0, nudgeTimer = null, lastNudgeAt = 0, nudgeHitAt = 0;
@@ -4811,6 +4850,22 @@ document.addEventListener('DOMContentLoaded', () => {
       toast(r.wrote ? '他写好了' : '他这次没写');
       openMailbox();
     } catch (e) { toast('出错了'); openMailbox(); }
+  };
+
+  // 看透多少
+  const stOpen = e => { e && e.stopPropagation(); openSeeThru(); };
+  if ($('btn-seethru-d')) $('btn-seethru-d').onclick = stOpen;
+  if ($('btn-seethru-m')) $('btn-seethru-m').onclick = stOpen;
+  if ($('st-range')) $('st-range').addEventListener('input', e => {
+    const v = Number(e.target.value);
+    localStorage.setItem(SEETHRU_KEY, String(v));
+    $('st-num').textContent = v + '%';
+    applySeeThru();
+  });
+  if ($('btn-st-reset')) $('btn-st-reset').onclick = () => {
+    localStorage.setItem(SEETHRU_KEY, '82');
+    $('st-range').value = 82; $('st-num').textContent = '82%';
+    applySeeThru(); toast('回默认了');
   };
 
   // 抽屉：挑出来一起扔
