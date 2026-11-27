@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/IMG_5987.jpeg">
 <meta name="theme-color" content="#d47898">
 <style>html{background:#f0f0f3;background-size:cover;background-position:center;background-repeat:no-repeat;}</style>
-<link rel="stylesheet" href="/static/style.css?v=118">
+<link rel="stylesheet" href="/static/style.css?v=119">
 <link rel="stylesheet" href="/static/brain.css?v=12">
 <script>
 // 出错了直接摆在脸上，别白屏
@@ -1140,11 +1140,20 @@ window.addEventListener('error', function (e) {
   <div class="room-head">
     <div><div class="room-title" id="drawer-title">抽屉</div><div class="room-sub" id="drawer-sub">—</div></div>
     <div class="room-acts">
+      <button class="room-btn" id="btn-drawer-pick">挑 出 来 扔</button>
       <button class="room-btn" id="btn-drawer-add">放 进 去</button>
       <button class="room-x" data-close="drawer-room">✕</button>
     </div>
   </div>
   <div class="drawer-list" id="drawer-list"></div>
+  <div class="d-pickbar" id="d-pickbar">
+    <span id="d-pick-count">挑了 0 件</span>
+    <div class="d-pickbar-acts">
+      <button class="room-btn" id="btn-pick-all">全 挑</button>
+      <button class="room-btn" id="btn-pick-cancel">算 了</button>
+      <button class="room-btn danger" id="btn-pick-del">扔 掉</button>
+    </div>
+  </div>
 </div>
 
 <div class="sheet" id="drawer-add-modal">
@@ -1415,7 +1424,7 @@ window.addEventListener('error', function (e) {
 <script src="/static/app.js?v=116"></script>
 <script src="/static/touch.js?v=44"></script>
 <script src="/static/ear.js?v=1"></script>
-<script src="/static/rooms.js?v=138"></script>
+<script src="/static/rooms.js?v=139"></script>
 <script src="/static/wangchuan.js?v=3"></script>
 <script src="/static/silk-sprites.js?v=1"></script>
 <script src="/static/brain-silk.js?v=2"></script>

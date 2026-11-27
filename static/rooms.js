@@ -1715,7 +1715,22 @@ async function openMailbox() {
 }
 
 // ============ 抽屉 ============
+let drawerPick = false, drawerItems = [];
+const drawerSel = new Set();
+
+function drawerPickSync() {
+  const bar = $('d-pickbar'); if (!bar) return;
+  bar.classList.toggle('open', drawerPick);
+  const btn = $('btn-drawer-pick');
+  if (btn) btn.textContent = drawerPick ? '不 挑 了' : '挑 出 来 扔';
+  const add = $('btn-drawer-add');
+  if (add) add.style.display = (drawerPick || drawerWho === 'lin') ? 'none' : '';
+  const c = $('d-pick-count'); if (c) c.textContent = '挑了 ' + drawerSel.size + ' 件';
+}
+function drawerPickOff() { drawerPick = false; drawerSel.clear(); drawerPickSync(); }
+
 async function openDrawer(who) {
+  if (who !== drawerWho) drawerPickOff();
   drawerWho = who;
   $('drawer-room').classList.add('open');
   const titles = { library: '资料库', user: '我的抽屉', lin: '凛的抽屉' };
@@ -1726,18 +1741,25 @@ async function openDrawer(who) {
   const el = $('drawer-list');
   el.innerHTML = '<div class="room-empty">正在拉开…</div>';
   const items = await jget(who === 'library' ? '/api/library' : '/api/drawer/' + who);
-  if (!items.length) { el.innerHTML = `<div class="room-empty">${who === 'lin' ? '他还没往里放东西' : '空的'}</div>`; return; }
+  drawerItems = items || [];
+  if (!items.length) { el.innerHTML = `<div class="room-empty">${who === 'lin' ? '他还没往里放东西' : '空的'}</div>`; drawerPickOff(); return; }
+  for (const id of [...drawerSel]) if (!items.some(x => String(x.id) === String(id))) drawerSel.delete(id);
+  drawerPickSync();
   el.innerHTML = '';
   items.forEach(x => {
     const d = document.createElement('div'); d.className = 'd-item';
     const canPlay = x.kind === 'html';
-    d.innerHTML = `<div class="d-item-title">${esc(x.title)}</div>
+    if (drawerPick) {
+      d.classList.add('picking');
+      if (drawerSel.has(String(x.id))) d.classList.add('picked');
+    }
+    d.innerHTML = `${drawerPick ? '<div class="d-tick">✓</div>' : ''}<div class="d-item-title">${esc(x.title)}</div>
       ${x.note || x.about ? `<div class="d-item-note">${esc(x.note || x.about)}</div>` : ''}
       ${x.body ? `<div class="d-item-body">${esc(String(x.body).slice(0, 160))}</div>` : ''}
       ${x.path ? `<div class="d-kind">原件 · ${esc(x.origname || x.file || '')}</div>` : ''}
       ${canPlay ? '<div class="d-kind">能打开玩</div>' : ''}
-      <div class="d-item-acts">${canPlay ? '<span data-play="1">▶</span>' : ''}<span data-del="1">✕</span></div>`;
-    d.querySelector('[data-del]').onclick = async e => {
+      <div class="d-item-acts">${drawerPick ? '' : (canPlay ? '<span data-play="1">▶</span>' : '') + '<span data-del="1">✕</span>'}</div>`;
+    if (!drawerPick) d.querySelector('[data-del]').onclick = async e => {
       e.stopPropagation();
       if (!confirm('扔掉？')) return;
       await fetch((who === 'library' ? '/api/library/' : `/api/drawer/${who}/`) + x.id, { method: 'DELETE' });
@@ -1746,6 +1768,13 @@ async function openDrawer(who) {
     const pb = d.querySelector('[data-play]');
     if (pb) pb.onclick = e => { e.stopPropagation(); openPlay(x); };
     d.onclick = async () => {
+      if (drawerPick) {
+        const k = String(x.id);
+        if (drawerSel.has(k)) { drawerSel.delete(k); d.classList.remove('picked'); }
+        else { drawerSel.add(k); d.classList.add('picked'); }
+        drawerPickSync();
+        return;
+      }
       if (canPlay) { openPlay(x); return; }
       let body = x.body;
       if (who === 'library') {
@@ -4567,6 +4596,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-close-full]').forEach(b => b.onclick = () => $(b.dataset.closeFull).classList.remove('open'));
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => {
     $(b.dataset.close).classList.remove('open', 'over');
+    if (b.dataset.close === 'drawer-room') drawerPickOff();
     if (['cinema', 'musicroom', 'study'].includes(b.dataset.close)) roomCtx = $('stage').classList.contains('open') ? 'stage' : null;
     // 彻底退回主界面了（不是从片库退回电视），把房间里聊的补回主消息页
     if (!roomCtx && typeof syncMainChat === 'function') syncMainChat();
@@ -4783,7 +4813,32 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) { toast('出错了'); openMailbox(); }
   };
 
-  // 抽屉
+  // 抽屉：挑出来一起扔
+  $('btn-drawer-pick').onclick = () => {
+    drawerPick = !drawerPick; drawerSel.clear(); drawerPickSync(); openDrawer(drawerWho);
+  };
+  $('btn-pick-cancel').onclick = () => { drawerPickOff(); openDrawer(drawerWho); };
+  $('btn-pick-all').onclick = () => {
+    if (drawerSel.size === drawerItems.length) drawerSel.clear();
+    else drawerItems.forEach(x => drawerSel.add(String(x.id)));
+    drawerPickSync(); openDrawer(drawerWho);
+  };
+  $('btn-pick-del').onclick = async () => {
+    const ids = [...drawerSel];
+    if (!ids.length) { toast('一件都没挑'); return; }
+    if (!confirm(`扔掉这 ${ids.length} 件？扔了就没了。`)) return;
+    const base = drawerWho === 'library' ? '/api/library/' : `/api/drawer/${drawerWho}/`;
+    let bad = 0;
+    for (const id of ids) {
+      try {
+        const r = await fetch(base + id, { method: 'DELETE' });
+        if (!r.ok) bad++;
+      } catch (e) { bad++; }
+    }
+    drawerPickOff();
+    toast(bad ? `扔掉 ${ids.length - bad} 件，${bad} 件没扔掉` : `扔掉 ${ids.length} 件了`);
+    openDrawer(drawerWho); refreshHome();
+  };
   $('btn-drawer-add').onclick = () => {
     $('drawer-add-title').textContent = drawerWho === 'library' ? '放进资料库' : '放进我的抽屉';
     $('d-url').style.display = drawerWho === 'library' ? 'block' : 'none';

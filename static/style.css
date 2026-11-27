@@ -440,6 +440,15 @@ textarea:focus{border-color:var(--accent);}textarea::placeholder{color:var(--tex
 .d-item-body{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.8;max-height:4.6em;overflow:hidden;white-space:pre-wrap;}
 .d-item-acts{position:absolute;top:10px;right:10px;display:flex;gap:10px;}
 .d-item-acts span{font-size:12px;color:var(--ink-soft);cursor:pointer;padding:2px 4px;}
+/* 多选扔东西 */
+.d-item.picking{padding-left:42px;}
+.d-tick{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:18px;height:18px;border:1px solid var(--ink-soft);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent;}
+.d-item.picked{border-color:var(--accent);}
+.d-item.picked .d-tick{border-color:var(--accent);color:var(--accent);}
+.d-pickbar{display:none;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--room-deep);background:var(--paper);font-size:12px;color:var(--ink-soft);letter-spacing:1px;}
+.d-pickbar.open{display:flex;}
+.d-pickbar-acts{display:flex;gap:8px;}
+.room-btn.danger{color:#c0392b;border-color:#c0392b;}
 .d-kind{display:inline-block;font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:1px 7px;margin-top:6px;}
 .play-box{display:none;position:fixed;inset:0;z-index:500;background:var(--bg);flex-direction:column;}
 .play-box.open{display:flex;}
