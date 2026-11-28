@@ -4656,10 +4656,10 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (r === 'moments') openMoments();
     else if (r === 'desire') openDesire();
     else if (r === 'wangchuan') openWangchuan();
-    else if (r === 'game') { const f = $('gameroom-frame'); if (!f.src) f.src = '/static/gameroom.html?v=1'; $('gameroom').classList.add('open'); }
+    else if (r === 'game') { const f = $('gameroom-frame'); if (!f.src) f.src = '/static/gameroom.html?v=2'; $('gameroom').classList.add('open'); }
   });
   if ($('home-gate')) $('home-gate').onclick = () => openWangchuan();
-  if ($('gameroom-close')) $('gameroom-close').onclick = () => $('gameroom').classList.remove('open');
+  window.addEventListener('message', e => { if (e.data === 'gameroom-close' && $('gameroom')) $('gameroom').classList.remove('open'); });
   document.querySelectorAll('.drawer').forEach(d => d.onclick = () => openDrawer(d.dataset.drawer));
 
   // 书房

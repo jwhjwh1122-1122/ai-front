@@ -347,7 +347,7 @@ body{background:#fffbfc}
   <div class="topbar">
     <div class="heads"><img data-px="cat_pink" alt=""><img data-px="cat_gray" alt=""></div>
     <div class="coin"><img data-px="heart_gloss" alt="">COIN 无限</div>
-    <div class="coin right"><img class="hb" data-px="hearts_blue" alt="">两人在场</div>
+    <div class="coin right" id="gr-back" style="cursor:pointer;position:relative;z-index:30;pointer-events:auto" title="回去"><img class="hb" data-px="hearts_blue" alt="">两人在场</div>
   </div>
 
   <div class="wall" id="wall"></div>
@@ -701,4 +701,5 @@ place(place.x||16);
 
 window.addEventListener("resize",function(){place(place.x||34)});
 </script>
+<script>(function(){var b=document.getElementById("gr-back");if(b)b.onclick=function(){try{parent.postMessage("gameroom-close","*")}catch(e){}};})();</script>
 </body></html>
