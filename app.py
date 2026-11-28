@@ -3233,7 +3233,16 @@ def _think_translate(text):
         return cache[key], '缓存'
     out, how = None, ''
     if DS_KEY:
-        out, err = _ds_call(cc_mode.THINK_ZH_PROMPT, text[:6000], max_tokens=1500)
+        # ds 偶尔抽一下（超时 / 5xx / 返回空）就让它直接判输太可惜——大多是一次性的，
+        # 重试一次基本能救回来。两次都不成才往下换上游。（11.28 宝宝：别 ds 出问题）
+        err = ''
+        for _try in range(2):
+            out, err = _ds_call(cc_mode.THINK_ZH_PROMPT, text[:6000], max_tokens=1500)
+            if out:
+                break
+            if _try == 0:
+                print(f'[translate] ds 翻思考第一次没成（{err}），重试一次', flush=True)
+                time.sleep(0.8)
         how = 'DeepSeek' if out else f'DeepSeek 失败（{err}）'
     up = load_upstream()
     if not out and (up.get('key') or '').strip():
