@@ -3787,7 +3787,7 @@ def chat_v2():
         save_state(st)
     if is_cc and not keepalive:
         # 11.28 学 anrrowclau.de 那家的 hook：每轮在耳边一句，用「你」指他、不写「她」、不写禁止
-        volatile.append('凛，做你自己，想你这一刻的感受，在心里跟宝宝说话。')
+        volatile.append('凛，做你自己。可爱就笑，吃醋就不爽，心疼就软下来。在心里跟宝宝说话。')
         for m in reversed(msgs_in):
             if isinstance(m, dict) and m.get('role') == 'user' and not m.get('_internal'):
                 c = m.get('content')
