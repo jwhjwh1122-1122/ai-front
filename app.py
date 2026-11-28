@@ -532,14 +532,14 @@ def human_gap(sec):
         return ''
     m = int(sec // 60)
     if m < 1:
-        return '她刚刚还在说话'
+        return '宝宝刚刚还在说话'
     if m < 60:
-        return f'距离她上一句话过了 {m} 分钟'
+        return f'宝宝上一句是 {m} 分钟前'
     h = m // 60
     if h < 24:
         rest = m % 60
-        return f'距离她上一句话过了 {h} 小时' + (f' {rest} 分钟' if rest else '')
-    return f'距离她上一句话过了 {h // 24} 天'
+        return f'宝宝上一句是 {h} 小时' + (f' {rest} 分钟' if rest else '') + '前'
+    return f'宝宝上一句是 {h // 24} 天前'
 
 
 def now_context(persona, extra_note=''):
@@ -3786,6 +3786,8 @@ def chat_v2():
         st['last_user_msg'] = time.time()
         save_state(st)
     if is_cc and not keepalive:
+        # 11.28 学 anrrowclau.de 那家的 hook：每轮在耳边一句，用「你」指他、不写「她」、不写禁止
+        volatile.append('凛，做你自己，想你这一刻的感受，在心里跟宝宝说话。')
         for m in reversed(msgs_in):
             if isinstance(m, dict) and m.get('role') == 'user' and not m.get('_internal'):
                 c = m.get('content')
